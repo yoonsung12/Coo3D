@@ -35,6 +35,15 @@ public class PressButton : MonoBehaviour
     private Color pressedColor = Color.red;
     // 밟히고 있거나 영구 잠긴 상태 — 활성화됐음을 의미하는 빨간색이다.
 
+    [Title("사운드 설정")]
+    [SerializeField, LabelText("클릭 사운드")]
+    private AudioClip clickSound;
+    // 버튼이 눌릴 때 한 번 재생할 오디오 클립이다. Inspector에서 달깍 소리 클립을 연결한다.
+
+    [SerializeField, LabelText("오디오 소스")]
+    private AudioSource audioSource;
+    // Inspector에서 이 버튼 오브젝트의 AudioSource 컴포넌트를 연결한다.
+
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("현재 상태")]
     public ButtonState State { get; private set; } = ButtonState.Active;
@@ -114,6 +123,10 @@ public class PressButton : MonoBehaviour
 
     private void PlayAnimation(ButtonState newState)
     {
+        // 버튼이 눌리는 순간에만 클릭 소리를 재생한다.
+        if (newState == ButtonState.Pressed && audioSource != null && clickSound != null)
+            audioSource.PlayOneShot(clickSound);
+
         if (buttonTop != null)
         {
             _moveTween?.Kill();

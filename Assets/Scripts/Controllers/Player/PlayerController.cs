@@ -105,6 +105,7 @@ public class PlayerController : MonoBehaviour
         HandleMove();
         HandleFacing();
         ApplyGravity();
+        ApplyFallSpeedLimit();
         DecayRecoil();
 
         // 수평 속도 성분을 합산하고 수직 속도를 Y에 적용해 최종 이동한다.
@@ -195,5 +196,28 @@ public class PlayerController : MonoBehaviour
     public void SetSpeedMultiplier(float multiplier)
     {
         _speedMultiplier = multiplier;
+    }
+
+    // 우산 글라이드 중 최대 낙하 속도를 제한한다.
+    // maxFallSpeed는 음수 값이다 (예: -3f 이면 초당 3만큼 이하로 내려가지 않음).
+    private float _maxFallSpeed = float.NegativeInfinity;
+    private bool _hasFallSpeedLimit = false;
+
+    public void SetMaxFallSpeed(float maxFallSpeed)
+    {
+        _maxFallSpeed = maxFallSpeed;
+        _hasFallSpeedLimit = true;
+    }
+
+    public void ClearMaxFallSpeed()
+    {
+        _hasFallSpeedLimit = false;
+    }
+
+    private void ApplyFallSpeedLimit()
+    {
+        // 우산이 열려 있을 때 수직 낙하 속도가 최대값을 초과하지 않도록 제한한다.
+        if (_hasFallSpeedLimit && _verticalVelocity < _maxFallSpeed)
+            _verticalVelocity = _maxFallSpeed;
     }
 }
