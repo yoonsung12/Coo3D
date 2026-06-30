@@ -119,8 +119,8 @@ public class PlayerController : MonoBehaviour
 
     private void HandleMove()
     {
-        // 쿼터뷰/탑다운 시점: 입력 X → 월드 X축, 입력 Y → 월드 Z축
-        Vector3 moveDir = new Vector3(_moveInput.x, 0f, _moveInput.y);
+        // 사이드뷰: 입력 X → 월드 X축 이동만 사용한다. Z축 이동은 없다.
+        Vector3 moveDir = new Vector3(_moveInput.x, 0f, 0f);
         _moveVelocity = moveDir * (moveSpeed * _speedMultiplier);
     }
 
@@ -132,20 +132,27 @@ public class PlayerController : MonoBehaviour
         // 카메라에서 마우스 스크린 좌표로 광선을 발사한다.
         Ray ray = Camera.main.ScreenPointToRay(Mouse.current.position.ReadValue());
 
-        // 플레이어 발 높이 기준 수평 평면과 광선의 교점을 구해 마우스가 가리키는 월드 좌표를 얻는다.
-        // 카메라가 기울어져 있어도 지면 위의 정확한 위치를 계산할 수 있다.
-        Plane groundPlane = new Plane(Vector3.up, transform.position);
-        if (groundPlane.Raycast(ray, out float distance))
+        // 사이드뷰: 카메라가 Z축을 따라 바라보므로, 플레이어 위치를 지나는 수직 평면(Z=플레이어Z)과
+        // 광선의 교점을 구해 마우스가 가리키는 월드 XY 좌표를 얻는다.
+        // 쿼터뷰의 지면 수평 평면 대신, Z축에 수직인 측면 평면을 사용한다.
+        Plane sidePlane = new Plane(Vector3.forward, transform.position);
+        if (sidePlane.Raycast(ray, out float distance))
         {
             Vector3 worldPoint = ray.GetPoint(distance);
             Vector3 dir = worldPoint - transform.position;
-            dir.y = 0f;
+            dir.z = 0f;
+            // Z 성분을 제거해 XY 평면 방향만 남긴다.
 
             if (dir.sqrMagnitude > 0.01f)
             {
                 FacingDirection = dir.normalized;
-                // Y축만 회전해 캐릭터가 앞뒤로 기울어지지 않고 마우스 방향만 바라보게 한다.
-                transform.rotation = Quaternion.LookRotation(FacingDirection);
+                // FacingDirection에 Y 성분이 포함되어 선풍기/횃불이 위아래 각도로도 작동한다.
+
+                // 캐릭터 몸통은 좌우 방향만 전환한다.
+                // 마우스가 오른쪽이면 +X 방향(90°), 왼쪽이면 -X 방향(-90°)으로 Y축만 회전한다.
+                // 0°/180°를 쓰면 카메라(Z축) 기준 등/정면이 뒤바뀌어 Z축 회전처럼 보이는 문제가 생긴다.
+                float yRotation = dir.x >= 0f ? 90f : -90f;
+                transform.rotation = Quaternion.Euler(0f, yRotation, 0f);
             }
         }
     }

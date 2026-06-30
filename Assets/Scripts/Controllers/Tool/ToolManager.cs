@@ -20,6 +20,10 @@ public class ToolManager : MonoBehaviour
     private TorchTool torchTool;
     // Inspector에서 플레이어의 TorchTool 컴포넌트를 연결한다.
 
+    [SerializeField, LabelText("검 공격")]
+    private SwordAttack swordAttack;
+    // Inspector에서 플레이어의 SwordAttack 컴포넌트를 연결한다.
+
     [Title("입력 설정")]
     [SerializeField, LabelText("Input Action Asset")]
     private InputActionAsset inputActionAsset;
@@ -114,7 +118,8 @@ public class ToolManager : MonoBehaviour
         }
         else
         {
-            // 공격 모드: 추후 PlayerCombat.TryAttack() 연결 예정
+            // 공격 모드: SW08 교번 대각선 베기를 실행한다.
+            swordAttack?.TryAttack();
         }
     }
 
