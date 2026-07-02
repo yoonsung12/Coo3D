@@ -15,7 +15,7 @@ public class SwordAttack : MonoBehaviour
 
     [BoxGroup("Swing 0 — 아래→위")]
     [SerializeField, LabelText("준비 각도")]
-    private Vector3 readyAngle0 = new Vector3(-110f, 0f, 0f);
+    private Vector3 readyAngle0 = new Vector3(110f, 0f, -20f);
     // 아래→위 베기의 시작 자세다. 칼끝이 화면 왼쪽 아래를 향한다.
     // X값이 음수이고 절대값이 클수록 칼끝이 더 왼쪽 아래로 내려간다.
 
@@ -33,7 +33,7 @@ public class SwordAttack : MonoBehaviour
 
     [BoxGroup("Swing 1 — 위→아래")]
     [SerializeField, LabelText("베기 완료 각도")]
-    private Vector3 slashAngle1 = new Vector3(-110f, 0f, 0f);
+    private Vector3 slashAngle1 = new Vector3(110f, 0f, -20f);
     // 위→아래 베기의 완료 자세다. 칼끝이 화면 왼쪽 아래를 향한다.
     // Swing 0의 준비 각도와 일치해 두 스윙이 완전히 같은 호를 반대 방향으로 이동한다.
 
@@ -74,6 +74,12 @@ public class SwordAttack : MonoBehaviour
     private float lightMaxIntensity = 3f;
     // 베기 순간 칼끝에서 발산하는 빛의 최대 밝기다. 클수록 더 강하게 빛난다.
     // URP Bloom이 활성화되어 있으면 HDR 효과로 번짐 효과도 생긴다.
+
+    [Title("사운드")]
+    [SerializeField, LabelText("쉬잉 사운드 클립")]
+    private AudioClip swishClip;
+    // 칼을 휘두를 때 재생할 사운드 클립이다. Inspector에서 연결한다.
+    // 비워두면 소리 없이 연출만 동작한다.
 
     [Title("타격 판정")]
     [SerializeField, LabelText("칼날 히트박스")]
@@ -153,6 +159,9 @@ public class SwordAttack : MonoBehaviour
                 sw08Transform.localRotation = Quaternion.Euler(readyAngle);
                 swordHitbox?.EnableHitbox();
                 if (swordTrail != null) swordTrail.emitting = true;
+                if (swishClip != null)
+                    AudioSource.PlayClipAtPoint(swishClip, sw08Transform.position);
+                // 베기 시작 순간 칼 위치에서 쉬잉 소리를 재생한다.
             })
             // 준비 자세에서 베기 완료 각도로 빠르게 휘두른다.
             // DOLocalRotateQuaternion으로 오일러 정규화 없이 순수 쿼터니언 경로로 이동해 기즈모 호와 일치시킨다.
@@ -279,5 +288,103 @@ public class SwordAttack : MonoBehaviour
         }
         return new Vector3(0f, 2.05f, 0.01f);
     }
+
 #endif
 }
+
+// CustomEditor / OdinEditor 상속 방식은 Odin과 충돌해 OnSceneGUI 호출이 불안정하다.
+// SceneView.duringSceneGui 이벤트를 직접 구독하면 인스펙터 시스템과 완전히 독립적으로 동작한다.
+#if UNITY_EDITOR
+[UnityEditor.InitializeOnLoad]
+public static class SwordAttackSceneHandles
+{
+    private static UnityEditor.SerializedObject _so;
+    private static SwordAttack _lastTarget;
+
+    static SwordAttackSceneHandles()
+    {
+        UnityEditor.SceneView.duringSceneGui += OnSceneGUI;
+    }
+
+    private static void OnSceneGUI(UnityEditor.SceneView sceneView)
+    {
+        var go = UnityEditor.Selection.activeGameObject;
+        if (go == null) return;
+
+        var attack = go.GetComponent<SwordAttack>();
+        if (attack == null) return;
+
+        // 선택 오브젝트가 바뀌면 SerializedObject를 갱신한다.
+        if (attack != _lastTarget || _so == null)
+        {
+            _lastTarget = attack;
+            _so = new UnityEditor.SerializedObject(attack);
+        }
+
+        _so.Update();
+
+        DrawAngleHandle(_so.FindProperty("readyAngle0"), new Color(1f, 0.2f, 0.2f, 1f));
+        DrawAngleHandle(_so.FindProperty("slashAngle0"), new Color(1f, 0.2f, 0.2f, 1f));
+        DrawAngleHandle(_so.FindProperty("readyAngle1"), new Color(1f, 0.55f, 0.1f, 1f));
+        DrawAngleHandle(_so.FindProperty("slashAngle1"), new Color(1f, 0.55f, 0.1f, 1f));
+
+        _so.ApplyModifiedProperties();
+    }
+
+    private static void DrawAngleHandle(UnityEditor.SerializedProperty prop, Color color)
+    {
+        if (prop == null) return;
+
+        var sw08Prop = _so.FindProperty("sw08Transform");
+        if (sw08Prop?.objectReferenceValue == null) return;
+        var sw08 = (Transform)sw08Prop.objectReferenceValue;
+
+        Vector3 tipPos = CalcTipWorldPos(sw08, prop.vector3Value);
+        float   size   = UnityEditor.HandleUtility.GetHandleSize(tipPos) * 0.12f;
+
+        UnityEditor.Handles.color = color;
+
+        UnityEditor.EditorGUI.BeginChangeCheck();
+        Vector3 newPos = UnityEditor.Handles.FreeMoveHandle(
+            tipPos, size, Vector3.zero, UnityEditor.Handles.SphereHandleCap);
+
+        if (UnityEditor.EditorGUI.EndChangeCheck())
+            prop.vector3Value = WorldPosToLocalEuler(sw08, newPos);
+    }
+
+    private static Vector3 CalcTipWorldPos(Transform sw08, Vector3 euler)
+    {
+        // 에디터 모드에서는 Y=90°로 고정해 실제 공격 방향과 동일하게 미리 본다.
+        Quaternion parent = Application.isPlaying && sw08.parent != null
+            ? sw08.parent.rotation
+            : Quaternion.Euler(0f, 90f, 0f);
+        return sw08.position + parent * Quaternion.Euler(euler) * GetTipLocalOffset(sw08);
+    }
+
+    private static Vector3 WorldPosToLocalEuler(Transform sw08, Vector3 newTipWorldPos)
+    {
+        Quaternion parent = Application.isPlaying && sw08.parent != null
+            ? sw08.parent.rotation
+            : Quaternion.Euler(0f, 90f, 0f);
+
+        Vector3 localDir = Quaternion.Inverse(parent) * (newTipWorldPos - sw08.position);
+        localDir = localDir.normalized;
+
+        // 오일러 ZXY 역변환: Z = asin(-dir.x), X = atan2(dir.z, dir.y)
+        float zAngle = Mathf.Asin(Mathf.Clamp(-localDir.x, -1f, 1f)) * Mathf.Rad2Deg;
+        float xAngle = Mathf.Atan2(localDir.z, localDir.y) * Mathf.Rad2Deg;
+
+        return new Vector3(xAngle, 0f, zAngle);
+    }
+
+    private static Vector3 GetTipLocalOffset(Transform sw08)
+    {
+        for (int i = 0; i < sw08.childCount; i++)
+        {
+            if (sw08.GetChild(i).name == "SwordTip")
+                return sw08.GetChild(i).localPosition;
+        }
+        return new Vector3(0f, 2.05f, 0.01f);
+    }
+}
+#endif

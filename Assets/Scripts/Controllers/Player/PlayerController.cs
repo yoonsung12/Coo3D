@@ -54,6 +54,11 @@ public class PlayerController : MonoBehaviour
     // 선풍기 차징 중 이동속도를 줄이기 위한 배율 (기본 1.0, 차징 시 0.3)
     private float _speedMultiplier = 1f;
 
+    // 시즌 게이지 디버프(DebuffController)가 제어하는 이동 제한 상태들이다.
+    private bool _isBound;    // 봄 디버프: 이동만 막는다 (점프는 가능).
+    private bool _isReversed; // 가을 디버프: 좌우 입력 방향이 반전된다.
+    private bool _isFrozen;   // 겨울 디버프: 이동과 점프를 모두 막는다.
+
     private InputAction _moveAction;
     private InputAction _jumpAction;
     private Vector2 _moveInput;
@@ -88,6 +93,9 @@ public class PlayerController : MonoBehaviour
 
     private void OnJumpPerformed(InputAction.CallbackContext ctx)
     {
+        // 빙결 디버프 중에는 점프도 막는다.
+        if (_isFrozen) return;
+
         // 접지 상태일 때만 점프할 수 있다.
         if (IsGrounded)
             _verticalVelocity = jumpForce;
@@ -119,8 +127,18 @@ public class PlayerController : MonoBehaviour
 
     private void HandleMove()
     {
+        // 속박/빙결 디버프 중에는 이동 입력을 완전히 무시한다.
+        if (_isBound || _isFrozen)
+        {
+            _moveVelocity = Vector3.zero;
+            return;
+        }
+
+        // 방향 반전 디버프 중에는 좌우 입력 부호를 뒤집는다.
+        float xInput = _isReversed ? -_moveInput.x : _moveInput.x;
+
         // 사이드뷰: 입력 X → 월드 X축 이동만 사용한다. Z축 이동은 없다.
-        Vector3 moveDir = new Vector3(_moveInput.x, 0f, 0f);
+        Vector3 moveDir = new Vector3(xInput, 0f, 0f);
         _moveVelocity = moveDir * (moveSpeed * _speedMultiplier);
     }
 
@@ -203,6 +221,24 @@ public class PlayerController : MonoBehaviour
     public void SetSpeedMultiplier(float multiplier)
     {
         _speedMultiplier = multiplier;
+    }
+
+    // 봄 디버프(속박)에 의해 이동만 막는다. DebuffController가 호출한다.
+    public void SetBound(bool bound)
+    {
+        _isBound = bound;
+    }
+
+    // 가을 디버프(방향 반전)에 의해 좌우 입력을 뒤집는다. DebuffController가 호출한다.
+    public void SetReverse(bool reverse)
+    {
+        _isReversed = reverse;
+    }
+
+    // 겨울 디버프(빙결)에 의해 이동과 점프를 모두 막는다. DebuffController가 호출한다.
+    public void SetFrozen(bool frozen)
+    {
+        _isFrozen = frozen;
     }
 
     // 우산 글라이드 중 최대 낙하 속도를 제한한다.
