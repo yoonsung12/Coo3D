@@ -46,9 +46,17 @@ public class SeasonGaugeManager : MonoBehaviour
     private static float _debuffTimer;
     // 현재 디버프가 발동된 이후 경과 시간(초)이다.
 
+    // Inspector의 debuffDuration(인스턴스 필드) 값을 그대로 캐시해 static 프로퍼티에서 읽을 수 있게 한다.
+    private static float _debuffDuration;
+
+    // 디버프 UI(SeasonGaugeUI)가 남은 시간을 표시할 때 사용하는 읽기 전용 프로퍼티다.
+    public static float DebuffDuration => _debuffDuration;
+    public static float DebuffTimeRemaining => Mathf.Max(0f, _debuffDuration - _debuffTimer);
+
     private void Awake()
     {
         _model = gaugeModel;
+        _debuffDuration = debuffDuration;
 
         // ScriptableObject는 에디터 플레이 세션 사이에 값이 남아있으므로 시작 시 초기화한다.
         _model.ResetAll();

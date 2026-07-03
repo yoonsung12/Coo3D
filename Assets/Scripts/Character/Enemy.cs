@@ -1,9 +1,10 @@
+using System;
 using DG.Tweening;
 using Sirenix.OdinInspector;
 using UnityEngine;
 
 // 기본 적 클래스. CharacterBase를 상속받아 칼 히트박스의 타격 대상이 될 수 있다.
-// 현재는 타격감 확인을 위해 이동 없이 피격 연출과 체력 감소만 처리한다.
+// 체력 관리와 피격/사망 연출을 담당하며, 이동/공격 AI는 NFBTEnemyAI가 별도로 처리한다.
 public class Enemy : CharacterBase
 {
     [Title("체력 설정")]
@@ -14,6 +15,14 @@ public class Enemy : CharacterBase
     [ReadOnly, ShowInInspector, LabelText("현재 체력")]
     private float _currentHealth;
     // Play Mode에서 실시간으로 체력 변화를 확인하기 위한 읽기 전용 표시다.
+
+    [Title("피격 연출 대상")]
+    [SerializeField, LabelText("Visual 자식 오브젝트")]
+    private Transform visualBody;
+    // 피격 진동/플래시/사망 축소 연출을 적용할 자식 오브젝트다.
+    // 루트는 Rigidbody(3D)로 실제 이동 물리를 담당하므로, 루트에 직접 연출을 걸면
+    // 물리 이동과 DOTween 연출이 같은 transform.position을 두고 서로 충돌한다.
+    // Player의 VisualBody 구조와 동일한 이유다.
 
     [Title("피격 연출 설정")]
     [SerializeField, LabelText("피격 플래시 색상")]
@@ -53,12 +62,25 @@ public class Enemy : CharacterBase
     private bool _isDead;
     // 이미 사망 처리된 경우 추가 타격을 무시하기 위한 플래그다.
 
+    // NFBTEnemyAI가 사망 여부를 확인해 죽은 적을 더 이상 추적/공격하지 않게 하기 위한 프로퍼티다.
+    public bool IsDead => _isDead;
+
+    // NFBTEnemyAI가 체력이 낮을 때 후퇴(Evade/Recover)로 전환할지 판단하는 데 사용한다. 0~1 사이 값이다.
+    public float HealthRatio => maxHealth > 0f ? _currentHealth / maxHealth : 0f;
+
+    // 적이 사망한 순간 한 번 발행된다. ItemDropper가 이 이벤트를 구독해 사망 위치에 아이템을 드롭한다.
+    public event Action OnDied;
+
     private void Awake()
     {
-        _meshRenderer = GetComponent<MeshRenderer>();
         _currentHealth = maxHealth;
-        _initialLocalPosition = transform.localPosition;
-        // 진동 연출이 중첩될 때 시작 위치가 밀리지 않도록 초기 위치를 기억한다.
+
+        if (visualBody != null)
+        {
+            _meshRenderer = visualBody.GetComponent<MeshRenderer>();
+            _initialLocalPosition = visualBody.localPosition;
+            // 진동 연출이 중첩될 때 시작 위치가 밀리지 않도록 초기 위치를 기억한다.
+        }
 
         if (_meshRenderer != null)
         {
@@ -81,6 +103,7 @@ public class Enemy : CharacterBase
 
         _currentHealth -= amount;
         _currentHealth = Mathf.Max(_currentHealth, 0f);
+        RaiseDamageTaken(amount);
 
         PlayHitEffect();
 
@@ -90,11 +113,13 @@ public class Enemy : CharacterBase
 
     private void PlayHitEffect()
     {
+        if (visualBody == null) return;
+
         // 연속 타격 시 이전 진동 Tween을 중단하고 시작 위치로 되돌린 뒤 새 진동을 시작한다.
         // Kill() 후 localPosition을 직접 리셋하지 않으면 진동 위치가 점점 밀릴 수 있다.
         _punchTween?.Kill();
-        transform.localPosition = _initialLocalPosition;
-        _punchTween = transform.DOPunchPosition(
+        visualBody.localPosition = _initialLocalPosition;
+        _punchTween = visualBody.DOPunchPosition(
             new Vector3(punchStrength, 0f, 0f),
             punchDuration,
             vibrato: 10,
@@ -121,10 +146,20 @@ public class Enemy : CharacterBase
         _flashTween?.Kill();
         _punchTween?.Kill();
 
-        // 크기가 0으로 줄어드는 연출 후 오브젝트를 비활성화한다.
-        transform.DOScale(Vector3.zero, deathShrinkDuration)
-            .SetEase(Ease.InBack)
-            .OnComplete(() => gameObject.SetActive(false));
+        OnDied?.Invoke();
+
+        // Visual 자식만 크기 0으로 줄이고, 연출이 끝나면 루트 오브젝트를 비활성화한다.
+        // 루트(Rigidbody/Collider)를 직접 줄이면 물리 충돌 형태가 같이 찌그러지므로 자식만 줄인다.
+        if (visualBody != null)
+        {
+            visualBody.DOScale(Vector3.zero, deathShrinkDuration)
+                .SetEase(Ease.InBack)
+                .OnComplete(() => gameObject.SetActive(false));
+        }
+        else
+        {
+            gameObject.SetActive(false);
+        }
     }
 
     [Button("데미지 테스트 (20)")]
@@ -135,8 +170,12 @@ public class Enemy : CharacterBase
     {
         _isDead = false;
         _currentHealth = maxHealth;
-        transform.localScale = Vector3.one;
-        transform.localPosition = _initialLocalPosition;
+
+        if (visualBody != null)
+        {
+            visualBody.localScale = Vector3.one;
+            visualBody.localPosition = _initialLocalPosition;
+        }
 
         if (_meshRenderer != null)
             _meshRenderer.material.SetColor("_BaseColor", _originalColor);

@@ -99,6 +99,9 @@ public class SwordAttack : MonoBehaviour
     [ReadOnly, ShowInInspector, LabelText("공격 중")]
     private bool _isAttacking;
 
+    // NFBTEnemyAI의 Counter(반격) 분기가 Player의 공격 시작/종료 타이밍을 읽기 위해 사용하는 프로퍼티다.
+    public bool IsAttacking => _isAttacking;
+
     // 0 = 아래→위 (Swing 0), 1 = 위→아래 (Swing 1)
     // 공격키를 누를 때마다 즉시 전환된다.
     private int _nextSwingIndex = 0;
