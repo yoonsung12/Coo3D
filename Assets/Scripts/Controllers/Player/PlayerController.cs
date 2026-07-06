@@ -114,6 +114,7 @@ public class PlayerController : MonoBehaviour
         HandleFacing();
         ApplyGravity();
         ApplyFallSpeedLimit();
+        ApplyWindVertical();
         DecayRecoil();
 
         // 수평 속도 성분을 합산하고 수직 속도를 Y에 적용해 최종 이동한다.
@@ -262,5 +263,14 @@ public class PlayerController : MonoBehaviour
         // 우산이 열려 있을 때 수직 낙하 속도가 최대값을 초과하지 않도록 제한한다.
         if (_hasFallSpeedLimit && _verticalVelocity < _maxFallSpeed)
             _verticalVelocity = _maxFallSpeed;
+    }
+
+    private void ApplyWindVertical()
+    {
+        // WindZone의 바람 방향에 위쪽 성분이 있으면 수직 속도에 직접 반영한다.
+        // _windVelocity는 horizontal 합산에도 쓰이지만(X/Z), Y 성분은 그쪽에서 버려지므로
+        // 여기서 별도로 _verticalVelocity에 덮어써야 "위로 부는 바람"이 실제로 작동한다.
+        if (_windVelocity.y != 0f)
+            _verticalVelocity = _windVelocity.y;
     }
 }
