@@ -7,7 +7,7 @@ using UnityEngine;
 // 수직 성분이 우세한 방향이면 접지 여부와 무관하게, 수평 성분이 우세하면
 // 공중에서만 작동한다 (Update()의 힘 적용 판정 참고).
 [RequireComponent(typeof(Collider))]
-public class WindZone : MonoBehaviour
+public class WindZoneVolume : MonoBehaviour
 {
     public enum WindMode { Constant, Intermittent }
 
@@ -150,7 +150,10 @@ public class WindZone : MonoBehaviour
         if (_playerInZone == null) return;
 
         bool umbrellaOpen = _umbrellaInZone != null && _umbrellaInZone.IsOpen;
-        bool canApply = _isActive && umbrellaOpen
+        // _isActive 대신 _strengthMultiplier로 판정해야, 간헐풍이 꺼지는 순간에도
+        // 세기가 0으로 줄어드는 동안은 힘이 서서히 약해지며 실제로 페이드아웃된다.
+        // (_isActive만으로 판정하면 꺼지는 즉시 힘이 뚝 끊겨 세기 트윈이 무의미해진다.)
+        bool canApply = _strengthMultiplier > 0.001f && umbrellaOpen
             && (IsVerticalDominant || !_playerInZone.IsGrounded);
 
         if (canApply)
