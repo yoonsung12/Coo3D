@@ -1,3 +1,5 @@
+using System.Collections;
+using DG.Tweening;
 using Sirenix.OdinInspector;
 using UnityEngine;
 
@@ -23,11 +25,29 @@ public class WindZone : MonoBehaviour
     [SerializeField, LabelText("바람 모드")]
     private WindMode windMode = WindMode.Constant;
 
+    [SerializeField, LabelText("바람 부는 시간"), ShowIf("windMode", WindMode.Intermittent)]
+    private float onDuration = 2f;
+    // 간헐풍이 켜져 있는 지속 시간(초)이다.
+
+    [SerializeField, LabelText("바람 멈추는 시간"), ShowIf("windMode", WindMode.Intermittent)]
+    private float offDuration = 2f;
+    // 간헐풍이 꺼져 있는 지속 시간(초)이다.
+
+    [SerializeField, LabelText("전환 페이드 시간")]
+    private float fadeDuration = 0.4f;
+    // On/Off 전환 시 바람 세기가 부드럽게 바뀌는 데 걸리는 시간이다.
+
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("존 안의 플레이어")]
     private PlayerController _playerInZone;
 
+    [ReadOnly, ShowInInspector, LabelText("현재 활성 여부")]
+    private bool _isActive = true;
+
     private Collider _collider;
+    private float _strengthMultiplier = 1f;
+    private Tween _fadeTween;
+    private Coroutine _cycleRoutine;
 
     // 수직 성분이 수평 성분보다 크면 수직풍으로 취급한다.
     // 수직풍은 지상에서 우산을 펼치기만 해도 작동해야 "위로 슈웅" 이동이 가능하기 때문이다.
@@ -39,6 +59,60 @@ public class WindZone : MonoBehaviour
         // 플레이어가 그냥 통과해야 하므로 트리거로 강제한다.
         _collider.isTrigger = true;
     }
+
+    private void OnEnable()
+    {
+        if (windMode == WindMode.Intermittent)
+            _cycleRoutine = StartCoroutine(IntermittentCycle());
+        else
+            SetActive(true);
+    }
+
+    private void OnDisable()
+    {
+        if (_cycleRoutine != null)
+        {
+            StopCoroutine(_cycleRoutine);
+            _cycleRoutine = null;
+        }
+
+        _playerInZone = null;
+    }
+
+    private void OnDestroy()
+    {
+        _fadeTween?.Kill();
+    }
+
+    private IEnumerator IntermittentCycle()
+    {
+        while (true)
+        {
+            SetActive(true);
+            yield return new WaitForSeconds(onDuration);
+
+            SetActive(false);
+            yield return new WaitForSeconds(offDuration);
+        }
+    }
+
+    // 바람의 On/Off 상태를 바꾸고, 세기를 fadeDuration 동안 부드럽게 전환한다.
+    private void SetActive(bool active)
+    {
+        _isActive = active;
+
+        _fadeTween?.Kill();
+        float targetMultiplier = active ? 1f : 0f;
+        _fadeTween = DOTween.To(
+            () => _strengthMultiplier,
+            x => _strengthMultiplier = x,
+            targetMultiplier,
+            fadeDuration
+        );
+    }
+
+    [Button("강제 On/Off 토글 테스트")]
+    private void TestToggle() => SetActive(!_isActive);
 
     private void OnTriggerEnter(Collider other)
     {
