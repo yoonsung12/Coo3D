@@ -47,6 +47,10 @@ public class WindZone : MonoBehaviour
     // Inspector에서 이 WindZone 오브젝트의 AudioSource를 연결한다. 3D 스페이셜로 설정해야
     // 존에 가까울수록 크게, 멀수록 작게 들린다.
 
+    [SerializeField, LabelText("바람 파티클")]
+    private ParticleSystem windEffect;
+    // Inspector에서 바람 파티클을 연결한다. 비워두면 파티클 없이 동작한다.
+
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("존 안의 플레이어")]
     private PlayerController _playerInZone;
@@ -71,6 +75,13 @@ public class WindZone : MonoBehaviour
         _collider = GetComponent<Collider>();
         // 플레이어가 그냥 통과해야 하므로 트리거로 강제한다.
         _collider.isTrigger = true;
+
+        if (windEffect != null)
+        {
+            // 파티클이 바람 방향을 바라보도록 회전시켜 흩날리는 모양이 방향과 일치하게 한다.
+            Vector3 dir = windDirection.sqrMagnitude > 0.001f ? windDirection.normalized : Vector3.right;
+            windEffect.transform.rotation = Quaternion.LookRotation(dir);
+        }
     }
 
     private void OnEnable()
@@ -164,6 +175,9 @@ public class WindZone : MonoBehaviour
 
     private void PlayEffects()
     {
+        if (windEffect != null && !windEffect.isPlaying)
+            windEffect.Play();
+
         if (audioSource == null || windSound == null) return;
 
         _audioFadeTween?.Kill();
@@ -181,6 +195,9 @@ public class WindZone : MonoBehaviour
 
     private void StopEffects()
     {
+        if (windEffect != null)
+            windEffect.Stop();
+
         if (audioSource == null) return;
 
         _audioFadeTween?.Kill();
