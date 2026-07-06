@@ -37,6 +37,16 @@ public class WindZone : MonoBehaviour
     private float fadeDuration = 0.4f;
     // On/Off 전환 시 바람 세기가 부드럽게 바뀌는 데 걸리는 시간이다.
 
+    [Title("연출 설정")]
+    [SerializeField, LabelText("바람 소리")]
+    private AudioClip windSound;
+    // Inspector에서 바람 소리 클립을 연결한다. 비워두면 소리 없이 동작한다.
+
+    [SerializeField, LabelText("오디오 소스")]
+    private AudioSource audioSource;
+    // Inspector에서 이 WindZone 오브젝트의 AudioSource를 연결한다. 3D 스페이셜로 설정해야
+    // 존에 가까울수록 크게, 멀수록 작게 들린다.
+
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("존 안의 플레이어")]
     private PlayerController _playerInZone;
@@ -77,10 +87,10 @@ public class WindZone : MonoBehaviour
             _cycleRoutine = null;
         }
 
-        // 오브젝트가 비활성화되는 동안 바람이 낀 채로 남지 않도록 방어적으로 해제한다.
         _playerInZone?.ClearWindZone();
         _playerInZone = null;
         _umbrellaInZone = null;
+        StopEffects();
     }
 
     private void OnDestroy()
@@ -113,6 +123,9 @@ public class WindZone : MonoBehaviour
             targetMultiplier,
             fadeDuration
         );
+
+        if (audioSource != null)
+            audioSource.DOFade(active ? 1f : 0f, fadeDuration);
     }
 
     [Button("강제 On/Off 토글 테스트")]
@@ -123,7 +136,6 @@ public class WindZone : MonoBehaviour
         if (_playerInZone == null) return;
 
         bool umbrellaOpen = _umbrellaInZone != null && _umbrellaInZone.IsOpen;
-        // 수직풍은 접지 여부와 무관하게, 수평풍은 공중에서만 작동한다.
         bool canApply = _isActive && umbrellaOpen
             && (IsVerticalDominant || !_playerInZone.IsGrounded);
 
@@ -131,11 +143,31 @@ public class WindZone : MonoBehaviour
         {
             Vector3 velocity = windDirection.normalized * (windStrength * _strengthMultiplier);
             _playerInZone.SetWindZone(velocity);
+            PlayEffects();
         }
         else
         {
             _playerInZone.ClearWindZone();
+            StopEffects();
         }
+    }
+
+    private void PlayEffects()
+    {
+        if (audioSource == null || windSound == null) return;
+
+        if (!audioSource.isPlaying)
+        {
+            audioSource.clip = windSound;
+            audioSource.loop = true;
+            audioSource.Play();
+        }
+    }
+
+    private void StopEffects()
+    {
+        if (audioSource != null)
+            audioSource.Stop();
     }
 
     private void OnTriggerEnter(Collider other)
@@ -158,6 +190,7 @@ public class WindZone : MonoBehaviour
         _playerInZone.ClearWindZone();
         _playerInZone = null;
         _umbrellaInZone = null;
+        StopEffects();
     }
 
 #if UNITY_EDITOR
