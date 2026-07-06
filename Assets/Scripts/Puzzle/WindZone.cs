@@ -40,6 +40,7 @@ public class WindZone : MonoBehaviour
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("존 안의 플레이어")]
     private PlayerController _playerInZone;
+    private UmbrellaTool _umbrellaInZone;
 
     [ReadOnly, ShowInInspector, LabelText("현재 활성 여부")]
     private bool _isActive = true;
@@ -76,7 +77,10 @@ public class WindZone : MonoBehaviour
             _cycleRoutine = null;
         }
 
+        // 오브젝트가 비활성화되는 동안 바람이 낀 채로 남지 않도록 방어적으로 해제한다.
+        _playerInZone?.ClearWindZone();
         _playerInZone = null;
+        _umbrellaInZone = null;
     }
 
     private void OnDestroy()
@@ -114,19 +118,46 @@ public class WindZone : MonoBehaviour
     [Button("강제 On/Off 토글 테스트")]
     private void TestToggle() => SetActive(!_isActive);
 
+    private void Update()
+    {
+        if (_playerInZone == null) return;
+
+        bool umbrellaOpen = _umbrellaInZone != null && _umbrellaInZone.IsOpen;
+        // 수직풍은 접지 여부와 무관하게, 수평풍은 공중에서만 작동한다.
+        bool canApply = _isActive && umbrellaOpen
+            && (IsVerticalDominant || !_playerInZone.IsGrounded);
+
+        if (canApply)
+        {
+            Vector3 velocity = windDirection.normalized * (windStrength * _strengthMultiplier);
+            _playerInZone.SetWindZone(velocity);
+        }
+        else
+        {
+            _playerInZone.ClearWindZone();
+        }
+    }
+
     private void OnTriggerEnter(Collider other)
     {
         PlayerController player = other.GetComponent<PlayerController>();
         if (player == null) return;
 
         _playerInZone = player;
+        // FanTool/UmbrellaTool의 기존 참조 탐색 방식과 동일하게, 자식에서 못 찾으면
+        // 씬 전체에서 하나 찾는다 (도구가 플레이어와 분리된 오브젝트에 있을 수도 있어서).
+        _umbrellaInZone = player.GetComponentInChildren<UmbrellaTool>();
+        if (_umbrellaInZone == null)
+            _umbrellaInZone = FindFirstObjectByType<UmbrellaTool>();
     }
 
     private void OnTriggerExit(Collider other)
     {
         if (other.GetComponent<PlayerController>() != _playerInZone) return;
 
+        _playerInZone.ClearWindZone();
         _playerInZone = null;
+        _umbrellaInZone = null;
     }
 
 #if UNITY_EDITOR
