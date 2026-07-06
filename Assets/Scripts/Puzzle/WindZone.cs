@@ -5,7 +5,7 @@ using UnityEngine;
 
 // 우산을 펼친 플레이어를 밀거나 띄우는 바람 구역이다.
 // 수직 성분이 우세한 방향이면 접지 여부와 무관하게, 수평 성분이 우세하면
-// 공중에서만 작동한다 (구체적인 힘 적용 판정은 다음 태스크에서 추가한다).
+// 공중에서만 작동한다 (Update()의 힘 적용 판정 참고).
 [RequireComponent(typeof(Collider))]
 public class WindZone : MonoBehaviour
 {
