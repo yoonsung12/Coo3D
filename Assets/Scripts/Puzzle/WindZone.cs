@@ -58,7 +58,9 @@ public class WindZone : MonoBehaviour
     private Collider _collider;
     private float _strengthMultiplier = 1f;
     private Tween _fadeTween;
+    private Tween _audioFadeTween;
     private Coroutine _cycleRoutine;
+    private bool _wasApplying;
 
     // 수직 성분이 수평 성분보다 크면 수직풍으로 취급한다.
     // 수직풍은 지상에서 우산을 펼치기만 해도 작동해야 "위로 슈웅" 이동이 가능하기 때문이다.
@@ -91,11 +93,15 @@ public class WindZone : MonoBehaviour
         _playerInZone = null;
         _umbrellaInZone = null;
         StopEffects();
+        // Update()의 edge 판정용 플래그도 같이 초기화해야, 다시 활성화된 뒤 canApply가
+        // 곧바로 true가 되어도 PlayEffects()가 정상적으로 다시 호출된다.
+        _wasApplying = false;
     }
 
     private void OnDestroy()
     {
         _fadeTween?.Kill();
+        _audioFadeTween?.Kill();
     }
 
     private IEnumerator IntermittentCycle()
@@ -123,9 +129,6 @@ public class WindZone : MonoBehaviour
             targetMultiplier,
             fadeDuration
         );
-
-        if (audioSource != null)
-            audioSource.DOFade(active ? 1f : 0f, fadeDuration);
     }
 
     [Button("강제 On/Off 토글 테스트")]
@@ -143,31 +146,50 @@ public class WindZone : MonoBehaviour
         {
             Vector3 velocity = windDirection.normalized * (windStrength * _strengthMultiplier);
             _playerInZone.SetWindZone(velocity);
-            PlayEffects();
         }
         else
         {
             _playerInZone.ClearWindZone();
-            StopEffects();
         }
+
+        // 매 프레임이 아니라 canApply가 바뀌는 경계에서만 재생/정지를 트리거해야
+        // StopEffects()의 페이드아웃 트윈이 매 프레임 다시 시작되며 끊기지 않는다.
+        if (canApply && !_wasApplying)
+            PlayEffects();
+        else if (!canApply && _wasApplying)
+            StopEffects();
+
+        _wasApplying = canApply;
     }
 
     private void PlayEffects()
     {
         if (audioSource == null || windSound == null) return;
 
+        _audioFadeTween?.Kill();
+
         if (!audioSource.isPlaying)
         {
             audioSource.clip = windSound;
             audioSource.loop = true;
+            audioSource.volume = 0f;
             audioSource.Play();
         }
+
+        _audioFadeTween = audioSource.DOFade(1f, fadeDuration);
     }
 
     private void StopEffects()
     {
-        if (audioSource != null)
-            audioSource.Stop();
+        if (audioSource == null) return;
+
+        _audioFadeTween?.Kill();
+        _audioFadeTween = audioSource.DOFade(0f, fadeDuration)
+            .OnComplete(() =>
+            {
+                if (audioSource != null)
+                    audioSource.Stop();
+            });
     }
 
     private void OnTriggerEnter(Collider other)
@@ -191,6 +213,9 @@ public class WindZone : MonoBehaviour
         _playerInZone = null;
         _umbrellaInZone = null;
         StopEffects();
+        // 존을 벗어난 뒤 다시 들어왔을 때도 PlayEffects()가 정상적으로 재생되도록
+        // edge 판정용 플래그를 초기화한다.
+        _wasApplying = false;
     }
 
 #if UNITY_EDITOR
