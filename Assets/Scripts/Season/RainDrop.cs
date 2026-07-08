@@ -36,10 +36,12 @@ public class RainDrop : BaseHazard
 
     private void OnTriggerEnter(Collider other)
     {
-        if (other.GetComponent<PlayerController>() != null)
-        {
-            AddGauge(); // BaseHazard의 게이지 추가 메서드를 호출한다.
-            Destroy(gameObject);
-        }
+        PlayerController player = other.GetComponent<PlayerController>();
+        if (player == null) return;
+
+        if (TryBlockByUmbrella(player)) return; // 우산에 막힘: 게이지 증가 없이 사라짐
+
+        AddGauge(); // BaseHazard의 게이지 추가 메서드를 호출한다.
+        Destroy(gameObject);
     }
 }

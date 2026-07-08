@@ -1,3 +1,4 @@
+using DG.Tweening;
 using Sirenix.OdinInspector;
 using UnityEngine;
 
@@ -25,10 +26,22 @@ public abstract class BaseHazard : MonoBehaviour
     // 이 Y 좌표 아래로 내려가면 자동으로 파괴된다.
     // 낭떠러지 아래로 떨어진 낙하물이 씬에 무한히 쌓이는 것을 방지한다.
 
+    [Title("우산 차단 설정")]
+    [SerializeField, LabelText("차단 시 축소 시간")]
+    private float blockedShrinkDuration = 0.2f;
+    // 우산에 막혔을 때 낙하물이 줄어들며 사라지는 데 걸리는 시간이다.
+
+    private Tween _blockTween;
+
     protected virtual void Update()
     {
         if (transform.position.y < destroyBelowY)
             Destroy(gameObject);
+    }
+
+    protected virtual void OnDestroy()
+    {
+        _blockTween?.Kill();
     }
 
     // 이 오브젝트의 위치를 중심으로 ±spawnHalfWidth 범위 내 랜덤 위치를 반환한다.
@@ -46,6 +59,25 @@ public abstract class BaseHazard : MonoBehaviour
     protected void AddGauge()
     {
         SeasonGaugeManager.AddGauge(seasonType, gaugeSlots);
+    }
+
+    // 우산이 펼쳐진 플레이어와 부딪히면 게이지 증가 없이 축소되며 사라진다.
+    // 반환값이 true이면 호출부에서 게이지 증가 로직을 건너뛰어야 한다.
+    protected bool TryBlockByUmbrella(PlayerController player)
+    {
+        // WindZoneVolume이 우산을 찾는 방식과 동일하게, 자식에서 못 찾으면 씬 전체에서 하나 찾는다.
+        UmbrellaTool umbrella = player.GetComponentInChildren<UmbrellaTool>();
+        if (umbrella == null)
+            umbrella = FindFirstObjectByType<UmbrellaTool>();
+
+        if (umbrella == null || !umbrella.IsOpen)
+            return false;
+
+        _blockTween = transform.DOScale(Vector3.zero, blockedShrinkDuration)
+            .SetEase(Ease.InBack)
+            .OnComplete(() => Destroy(gameObject));
+
+        return true;
     }
 
 #if UNITY_EDITOR
