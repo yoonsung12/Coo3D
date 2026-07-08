@@ -79,8 +79,9 @@ public class Pollen : BaseHazard, IBlowable
         // 여러 꽃가루가 같은 주기로 흔들리지 않도록 개체마다 다른 위상을 준다.
     }
 
-    private void OnDestroy()
+    protected override void OnDestroy()
     {
+        base.OnDestroy();
         _blowTween?.Kill();
     }
 
@@ -120,11 +121,13 @@ public class Pollen : BaseHazard, IBlowable
     // 플레이어와 접촉 시 봄 게이지를 올리기 위해 트리거 콜백을 사용한다.
     private void OnTriggerEnter(Collider other)
     {
-        if (other.GetComponent<PlayerController>() != null)
-        {
-            AddGauge(); // BaseHazard의 게이지 추가 메서드를 호출한다.
-            Destroy(gameObject);
-        }
+        PlayerController player = other.GetComponent<PlayerController>();
+        if (player == null) return;
+
+        if (TryBlockByUmbrella(player)) return; // 우산에 막힘: 게이지 증가 없이 사라짐
+
+        AddGauge(); // BaseHazard의 게이지 추가 메서드를 호출한다.
+        Destroy(gameObject);
     }
 
     private IEnumerator BlownAwayRoutine()
