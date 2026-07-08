@@ -96,8 +96,9 @@ public class LeafDrop : BaseHazard, IBlowable
         // 여러 은행잎이 같은 주기로 흔들리지 않도록 개체마다 다른 위상을 준다.
     }
 
-    private void OnDestroy()
+    protected override void OnDestroy()
     {
+        base.OnDestroy();
         _blowTween?.Kill();
     }
 
@@ -150,16 +151,20 @@ public class LeafDrop : BaseHazard, IBlowable
     }
 
     // 플레이어와 접촉하면 즉시 가을 게이지를 올리고, 그 자리에 냄새를 남긴 채 터진다.
+    // 단, 착지 전(공중에서 떨어지는 중)에 우산을 펼친 플레이어와 부딪히면 우산에 막혀 사라진다.
+    // 이미 바닥에 착지한 은행잎은 우산으로 막을 수 없다 — 밟으면 기존처럼 그대로 터진다.
     private void OnTriggerEnter(Collider other)
     {
         if (_hasBurst) return;
 
-        if (other.GetComponent<PlayerController>() != null)
-        {
-            _hasBurst = true;
-            AddGauge(); // BaseHazard의 게이지 추가 메서드를 호출한다. 접촉 즉시 1회 오른다.
-            Burst();
-        }
+        PlayerController player = other.GetComponent<PlayerController>();
+        if (player == null) return;
+
+        if (!_isLanded && TryBlockByUmbrella(player)) return; // 공중에서만 우산 차단 적용
+
+        _hasBurst = true;
+        AddGauge(); // BaseHazard의 게이지 추가 메서드를 호출한다. 접촉 즉시 1회 오른다.
+        Burst();
     }
 
     // 냄새 프리팹을 남기고 은행잎 자신은 축소+페이드 연출 후 사라진다.
