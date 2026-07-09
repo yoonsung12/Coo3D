@@ -2,7 +2,8 @@ using Sirenix.OdinInspector;
 using UnityEngine;
 
 // 여름 계절 낙하물인 빗방울이다. 대각선으로 떨어지며 Player에 닿으면 여름 게이지를 올린다.
-// 이 프로젝트에는 아직 수위(WaterArea) 시스템이 없어서, 바닥 충돌 대신 BaseHazard의
+// WaterArea(물 웅덩이) 구역의 현재 수위에 닿으면 그 수위를 올리고 사라진다.
+// WaterArea가 없는 곳에 떨어진 빗방울은 기존처럼 BaseHazard의
 // "Y 좌표 아래로 내려가면 자동 파괴" 로직으로 정리된다.
 [RequireComponent(typeof(Rigidbody), typeof(Collider))]
 public class RainDrop : BaseHazard
@@ -36,6 +37,14 @@ public class RainDrop : BaseHazard
 
     private void OnTriggerEnter(Collider other)
     {
+        WaterArea waterArea = other.GetComponent<WaterArea>();
+        if (waterArea != null)
+        {
+            waterArea.OnRainDropHit();
+            Destroy(gameObject);
+            return;
+        }
+
         PlayerController player = other.GetComponent<PlayerController>();
         if (player == null) return;
 
