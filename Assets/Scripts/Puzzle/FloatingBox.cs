@@ -44,6 +44,15 @@ public class FloatingBox : MonoBehaviour
             rideTrigger.isTrigger = true;
     }
 
+    private void OnDisable()
+    {
+        // 상자가 비활성화/파괴될 때 OnTriggerExit가 호출되지 않을 수 있으므로,
+        // 여기서 직접 플레이어의 발판 속도를 정리해 탑승 중이던 플레이어가
+        // 허공에 붕 뜬 채로 갇히는 것을 방지한다 (WindZoneVolume.OnDisable()과 동일한 패턴).
+        _riderInTrigger?.ClearPlatformVelocity();
+        _riderInTrigger = null;
+    }
+
     private void OnDestroy()
     {
         _bounceTween?.Kill();
