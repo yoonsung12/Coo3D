@@ -49,6 +49,8 @@ public class PlayerController : MonoBehaviour
     private Vector3 _recoilVelocity;
     private Vector3 _blastVelocity;
     private Vector3 _windVelocity;
+    private Vector3 _platformVelocity;
+    // FloatingBox 위에 올라탔을 때 그 발판의 상승/하강 속도를 담는다 (Y 성분만 사용).
     private float _verticalVelocity;
 
     // 선풍기 차징 중 이동속도를 줄이기 위한 배율 (기본 1.0, 차징 시 0.3)
@@ -115,6 +117,7 @@ public class PlayerController : MonoBehaviour
         ApplyGravity();
         ApplyFallSpeedLimit();
         ApplyWindVertical();
+        ApplyPlatformVertical();
         DecayRecoil();
 
         // 수평 속도 성분을 합산하고 수직 속도를 Y에 적용해 최종 이동한다.
@@ -218,6 +221,18 @@ public class PlayerController : MonoBehaviour
         _windVelocity = Vector3.zero;
     }
 
+    // FloatingBox 위에 올라탔을 때 그 발판의 상승/하강 속도를 설정한다.
+    public void SetPlatformVelocity(Vector3 velocity)
+    {
+        _platformVelocity = velocity;
+    }
+
+    // FloatingBox에서 벗어났을 때 발판 속도를 초기화한다.
+    public void ClearPlatformVelocity()
+    {
+        _platformVelocity = Vector3.zero;
+    }
+
     // 선풍기 차징 중 이동속도를 제한하기 위한 배율을 설정한다.
     public void SetSpeedMultiplier(float multiplier)
     {
@@ -272,5 +287,13 @@ public class PlayerController : MonoBehaviour
         // 여기서 별도로 _verticalVelocity에 덮어써야 "위로 부는 바람"이 실제로 작동한다.
         if (_windVelocity.y != 0f)
             _verticalVelocity = _windVelocity.y;
+    }
+
+    private void ApplyPlatformVertical()
+    {
+        // 뜨는 상자 위에 있는 동안은 상자의 상승/하강 속도를 그대로 수직 속도에 반영해
+        // 플레이어가 상자와 함께 오르내리게 한다.
+        if (_platformVelocity.y != 0f)
+            _verticalVelocity = _platformVelocity.y;
     }
 }
