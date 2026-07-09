@@ -4,9 +4,9 @@
 
 ## Project Overview
 
-이 프로젝트는 기존에 2D로 진행되던 프로젝트를 3D(쿼터뷰 / 탑다운 시점)로 전환하여 개발하는 Unity 게임 프로젝트다.
+이 프로젝트는 기존에 2D로 진행되던 프로젝트를 3D 사이드뷰(2.5D, 3D Mesh + 옆에서 보는 카메라)로 전환하여 개발하는 Unity 게임 프로젝트다.
 
-시점은 쿼터뷰/탑다운 3D이며, 벽점프 등 2D 전용 기믹은 더 이상 사용하지 않는다.
+시점은 3D 사이드뷰(2.5D)이며, 벽점프 등 2D 전용 기믹은 더 이상 사용하지 않는다.
 
 사용 환경:
 
@@ -27,17 +27,17 @@
 
 ## 2D → 3D 전환 기준
 
-이 프로젝트는 2D에서 3D(쿼터뷰/탑다운)로 전환 중이다. 전환 작업을 할 때는 아래 대응 관계를 기준으로 판단한다.
+이 프로젝트는 2D에서 3D 사이드뷰(2.5D)로 전환 중이다. 전환 작업을 할 때는 아래 대응 관계를 기준으로 판단한다.
 
 | 2D (기존) | 3D (전환 후) |
 |---|---|
 | Rigidbody2D | CharacterController 또는 Rigidbody(3D) — 상황별로 선택 |
 | Collider2D (BoxCollider2D 등) | Collider(3D) (BoxCollider, CapsuleCollider 등) |
-| Vector2 이동/방향 계산 | Vector3 이동/방향 계산 (필요 시 Y축 고정) |
+| Vector2 이동/방향 계산 | Vector3 이동/방향 계산 (X: 좌우, Y: 상하 이동, 필요 시 Z축 고정) |
 | SpriteRenderer | MeshRenderer / Prefab(3D Mesh) |
 | Tilemap | 3D Mesh 지형, ProBuilder, 또는 외부 제작 후 임포트 |
 | 2D Light | 일반 3D Light (Directional, Point, Spot) |
-| Sorting Layer | 일반적인 3D 렌더링 순서, 필요 시 카메라/Y축 높이로 제어 |
+| Sorting Layer | 일반적인 3D 렌더링 순서, 필요 시 카메라/Z축 깊이로 제어 |
 | 벽점프 (반대편으로 튕기는 점프) | 사용하지 않음 (제거 대상) |
 
 캐릭터(플레이어, 적)의 실제 이동 방식은 아직 CharacterController와 Rigidbody(3D) 중 확정하지 않았으므로, 상황에 따라 유연하게 선택한다. 다만 다음 기준을 참고한다.
@@ -190,7 +190,7 @@ public class DoorTweenExample : MonoBehaviour
             .DORotate(new Vector3(0f, openAngle, 0f), duration)
             .SetEase(Ease.OutQuad);
         // DOTween을 사용해 문이 자연스럽게 열리는 회전 연출을 만든다.
-        // 3D에서는 보통 Y축(위에서 내려다보는 회전축)을 기준으로 회전시킨다.
+        // 문 힌지는 보통 Y축(세로축)을 기준으로 회전시킨다.
     }
 }
 ```
@@ -379,9 +379,9 @@ private CharacterController characterController;
 // 플레이어의 이동과 충돌을 처리하기 위한 CharacterController 컴포넌트다.
 // 직접 transform.position을 바꾸는 대신 Move()를 통해 충돌이 반영된 이동을 하기 위해 사용한다.
 
-Vector3 moveDirection = new Vector3(inputDirection.x, 0f, inputDirection.y) * moveSpeed;
-// 쿼터뷰/탑다운이므로 입력의 x, y를 각각 x, z축 이동으로 사용하고 y축(높이)은 그대로 유지한다.
-// 이렇게 하면 캐릭터가 평면 위에서만 이동하고 임의로 떠오르거나 가라앉지 않는다.
+Vector3 moveDirection = new Vector3(inputDirection.x, inputDirection.y, 0f) * moveSpeed;
+// 사이드뷰이므로 입력의 x, y를 각각 x, y축 이동으로 사용하고 z축(깊이)은 그대로 유지한다.
+// 이렇게 하면 캐릭터가 좌우/상하로만 이동하고 임의로 앞뒤로 벗어나지 않는다.
 ```
 
 피해야 할 주석 예시:
@@ -418,14 +418,14 @@ count++;
 * DOTween으로 CharacterController나 Rigidbody 오브젝트를 움직일 경우 충돌/물리 처리와 충돌할 수 있으므로 먼저 설명한다.
 * FixedUpdate를 사용해야 하는 경우(Rigidbody 물리 연산)와 Update를 사용해야 하는 경우(CharacterController, 입력 처리)를 구분한다.
 * Time.deltaTime을 사용할 때는 왜 필요한지 설명한다.
-* 이동/방향 계산은 기본적으로 Vector3 기준으로 작성하며, 평면 이동만 필요한 경우에는 Y축을 고정하거나 별도로 처리하는 이유를 설명한다.
+* 이동/방향 계산은 기본적으로 Vector3 기준으로 작성하며, 평면 이동만 필요한 경우에는 Z축을 고정하거나 별도로 처리하는 이유를 설명한다.
 * 적 AI의 추적/이동에 NavMeshAgent를 사용할지, 단순 추적 로직(Transform 기반)을 사용할지는 상황에 따라 다르므로, 작업 전에 어떤 방식이 적합한지 먼저 판단하고 설명한다.
 
 ---
 
 ## URP / 3D 렌더링 규칙
 
-이 프로젝트는 URP를 사용하며, 3D(쿼터뷰/탑다운) 렌더링을 기준으로 한다.
+이 프로젝트는 URP를 사용하며, 3D 사이드뷰(2.5D) 렌더링을 기준으로 한다.
 
 * Built-in Render Pipeline 전용 Shader를 사용하지 않는다.
 * 새 Material을 만들 때는 URP 호환 Shader를 사용한다.
@@ -635,7 +635,7 @@ Odin 적용:
 * New Input System 입력이 정상적으로 연결되는지 확인
 * CharacterController 또는 Rigidbody(3D) 충돌/이동이 의도대로 작동하는지 확인
 * 3D 환경(지형, Mesh 충돌)에서 캐릭터가 끼이거나 통과하지 않는지 확인
-* 카메라가 쿼터뷰/탑다운 시점을 정상적으로 따라가는지 확인
+* 카메라가 사이드뷰(2.5D) 시점을 정상적으로 따라가는지 확인
 
 테스트가 필요한 경우 Unity Test Runner 사용을 고려한다.
 
@@ -686,4 +686,4 @@ Claude는 작업할 때 다음 순서를 따른다.
 
 ## 한 줄 요약
 
-이 프로젝트는 2D에서 3D(쿼터뷰/탑다운)로 전환 중인 Unity 게임이며, 기존 구조와 로직을 최대한 유지한 채 물리/렌더링/에셋만 3D 기준으로 옮기고, DOTween Pro는 연출 개선에, Odin Inspector는 Inspector 정리와 테스트 편의성 향상에 사용한다.
+이 프로젝트는 2D에서 3D 사이드뷰(2.5D)로 전환 중인 Unity 게임이며, 기존 구조와 로직을 최대한 유지한 채 물리/렌더링/에셋만 3D 기준으로 옮기고, DOTween Pro는 연출 개선에, Odin Inspector는 Inspector 정리와 테스트 편의성 향상에 사용한다.
