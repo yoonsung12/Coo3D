@@ -8,6 +8,12 @@ using UnityEngine;
 [RequireComponent(typeof(BoxCollider))]
 public class WaterArea : MonoBehaviour
 {
+    [Title("물 표면 시각화")]
+    [SerializeField, LabelText("물 표면 오브젝트")]
+    private Transform waterSurfaceVisual;
+    // 실제로 눈에 보이는 물 표면 역할을 하는 Quad/Cube를 연결한다.
+    // 콜라이더(트리거)는 판정용이라 렌더러가 없으므로, 이 오브젝트가 없으면 Play Mode에서 물이 안 보이고 상자만 떠오르는 것처럼 보인다.
+
     [Title("수위 설정")]
     [SerializeField, LabelText("빗방울 1개당 상승량")]
     private float risePerDrop = 0.05f;
@@ -34,6 +40,10 @@ public class WaterArea : MonoBehaviour
     private float _baseColliderCenterY;
     private float _baseSurfaceY;
     private float _lastFilledTime = -999f;
+    private Vector3 _visualBaseScale;
+    // waterSurfaceVisual의 가로/깊이(X, Z) 원본 크기를 기억해둔다.
+    // 세로(Y) 크기만 매 프레임 수위에 맞춰 바꿀 때, 가로/깊이는 처음 설정값을 그대로 유지하기 위해 필요하다.
+
 
     // FloatingBox가 참조하는 현재 물 표면의 월드 Y 좌표다.
     public float CurrentWaterY => _baseSurfaceY + _currentOffset;
@@ -48,12 +58,17 @@ public class WaterArea : MonoBehaviour
         _baseColliderCenterY = _collider.center.y;
         // 콜라이더 윗면의 원래 월드 Y 좌표를 기준 수위로 저장한다. 수위는 여기서부터 오른다.
         _baseSurfaceY = transform.position.y + _baseColliderCenterY + (_baseColliderHeight * 0.5f);
+
+        if (waterSurfaceVisual != null)
+            _visualBaseScale = waterSurfaceVisual.localScale;
+        // 물 표면 오브젝트의 처음 크기를 기억해둔다 — 이후 UpdateWaterVisual()에서 세로 크기만 바꿀 때 가로/깊이를 이 값으로 유지한다.
     }
 
     private void Update()
     {
         UpdateDrain();
         UpdateColliderHeight();
+        UpdateWaterVisual();
     }
 
     private void UpdateDrain()
@@ -75,6 +90,27 @@ public class WaterArea : MonoBehaviour
         center.y = _baseColliderCenterY + (_currentOffset * 0.5f);
         _collider.center = center;
     }
+
+
+    // 물 표면 오브젝트를 바닥은 고정한 채 위쪽만 자라나는 물덩이 형태로 만든다.
+    // 옆에서 보는 사이드뷰 카메라 기준으로도 "물이 차오른다"는 느낌이 나도록,
+    // 얇은 판이 위치만 움직이는 대신 실제로 부피가 있는 블록처럼 세로 크기 자체를 키운다.
+    private void UpdateWaterVisual()
+    {
+        if (waterSurfaceVisual == null) return;
+
+        // 콜라이더와 동일하게 바닥은 고정(_baseSurfaceY - _baseColliderHeight)이고, 높이만 현재 수위만큼 자란다.
+        float poolBottomY = _baseSurfaceY - _baseColliderHeight;
+        float currentHeight = Mathf.Max(_baseColliderHeight + _currentOffset, 0.01f);
+        // 높이가 0이 되면 오브젝트가 납작하게 찌그러지는 것을 막기 위해 최소값을 둔다.
+
+        waterSurfaceVisual.localScale = new Vector3(_visualBaseScale.x, currentHeight, _visualBaseScale.z);
+
+        Vector3 pos = waterSurfaceVisual.position;
+        pos.y = poolBottomY + (currentHeight * 0.5f);
+        waterSurfaceVisual.position = pos;
+    }
+
 
     // RainDrop이 이 물 표면에 닿았을 때 호출한다.
     public void OnRainDropHit()
