@@ -1,3 +1,4 @@
+using DG.Tweening;
 using Sirenix.OdinInspector;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -21,6 +22,17 @@ public class VendingMachine : MonoBehaviour
     [SerializeField, LabelText("아이템 생성 위치 (비워두면 이 오브젝트 위치 사용)")]
     private Transform spawnPoint;
 
+    [Title("상호작용 프롬프트")]
+    [SerializeField, LabelText("프롬프트 Canvas Group")]
+    private CanvasGroup interactPromptCanvasGroup;
+    // 플레이어가 범위 안에 들어왔을 때 자판기 위에 "E" 텍스트를 띄우는 World Space Canvas다.
+
+    [SerializeField, LabelText("프롬프트 페이드 시간")]
+    private float promptFadeDuration = 0.2f;
+    // 값이 클수록 프롬프트가 더 천천히 나타나고 사라진다.
+
+    private Tween _promptFadeTween;
+
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("플레이어가 범위 안에 있는지")]
     private bool _playerInRange;
@@ -32,6 +44,10 @@ public class VendingMachine : MonoBehaviour
         // InputActionAsset에서 Player 맵의 Interact 액션을 찾아 연결한다.
         var playerMap = inputActionAsset.FindActionMap("Player", throwIfNotFound: true);
         _interactAction = playerMap.FindAction("Interact", throwIfNotFound: true);
+
+        // 시작할 때는 플레이어가 범위 밖에 있는 상태이므로 프롬프트를 즉시 숨겨둔다.
+        if (interactPromptCanvasGroup != null)
+            interactPromptCanvasGroup.alpha = 0f;
     }
 
     private void OnEnable()
@@ -44,19 +60,38 @@ public class VendingMachine : MonoBehaviour
     {
         _interactAction.performed -= OnInteractPerformed;
         _interactAction.Disable();
+
+        _promptFadeTween?.Kill();
+        // 오브젝트가 비활성화될 때 프롬프트 페이드 연출이 남아있지 않도록 정리한다.
     }
 
     // 상호작용 범위(Trigger Collider)에 플레이어가 들어오고 나가는 것을 감지한다.
     private void OnTriggerEnter(Collider other)
     {
         if (other.GetComponent<PlayerController>() != null)
+        {
             _playerInRange = true;
+            SetPromptVisible(true);
+        }
     }
 
     private void OnTriggerExit(Collider other)
     {
         if (other.GetComponent<PlayerController>() != null)
+        {
             _playerInRange = false;
+            SetPromptVisible(false);
+        }
+    }
+
+    // 자판기 위의 "E" 상호작용 프롬프트를 DOTween 페이드로 보여주거나 숨긴다.
+    private void SetPromptVisible(bool visible)
+    {
+        if (interactPromptCanvasGroup == null) return;
+
+        _promptFadeTween?.Kill();
+        _promptFadeTween = interactPromptCanvasGroup
+            .DOFade(visible ? 1f : 0f, promptFadeDuration);
     }
 
     private void OnInteractPerformed(InputAction.CallbackContext ctx)
