@@ -60,7 +60,8 @@ public class SaveSlotSelectController : MonoBehaviour
         backButton.onClick.AddListener(Close);
 
         panel.alpha = 0f;
-        panel.gameObject.SetActive(false);
+        panel.interactable = false;
+        panel.blocksRaycasts = false;
     }
 
     private void OnDestroy()
@@ -69,14 +70,22 @@ public class SaveSlotSelectController : MonoBehaviour
     }
 
     // mode에 맞게 슬롯 목록을 새로고침하고 패널을 페이드 인으로 연다.
+    // titleRootPanel/panel 모두 GameObject 자체는 항상 켜둔 채 CanvasGroup만 조절한다.
+    // 이 메서드는 titleRootPanel의 자식인 "처음부터"/"이어하기" 버튼의 클릭 핸들러에서 호출되는데,
+    // 예전처럼 titleRootPanel을 SetActive(false)로 끄면 지금 클릭된 버튼의 부모를 같은 프레임에
+    // 비활성화하는 셈이라 Unity 이벤트 처리가 꼬여 슬롯 화면이 뜨지 않는 문제가 있었다.
+    // GameObject를 항상 켜두면 이 문제가 사라지고, 타이틀 배경도 슬롯 화면에서 계속 보인다.
     public void Open(Mode mode)
     {
         _currentMode = mode;
         RefreshSlots();
 
-        titleRootPanel.gameObject.SetActive(false);
+        titleRootPanel.alpha = 0f;
+        titleRootPanel.interactable = false;
+        titleRootPanel.blocksRaycasts = false;
 
-        panel.gameObject.SetActive(true);
+        panel.interactable = true;
+        panel.blocksRaycasts = true;
         panel.alpha = 0f;
         _fadeTween?.Kill();
         _fadeTween = panel.DOFade(1f, fadeDuration);
@@ -84,11 +93,14 @@ public class SaveSlotSelectController : MonoBehaviour
 
     private void Close()
     {
+        panel.interactable = false;
+        panel.blocksRaycasts = false;
         _fadeTween?.Kill();
-        _fadeTween = panel.DOFade(0f, fadeDuration)
-            .OnComplete(() => panel.gameObject.SetActive(false));
+        _fadeTween = panel.DOFade(0f, fadeDuration);
 
-        titleRootPanel.gameObject.SetActive(true);
+        titleRootPanel.alpha = 1f;
+        titleRootPanel.interactable = true;
+        titleRootPanel.blocksRaycasts = true;
     }
 
     // 슬롯마다 SaveManager.PeekSlotData로 저장 여부/시각을 읽어 텍스트를 갱신하고,

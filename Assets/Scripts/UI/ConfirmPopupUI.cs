@@ -9,6 +9,12 @@ using UnityEngine.UI;
 public class ConfirmPopupUI : MonoBehaviour
 {
     [Title("연결")]
+    [SerializeField, LabelText("패널 (CanvasGroup)")]
+    private CanvasGroup panel;
+    // 예/아니오 버튼 클릭 시 이 오브젝트 자체를 SetActive(false)로 끄면, 지금 클릭된 버튼의 부모를
+    // 같은 프레임에 비활성화하는 셈이라 클릭 처리가 꼬일 수 있다(SaveSlotSelectController.Open()에서
+    // 겪은 것과 같은 문제). 그래서 오브젝트는 항상 켜둔 채 CanvasGroup으로만 보이기/막기를 제어한다.
+
     [SerializeField, LabelText("메시지 텍스트")]
     private Text messageText;
 
@@ -31,10 +37,10 @@ public class ConfirmPopupUI : MonoBehaviour
 
     private void Awake()
     {
-        gameObject.SetActive(false);
-
         yesButton.onClick.AddListener(HandleYesClicked);
         noButton.onClick.AddListener(HandleNoClicked);
+
+        SetVisible(false);
     }
 
     private void OnDestroy()
@@ -48,7 +54,7 @@ public class ConfirmPopupUI : MonoBehaviour
         messageText.text = message;
         _pendingConfirmAction = onConfirm;
 
-        gameObject.SetActive(true);
+        SetVisible(true);
         transform.localScale = Vector3.zero;
 
         _popTween?.Kill();
@@ -57,14 +63,21 @@ public class ConfirmPopupUI : MonoBehaviour
 
     private void HandleYesClicked()
     {
-        gameObject.SetActive(false);
+        SetVisible(false);
         _pendingConfirmAction?.Invoke();
         _pendingConfirmAction = null;
     }
 
     private void HandleNoClicked()
     {
-        gameObject.SetActive(false);
+        SetVisible(false);
         _pendingConfirmAction = null;
+    }
+
+    private void SetVisible(bool visible)
+    {
+        panel.alpha = visible ? 1f : 0f;
+        panel.interactable = visible;
+        panel.blocksRaycasts = visible;
     }
 }
