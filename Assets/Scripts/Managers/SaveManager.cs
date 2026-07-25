@@ -39,6 +39,14 @@ public class SaveManager : MonoBehaviour
     // 슬롯에 저장된 세이브 파일이 있는지 확인한다. 타이틀 화면에서 "이어하기" 버튼 활성화 여부 판단에 사용한다.
     public bool HasSave(int slot) => ES3.FileExists(GetFilePath(slot));
 
+    // 슬롯 데이터를 부작용 없이 조회한다. 슬롯 선택 UI가 저장 시각을 표시할 때 사용하며,
+    // LoadGame과 달리 체크포인트를 갱신하거나 씬을 불러오지 않는다.
+    public SaveData PeekSlotData(int slot)
+    {
+        string path = GetFilePath(slot);
+        return ES3.FileExists(path) ? ES3.Load<SaveData>(saveKey, path) : null;
+    }
+
     // 새 게임을 시작한다. 기존 슬롯 파일이 있으면 지우고, 현재 씬/원점 기준으로 새로 저장한다.
     public void NewGame(int slot)
     {
