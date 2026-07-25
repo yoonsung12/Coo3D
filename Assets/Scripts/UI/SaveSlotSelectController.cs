@@ -124,12 +124,13 @@ public class SaveSlotSelectController : MonoBehaviour
             StartNewGame(slot);
     }
 
-    // 씬을 먼저 옮긴 뒤 NewGame을 호출해야 SaveData.sceneName이 "Title"이 아니라
-    // gameplaySceneName으로 정확히 기록된다 (NewGame은 호출 시점의 활성 씬 이름을 그대로 저장하기 때문).
+    // SceneManager.LoadScene은 이 프레임 안에서 즉시 활성 씬을 바꾸지 않으므로(다음 프레임에 반영),
+    // NewGame(slot)만 호출하면 여전히 "Title"이 활성 씬으로 기록된다.
+    // 옮겨갈 씬 이름을 이미 알고 있으므로 NewGame(slot, sceneName) 오버로드로 직접 전달한다.
     private void StartNewGame(int slot)
     {
         SceneManager.LoadScene(gameplaySceneName);
-        SaveManager.Instance.NewGame(slot);
+        SaveManager.Instance.NewGame(slot, gameplaySceneName);
     }
 
     private void OnSlotDeleteClicked(int slot)

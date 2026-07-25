@@ -48,7 +48,13 @@ public class SaveManager : MonoBehaviour
     }
 
     // 새 게임을 시작한다. 기존 슬롯 파일이 있으면 지우고, 현재 씬/원점 기준으로 새로 저장한다.
-    public void NewGame(int slot)
+    public void NewGame(int slot) => NewGame(slot, SceneManager.GetActiveScene().name);
+
+    // 새 게임을 시작하면서 저장할 씬 이름을 직접 지정한다.
+    // SceneManager.LoadScene은 호출한 프레임에 즉시 활성 씬을 바꾸지 않고 다음 프레임에 반영되므로,
+    // "씬을 먼저 옮긴 뒤 NewGame을 호출"하는 방식으로는 활성 씬 이름을 정확히 기록할 수 없다.
+    // 옮겨갈 씬을 이미 알고 있는 호출자(예: 타이틀의 슬롯 선택 화면)는 이 오버로드로 명시적으로 전달한다.
+    public void NewGame(int slot, string sceneName)
     {
         _currentSlot = slot;
 
@@ -58,7 +64,7 @@ public class SaveManager : MonoBehaviour
 
         var data = new SaveData
         {
-            sceneName = SceneManager.GetActiveScene().name,
+            sceneName = sceneName,
             checkpointPosition = Vector3.zero,
             savedAtIso = DateTime.UtcNow.ToString("o")
         };
