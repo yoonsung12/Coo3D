@@ -75,8 +75,8 @@ public SaveData PeekSlotData(int slot)
 
 슬롯 한 칸의 UI를 담당하는 단순 컴포넌트.
 
-- `[SerializeField] TMP_Text slotLabelText` — "슬롯 1" 등 고정 라벨.
-- `[SerializeField] TMP_Text stateText` — 저장 시각(`savedAtIso`를 보기 좋은 포맷으로) 또는 "비어있음".
+- `[SerializeField] Text slotLabelText` — "슬롯 1" 등 고정 라벨. (프로젝트 기존 UI 스크립트들이 TextMeshPro가 아닌 `UnityEngine.UI.Text`를 쓰는 컨벤션을 그대로 따른다.)
+- `[SerializeField] Text stateText` — 저장 시각(`savedAtIso`를 보기 좋은 포맷으로) 또는 "비어있음".
 - `[SerializeField] Button selectButton, deleteButton`.
 - `SetState(bool hasSave, string savedAtIso)`: 위 텍스트/버튼 활성 상태 갱신. `hasSave`가 false면 `deleteButton.gameObject.SetActive(false)`.
 - 클릭 이벤트는 `UnityEvent<int>` 대신 `SaveSlotSelectController`가 각 슬롯 인덱스를 캡처한 람다로 `selectButton.onClick`/`deleteButton.onClick`에 직접 연결한다(단순 구조 유지, 별도 이벤트 클래스 불필요).
@@ -85,7 +85,7 @@ public SaveData PeekSlotData(int slot)
 
 덮어쓰기/삭제 확인에 공용으로 쓰는 예/아니오 팝업.
 
-- `[SerializeField] TMP_Text messageText`, `[SerializeField] Button yesButton, noButton`.
+- `[SerializeField] Text messageText`, `[SerializeField] Button yesButton, noButton`.
 - `Show(string message, Action onConfirm)`: 메시지 설정, 팝업을 DOTween `DOScale`로 팝업 등장 연출과 함께 활성화. `yesButton`에 `onConfirm` 연결 후 팝업 닫기, `noButton`은 팝업만 닫기.
 - `OnDestroy()`에서 진행 중인 Tween `Kill()` 처리.
 
