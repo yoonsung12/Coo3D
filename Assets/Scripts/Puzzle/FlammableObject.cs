@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using DG.Tweening;
 using Sirenix.OdinInspector;
@@ -44,9 +45,20 @@ public class FlammableObject : MonoBehaviour, IIgnitable
     private LayerMask spreadLayer;
     // Inspector에서 다른 인화성 오브젝트들의 레이어를 지정한다.
 
+    [Title("장애물 설정")]
+    [SerializeField, LabelText("연소 전까지 통행 차단")]
+    private bool blocksPathUntilBurned = false;
+    // 기본값은 false로, 기존과 동일하게 항상 트리거(통과 가능)로 동작한다.
+    // true로 켜면 마른 덩굴벽처럼 다 타기 전까지는 실제로 길을 막는 장애물이 되고,
+    // 다 타서 재가 되면 지나갈 수 있게 자동으로 열린다.
+
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("현재 상태")]
     public FireState CurrentState { get; private set; } = FireState.Unlit;
+
+    // 다 타서 재가 됐을 때 호출된다. 문 열림 연출처럼 외부 시스템이 완전 연소 시점을
+    // 구독해서 반응할 수 있게 하기 위한 이벤트다.
+    public event Action OnBurnedOut;
 
     private Collider _collider;
     private MeshRenderer _meshRenderer;
@@ -56,9 +68,10 @@ public class FlammableObject : MonoBehaviour, IIgnitable
     private void Awake()
     {
         _collider = GetComponent<Collider>();
-        // 마른 덤불/낙엽 더미 같은 소품이라 플레이어 이동을 막지 않고 통과할 수 있어야 하므로
-        // 트리거로 강제한다. 통로를 막는 장애물로 쓰려면 이 값을 false로 바꿔야 한다.
-        _collider.isTrigger = true;
+        // 마른 덤불/낙엽 더미 같은 소품은 플레이어 이동을 막지 않고 통과할 수 있어야 하므로
+        // 트리거로 두지만, blocksPathUntilBurned가 켜져 있으면 덩굴벽처럼 실제 장애물이 되어야
+        // 하므로 콜라이더를 막힌 상태(isTrigger = false)로 시작한다.
+        _collider.isTrigger = !blocksPathUntilBurned;
 
         _meshRenderer = GetComponent<MeshRenderer>();
         // material 접근 시 인스턴스 머티리얼이 생성되어 이 오브젝트만의 색상을 독립적으로 바꿀 수 있다.
@@ -113,6 +126,12 @@ public class FlammableObject : MonoBehaviour, IIgnitable
     {
         CurrentState = FireState.Ash;
         SetParticles(false);
+
+        // 장애물로 막고 있던 콜라이더라면 다 탄 뒤 지나갈 수 있도록 연다.
+        if (blocksPathUntilBurned)
+            _collider.isTrigger = true;
+
+        OnBurnedOut?.Invoke();
 
         if (_meshRenderer == null) return;
 

@@ -61,8 +61,12 @@ public class DoorController : MonoBehaviour
         LockAllButtons();
     }
 
-    private void OpenDoor()
+    // 버튼 조합뿐 아니라 도화선처럼 다른 트리거(덩굴이 다 타는 등)로도 문을 열 수 있도록
+    // 외부에서 직접 호출 가능하게 공개한다. _isOpen 체크가 있어 중복 호출해도 안전하다.
+    public void OpenDoor()
     {
+        if (_isOpen) return;
+
         _isOpen = true;
         _doorTween?.Kill();
         // DoorHinge를 Y축으로 회전시켜 문이 열리는 연출을 한다.
