@@ -113,7 +113,6 @@ public class PlayerController : MonoBehaviour
             _verticalVelocity = -2f;
 
         HandleMove();
-        HandleFacing();
         ApplyGravity();
         ApplyFallSpeedLimit();
         ApplyWindVertical();
@@ -144,6 +143,15 @@ public class PlayerController : MonoBehaviour
         // 사이드뷰: 입력 X → 월드 X축 이동만 사용한다. Z축 이동은 없다.
         Vector3 moveDir = new Vector3(xInput, 0f, 0f);
         _moveVelocity = moveDir * (moveSpeed * _speedMultiplier);
+
+        if (xInput > 0.01f)
+        {
+            transform.rotation = Quaternion.Euler(0f, 90f, 0f);
+        }
+        else if (xInput < -0.01f)
+        {
+            transform.rotation = Quaternion.Euler(0f, -90f, 0f);
+        }
     }
 
     private void HandleFacing()
