@@ -22,6 +22,12 @@ public class LeafMound : MonoBehaviour, IIgnitable, IBlowable
     private ParticleSystem fizzleParticle;
     // 시간 초과로 실패했을 때만 재생된다.
 
+    [Title("접촉 판정")]
+    [SerializeField, LabelText("접촉 데미지")]
+    private float touchDamage = 5f;
+    // 타는 동안 플레이어가 맨몸으로 닿았을 때 깎이는 체력이다. 플레이어 체력이 5칸 기준이라 10은
+    // 과해서 5로 낮춰뒀다 — 낙엽더미는 도구(성냥/선풍기)로만 안전하게 다뤄야 한다는 의도를 살린다.
+
     [Title("소멸 연출 설정")]
     [SerializeField, LabelText("소멸 연출 시간")]
     private float fadeDuration = 0.3f;
@@ -73,15 +79,22 @@ public class LeafMound : MonoBehaviour, IIgnitable, IBlowable
     }
 
     // 타는 동안 덩굴벽(FlammableObject)에 닿으면 불을 옮기고 성공 처리한다.
+    // 덩굴벽이 아니라 플레이어가 맨몸으로 닿은 경우엔 데미지만 주고, 낙엽더미 자체는 계속 탄다
+    // (선풍기로 날려야 하는 퍼즐이 데미지 한 번으로 끝나버리지 않도록 소멸시키지 않는다).
     private void OnTriggerEnter(Collider other)
     {
         if (!_isBurning || _isResolved) return;
 
         FlammableObject wall = other.GetComponent<FlammableObject>();
-        if (wall == null) return;
+        if (wall != null)
+        {
+            wall.OnIgnited();
+            Resolve(fizzle: false);
+            return;
+        }
 
-        wall.OnIgnited();
-        Resolve(fizzle: false);
+        if (other.GetComponent<PlayerController>() != null)
+            PlayerHealth.Instance?.TakeDamage(touchDamage);
     }
 
     private IEnumerator BurnRoutine()

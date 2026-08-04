@@ -23,6 +23,15 @@ public class DoorController : MonoBehaviour
     [SerializeField, LabelText("열림 Ease")]
     private Ease openEase = Ease.OutQuad;
 
+    [Title("사운드")]
+    [SerializeField, LabelText("열림 소리")]
+    private AudioClip openSound;
+    // Inspector에서 문 열릴 때 한 번 재생할 오디오 클립을 연결한다. 비워두면 소리 없이 동작한다.
+
+    [SerializeField, LabelText("오디오 소스")]
+    private AudioSource audioSource;
+    // Inspector에서 이 문 오브젝트의 AudioSource 컴포넌트를 연결한다.
+
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("문 열림 여부")]
     private bool _isOpen;
@@ -68,6 +77,10 @@ public class DoorController : MonoBehaviour
         if (_isOpen) return;
 
         _isOpen = true;
+
+        if (audioSource != null && openSound != null)
+            audioSource.PlayOneShot(openSound);
+
         _doorTween?.Kill();
         // DoorHinge를 Y축으로 회전시켜 문이 열리는 연출을 한다.
         _doorTween = transform

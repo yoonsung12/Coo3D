@@ -25,6 +25,11 @@ public class FlammableObject : MonoBehaviour, IIgnitable
     private ParticleSystem smokeParticle;
     // Inspector에서 연기 ParticleSystem을 연결한다.
 
+    [SerializeField, LabelText("재 먼지 파티클(1회성)")]
+    private ParticleSystem ashPuffParticle;
+    // 다 타서 재가 되는 순간 한 번만 터지는 파티클이다. 색상 전환만으로는 "타서 재가 됐다"는
+    // 느낌이 약해서, 그 순간을 눈에 띄게 강조하기 위해 추가한다. 비워두면 색상 전환만 일어난다.
+
     [SerializeField, LabelText("재 색상")]
     private Color ashColor = new Color(0.25f, 0.25f, 0.25f);
     // 다 타서 재가 됐을 때 Material이 바뀌는 색상이다.
@@ -126,6 +131,11 @@ public class FlammableObject : MonoBehaviour, IIgnitable
     {
         CurrentState = FireState.Ash;
         SetParticles(false);
+
+        // 타서 재가 되는 순간을 강조하기 위한 1회성 파티클이다. Play()만 하면 Loop 설정에 따라
+        // 계속 재생될 수 있으므로 Emit()으로 정해진 개수만 한 번에 즉시 방출한다.
+        if (ashPuffParticle != null)
+            ashPuffParticle.Emit(20);
 
         // 장애물로 막고 있던 콜라이더라면 다 탄 뒤 지나갈 수 있도록 연다.
         if (blocksPathUntilBurned)
