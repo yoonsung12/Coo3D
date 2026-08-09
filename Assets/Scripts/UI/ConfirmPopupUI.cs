@@ -58,7 +58,9 @@ public class ConfirmPopupUI : MonoBehaviour
         transform.localScale = Vector3.zero;
 
         _popTween?.Kill();
-        _popTween = transform.DOScale(Vector3.one, popInDuration).SetEase(popInEase);
+        _popTween = transform.DOScale(Vector3.one, popInDuration).SetEase(popInEase).SetUpdate(true);
+        // SetUpdate(true)로 Time.timeScale=0(파우즈 중)에도 팝업이 즉시 나타나게 한다.
+        // 이게 없으면 CanvasGroup은 바로 열려서 입력을 막지만, 화면에는 scale=0으로 숨어있는 상태가 된다.
     }
 
     private void HandleYesClicked()

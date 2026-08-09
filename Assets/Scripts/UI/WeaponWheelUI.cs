@@ -75,6 +75,9 @@ public class WeaponWheelUI : MonoBehaviour
     [ReadOnly, ShowInInspector, LabelText("휠 열림 여부")]
     private bool _isOpen;
 
+    // PauseMenuUI가 파우즈 중에 휠이 열리는 것을 막기 위해 상태를 확인하는 용도로 사용한다.
+    public bool IsOpen => _isOpen;
+
     private InputAction _wheelAction;
     private Tween _panelTween;
 
@@ -116,6 +119,10 @@ public class WeaponWheelUI : MonoBehaviour
     // Tab 키를 눌렀을 때 휠을 열고 시간을 정지한다.
     private void OnWheelPerformed(InputAction.CallbackContext ctx)
     {
+        // 파우즈 메뉴가 열려 있는 동안에는 휠을 열지 않는다.
+        // 두 UI가 동시에 Time.timeScale을 제어하면 어느 한쪽을 닫을 때 시간이 잘못 풀릴 수 있기 때문이다.
+        if (PauseMenuUI.IsPaused) return;
+
         OpenWheel();
     }
 

@@ -11,8 +11,14 @@ public class SaveSlotSelectController : MonoBehaviour
     public enum Mode
     {
         NewGame,
-        Continue
+        Continue,
+        SaveInGame
+        // 파우즈 메뉴의 "저장하기"에서 사용한다. 씬 전환이나 체크포인트 초기화 없이
+        // 지금 진행 중인 상태를 고른 슬롯에 그대로 저장만 한다.
     }
+
+    // PauseMenuUI가 ESC 입력을 무시할지 판단할 때 사용한다 (열려 있는 동안 파우즈가 통째로 풀리는 것을 막기 위함).
+    public bool IsOpen { get; private set; }
 
     [Title("패널 연결")]
     [SerializeField, LabelText("슬롯 선택 패널 (CanvasGroup)")]
@@ -78,6 +84,7 @@ public class SaveSlotSelectController : MonoBehaviour
     public void Open(Mode mode)
     {
         _currentMode = mode;
+        IsOpen = true;
         RefreshSlots();
 
         titleRootPanel.alpha = 0f;
@@ -88,15 +95,17 @@ public class SaveSlotSelectController : MonoBehaviour
         panel.blocksRaycasts = true;
         panel.alpha = 0f;
         _fadeTween?.Kill();
-        _fadeTween = panel.DOFade(1f, fadeDuration);
+        _fadeTween = panel.DOFade(1f, fadeDuration).SetUpdate(true);
+        // SetUpdate(true)로 파우즈 중(Time.timeScale=0)에도 페이드가 즉시 재생된다.
     }
 
     private void Close()
     {
+        IsOpen = false;
         panel.interactable = false;
         panel.blocksRaycasts = false;
         _fadeTween?.Kill();
-        _fadeTween = panel.DOFade(0f, fadeDuration);
+        _fadeTween = panel.DOFade(0f, fadeDuration).SetUpdate(true);
 
         titleRootPanel.alpha = 1f;
         titleRootPanel.interactable = true;
@@ -113,13 +122,25 @@ public class SaveSlotSelectController : MonoBehaviour
             SaveData data = SaveManager.Instance.PeekSlotData(slot);
             bool hasSave = data != null;
 
-            slotItems[i].SetState(hasSave, data?.savedAtIso);
-            slotItems[i].SelectButton.interactable = hasSave || _currentMode == Mode.NewGame;
+            // SaveInGame 화면에서는 진행 상황을 실수로 지우는 사고를 막기 위해 삭제 버튼을 항상 숨긴다.
+            slotItems[i].SetState(hasSave, data?.savedAtIso, showDeleteButton: _currentMode != Mode.SaveInGame);
+            slotItems[i].SelectButton.interactable = hasSave || _currentMode == Mode.NewGame || _currentMode == Mode.SaveInGame;
         }
     }
 
     private void OnSlotSelected(int slot)
     {
+        if (_currentMode == Mode.SaveInGame)
+        {
+            // 이미 저장된 슬롯이면 덮어쓰기 확인을 먼저 받는다. 화면은 닫지 않고 저장 후 목록만 새로고침해서
+            // 저장 시각이 바로 갱신되는 것으로 "저장됐다"는 피드백을 대신한다.
+            if (SaveManager.Instance.HasSave(slot))
+                confirmPopup.Show("정말 덮어쓰시겠습니까?", () => SaveToSlotAndRefresh(slot));
+            else
+                SaveToSlotAndRefresh(slot);
+            return;
+        }
+
         if (_currentMode == Mode.Continue)
         {
             SaveManager.Instance.LoadGame(slot);
@@ -143,6 +164,12 @@ public class SaveSlotSelectController : MonoBehaviour
     {
         SceneManager.LoadScene(gameplaySceneName);
         SaveManager.Instance.NewGame(slot, gameplaySceneName);
+    }
+
+    private void SaveToSlotAndRefresh(int slot)
+    {
+        SaveManager.Instance.SaveToSlot(slot);
+        RefreshSlots();
     }
 
     private void OnSlotDeleteClicked(int slot)

@@ -22,12 +22,13 @@ public class SaveSlotUIItem : MonoBehaviour
     public Button SelectButton => selectButton;
     public Button DeleteButton => deleteButton;
 
-    // hasSave가 true면 저장 시각을 표시하고 삭제 버튼도 보여준다.
-    // false면 "비어있음"을 표시하고 삭제할 대상이 없으므로 삭제 버튼을 숨긴다.
-    public void SetState(bool hasSave, string savedAtIso)
+    // hasSave가 true면 저장 시각을 표시하고, false면 "비어있음"을 표시한다.
+    // showDeleteButton은 화면 자체에서 삭제 기능을 쓸지(타이틀=true, 파우즈 중 저장=false) 결정한다.
+    // 삭제할 대상이 없는 빈 슬롯에서는 showDeleteButton이 true여도 항상 숨긴다.
+    public void SetState(bool hasSave, string savedAtIso, bool showDeleteButton = true)
     {
         stateText.text = hasSave ? FormatSavedAt(savedAtIso) : "비어있음";
-        deleteButton.gameObject.SetActive(hasSave);
+        deleteButton.gameObject.SetActive(hasSave && showDeleteButton);
     }
 
     // SaveData.savedAtIso(ISO 8601, DateTime.UtcNow.ToString("o"))를 "yyyy-MM-dd HH:mm 저장됨" 형태로 바꾼다.
