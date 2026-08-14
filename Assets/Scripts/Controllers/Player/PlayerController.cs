@@ -113,6 +113,9 @@ public class PlayerController : MonoBehaviour
             _verticalVelocity = -2f;
 
         HandleMove();
+        HandleFacing();
+        // 선풍기/횃불이 사용하는 FacingDirection을 매 프레임 마우스 방향으로 갱신한다.
+        // 이동 방향 기반 회전(HandleMove) 이후에 호출해 마우스 조준 방향이 몸통 회전에 최종 반영되게 한다.
         ApplyGravity();
         ApplyFallSpeedLimit();
         ApplyWindVertical();
