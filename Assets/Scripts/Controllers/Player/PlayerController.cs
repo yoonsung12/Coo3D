@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using Sirenix.OdinInspector;
@@ -21,6 +22,11 @@ public class PlayerController : MonoBehaviour
     // CharacterController는 물리 엔진 중력을 받지 않으므로 수동으로 적용한다.
     // 음수 값이며 클수록 더 빠르게 떨어진다.
 
+    [SerializeField, LabelText("발판 통과 입력 임계값")]
+    private float dropThroughInputThreshold = 0.5f;
+    // 아래 방향 입력(Move의 Y축 성분)이 이 값보다 더 아래로 눌려 있어야 "아래+점프"로 인식한다.
+    // OneWayPlatform이 이 값을 직접 참조하지 않고, 이 클래스가 판정해서 이벤트로 알려준다.
+
     [Title("반동 감속 설정")]
     [SerializeField, LabelText("일반 반동 감속률")]
     private float recoilDecay = 8f;
@@ -41,6 +47,10 @@ public class PlayerController : MonoBehaviour
 
     // 선풍기가 바람을 쏘는 방향 결정에 사용된다.
     public Vector3 FacingDirection { get; private set; } = Vector3.forward;
+
+    // 접지 상태에서 아래 방향 입력을 누른 채 점프 버튼을 눌렀을 때 발행된다.
+    // OneWayPlatform이 이 이벤트를 구독해서, 지금 플레이어가 자기 위에 서 있는지 확인한 뒤 통과시킬지 판단한다.
+    public event Action OnDropThroughRequested;
 
     private CharacterController _cc;
 
@@ -99,8 +109,17 @@ public class PlayerController : MonoBehaviour
         if (_isFrozen) return;
 
         // 접지 상태일 때만 점프할 수 있다.
-        if (IsGrounded)
-            _verticalVelocity = jumpForce;
+        if (!IsGrounded) return;
+
+        // 아래 방향을 누른 채 점프하면, 일반 점프 대신 발판 통과(드롭스루)를 요청한다.
+        // 발판 위가 아니라 그냥 바닥이면 OneWayPlatform이 없어서 아무 반응도 없다 — 의도된 동작이다.
+        if (_moveInput.y < -dropThroughInputThreshold)
+        {
+            OnDropThroughRequested?.Invoke();
+            return;
+        }
+
+        _verticalVelocity = jumpForce;
     }
 
     private void Update()
