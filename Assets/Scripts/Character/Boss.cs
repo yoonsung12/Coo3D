@@ -9,7 +9,9 @@ using UnityEngine;
 // - HP 50% 이하부터 EnemyMovement로 플레이어를 향해 추적 이동을 시작한다.
 // 실제 계절 패턴(꽃가루/비구름/은행/고드름)의 연출과 로직은 각 패턴 전용 컨트롤러가
 // OnPatternTriggered 이벤트를 구독해서 구현한다 (이번 단계에서는 아직 없음).
-[RequireComponent(typeof(EnemyMovement))]
+// 기본 패턴(근접/원거리 공격)은 계절 패턴 진행 중(무적 상태)에도 계속 시도한다 — 스펙 문서 기준
+// "패턴 진행 중에도 회피 압박을 유지하기 위해 공격을 멈추지 않는다".
+[RequireComponent(typeof(EnemyMovement), typeof(EnemyCombat))]
 public class Boss : Enemy
 {
     public enum SeasonPattern { Spring, Summer, Autumn, Winter }
@@ -32,6 +34,25 @@ public class Boss : Enemy
     private Transform playerTransform;
     // Inspector에서 씬의 Player 오브젝트를 연결한다. 추적 이동 방향 계산에 사용한다.
 
+    [Title("원거리 공격 설정")]
+    [SerializeField, LabelText("투사체 프리팹")]
+    private BossProjectile projectilePrefab;
+    // Inspector에서 Assets/Prefabs/Boss/BossProjectile.prefab을 연결한다.
+
+    [SerializeField, LabelText("발사 위치")]
+    private Transform projectileSpawnPoint;
+    // Inspector에서 Boss 자식의 ProjectileSpawnPoint를 연결한다.
+
+    [SerializeField, LabelText("투사체 속도")]
+    private float projectileSpeed = 10f;
+
+    [SerializeField, LabelText("투사체 데미지")]
+    private float projectileDamage = 20f;
+    // Player 체력 하트(5칸, 하트 1개=20)를 기준으로 정확히 1칸이 깎이도록 맞춘 값이다.
+
+    [SerializeField, LabelText("원거리 공격 쿨다운")]
+    private float rangedAttackCooldown = 2f;
+
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("무적 상태")]
     public bool IsInvincible { get; private set; }
@@ -49,13 +70,16 @@ public class Boss : Enemy
     public event Action OnPatternEnded;
 
     private EnemyMovement _movement;
+    private EnemyCombat _combat;
     private float _vulnerableTimer;
     private bool _isInVulnerableWindow;
+    private float _lastRangedAttackTime = -999f;
 
     // Enemy.Awake()는 private이라 여기서 재정의할 수 없으므로, Boss 전용 초기화는 Start()에서 한다.
     private void Start()
     {
         _movement = GetComponent<EnemyMovement>();
+        _combat = GetComponent<EnemyCombat>();
     }
 
     private void OnEnable()
@@ -74,6 +98,7 @@ public class Boss : Enemy
 
         TickVulnerableWindow();
         HandleChaseMovement();
+        HandleBasicAttack();
     }
 
     // 무적일 때는 데미지를 아예 받지 않는다. base.TakeDamage를 호출하지 않으므로
@@ -83,6 +108,11 @@ public class Boss : Enemy
         if (IsInvincible) return;
         base.TakeDamage(amount);
     }
+
+    // 계절 패턴 무적 중에도 예외적으로 통과시켜야 하는 데미지 전용 통로다.
+    // 봄 패턴(꽃가루 트레일 폭발)처럼 "패턴을 직접 파훼했을 때"만 호출해야 하며,
+    // IsInvincible 체크를 건너뛰고 곧바로 base.TakeDamage()를 호출한다.
+    public void ApplyPatternDamage(float amount) => base.TakeDamage(amount);
 
     // 데미지를 받아 체력이 줄어들 때마다 다음 계절 패턴 임계값을 넘었는지 확인한다.
     private void HandleDamageForPatternCheck(float amount) => CheckPatternThreshold();
@@ -147,13 +177,58 @@ public class Boss : Enemy
         }
 
         float dx = playerTransform.position.x - transform.position.x;
-        if (Mathf.Abs(dx) < 0.1f)
+        if (Mathf.Abs(dx) <= _combat.AttackRange)
         {
+            // 근접 공격 사거리 안까지 왔으면 더 다가가지 않고 멈춰서 공격 타이밍을 잡는다.
             _movement.Move(0f);
             return;
         }
 
         _movement.Move(Mathf.Sign(dx));
+    }
+
+    // 기본 패턴(근접/원거리 공격)이다. 계절 패턴 진행 중(무적 상태)에도 계속 시도해서
+    // 회피 압박을 유지하지만, 파훼 직후 무방비 시간에는 공격하지 않는다.
+    private void HandleBasicAttack()
+    {
+        if (_isInVulnerableWindow) return;
+        if (playerTransform == null) return;
+
+        float dx = playerTransform.position.x - transform.position.x;
+        float dir = Mathf.Sign(dx);
+        float distance = Mathf.Abs(dx);
+
+        _movement.FaceDirection(dir);
+
+        if (distance <= _combat.AttackRange)
+        {
+            if (_combat.CanAttack)
+                _combat.StartAttack();
+        }
+        else
+        {
+            TryFireProjectile(dir);
+        }
+    }
+
+    // 원거리 공격 쿨다운이 지났으면 투사체를 발사한다.
+    private void TryFireProjectile(float dir)
+    {
+        if (projectilePrefab == null || projectileSpawnPoint == null) return;
+        if (Time.time - _lastRangedAttackTime < rangedAttackCooldown) return;
+
+        _lastRangedAttackTime = Time.time;
+
+        // projectileSpawnPoint는 EnemyAttackHitbox(AttackPoint)와 똑같은 이유로 회전에 영향을 받는다:
+        // Boss가 좌우로 방향을 바꿀 때 FaceDirection이 오브젝트를 Y축으로 회전시키는데,
+        // 그러면 자식의 로컬 X 오프셋이 월드 Z축으로 밀려버린다(EnemyMovement 버그 수정과 동일 원인).
+        // 그래서 회전된 world position을 그대로 쓰지 않고, 로컬 오프셋 크기 + 현재 방향(dir)으로
+        // 발사 위치를 직접 계산한다.
+        Vector3 baseOffset = projectileSpawnPoint.localPosition;
+        Vector3 spawnPos = transform.position + new Vector3(Mathf.Abs(baseOffset.x) * dir, baseOffset.y, baseOffset.z);
+
+        BossProjectile projectile = Instantiate(projectilePrefab, spawnPos, Quaternion.identity);
+        projectile.Launch(new Vector3(dir, 0f, 0f), projectileSpeed, projectileDamage);
     }
 
     [Button("다음 계절 패턴 강제 발동 (테스트)")]
@@ -170,4 +245,7 @@ public class Boss : Enemy
 
     [Button("현재 패턴 파훼 처리 (테스트)")]
     private void TestSolvePattern() => NotifyPatternSolved();
+
+    [Button("원거리 공격 테스트")]
+    private void TestFireProjectile() => TryFireProjectile(_movement != null ? _movement.FacingDir : 1f);
 }

@@ -42,6 +42,14 @@ public class EnemyMovement : MonoBehaviour
     [SerializeField, LabelText("점프 힘")]
     private float jumpForce = 6f;
 
+    [Title("근접 공격 히트박스 보정")]
+    [SerializeField, LabelText("공격 히트박스(AttackPoint)")]
+    private Transform attackAnchor;
+    // EnemyAttackHitbox가 달린 자식(AttackPoint)을 연결한다. 비워두면 보정하지 않는다.
+    // FaceDirection이 오브젝트를 Y축으로 90도 회전시키는데, attackAnchor의 로컬 X 오프셋을
+    // 그대로 두면 회전에 밀려 월드 Z축으로 튀어나가 버려서(사이드뷰 X축 기준 판정과 어긋남)
+    // 회전과 무관하게 항상 캐릭터의 앞쪽(월드 X축)을 향하도록 매 회전마다 위치를 다시 계산한다.
+
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("바라보는 방향 (+1 오른쪽 / -1 왼쪽)")]
     public float FacingDir { get; private set; } = 1f;
@@ -50,6 +58,9 @@ public class EnemyMovement : MonoBehaviour
     public bool IsGrounded { get; private set; }
 
     private Rigidbody _rb;
+    private Vector3 _attackAnchorBaseOffset;
+    // attackAnchor의 원래(회전 전) 로컬 오프셋이다. +1(오른쪽) 방향 기준으로 저장해두고,
+    // 방향이 바뀔 때마다 이 기준값을 회전에 맞춰 다시 투영한다.
 
     private void Awake()
     {
@@ -60,6 +71,9 @@ public class EnemyMovement : MonoBehaviour
 
         _rb.constraints = RigidbodyConstraints.FreezeRotation;
         // 물리 충돌로 적이 넘어지거나 구르지 않도록 회전은 코드로만 제어한다.
+
+        if (attackAnchor != null)
+            _attackAnchorBaseOffset = attackAnchor.localPosition;
     }
 
     private void FixedUpdate()
@@ -93,6 +107,22 @@ public class EnemyMovement : MonoBehaviour
         FacingDir = Mathf.Sign(dir);
         float yRotation = FacingDir >= 0f ? 90f : -90f;
         transform.rotation = Quaternion.Euler(0f, yRotation, 0f);
+
+        UpdateAttackAnchorPosition();
+    }
+
+    // attackAnchor를 회전과 무관하게 항상 월드 X축 기준 앞쪽에 위치하도록 다시 계산한다.
+    // 기준 오프셋(_attackAnchorBaseOffset)은 +1(오른쪽) 방향 기준이라 왼쪽을 바라볼 때는 X를 반전한다.
+    private void UpdateAttackAnchorPosition()
+    {
+        if (attackAnchor == null) return;
+
+        Vector3 desiredWorldOffset = new Vector3(
+            Mathf.Abs(_attackAnchorBaseOffset.x) * FacingDir,
+            _attackAnchorBaseOffset.y,
+            _attackAnchorBaseOffset.z);
+
+        attackAnchor.localPosition = Quaternion.Inverse(transform.rotation) * desiredWorldOffset;
     }
 
     // 궁지에 몰렸을 때(Cornered) 대각선으로 도약하며 돌진하는 점프공격이다.

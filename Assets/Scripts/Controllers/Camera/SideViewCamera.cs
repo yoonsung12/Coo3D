@@ -1,3 +1,4 @@
+using DG.Tweening;
 using Sirenix.OdinInspector;
 using UnityEngine;
 
@@ -33,6 +34,12 @@ public class SideViewCamera : MonoBehaviour
     [ReadOnly, ShowInInspector, LabelText("현재 타겟 X")]
     private float _currentTargetX;
 
+    private Vector3 _shakeOffset;
+    // 보스 패턴 폭발 등 임팩트 연출에서 Shake()를 호출하면 이 오프셋이 흔들리며 최종 위치에 더해진다.
+    // transform.position을 직접 흔들면 매 프레임 아래 추적 로직이 덮어써서 무효화되므로 별도 필드로 분리했다.
+
+    private Tween _shakeTween;
+
     private void LateUpdate()
     {
         // LateUpdate에서 카메라를 이동시켜 플레이어 이동이 완전히 처리된 뒤에 따라가게 한다.
@@ -48,7 +55,21 @@ public class SideViewCamera : MonoBehaviour
             offsetZ
         );
 
-        transform.position = Vector3.Lerp(transform.position, targetPosition, followSpeed * Time.deltaTime);
+        transform.position = Vector3.Lerp(transform.position, targetPosition, followSpeed * Time.deltaTime) + _shakeOffset;
+    }
+
+    private void OnDestroy()
+    {
+        _shakeTween?.Kill();
+    }
+
+    // 보스 패턴 폭발 등 임팩트가 필요한 순간에 외부(예: PollenTrail)에서 호출한다.
+    public void Shake(float duration, float strength)
+    {
+        _shakeTween?.Kill();
+        _shakeOffset = Vector3.zero;
+
+        _shakeTween = DOTween.Shake(() => _shakeOffset, v => _shakeOffset = v, duration, strength, vibrato: 20, randomness: 90f);
     }
 
     [Button("현재 위치를 오프셋으로 저장")]

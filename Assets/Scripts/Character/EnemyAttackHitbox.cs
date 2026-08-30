@@ -32,13 +32,16 @@ public class EnemyAttackHitbox : MonoBehaviour
     public void EnableHitbox()
     {
         _hasHitThisSwing = false;
-        _collider.enabled = true;
+        if (_collider != null) _collider.enabled = true;
+        // _collider는 Awake()에서 캐싱되는데, 다른 오브젝트에 있는 스크립트가 이 메서드를
+        // 자신의 Awake()에서 호출하면 실행 순서가 보장되지 않아 아직 null일 수 있다(예: BossSpringPattern).
+        // 그 경우 조용히 무시하고, 실제 Awake()가 실행되면 DisableHitbox()가 다시 호출되어 정상 상태가 된다.
         _isActive = true;
     }
 
     public void DisableHitbox()
     {
-        _collider.enabled = false;
+        if (_collider != null) _collider.enabled = false;
         _isActive = false;
     }
 
