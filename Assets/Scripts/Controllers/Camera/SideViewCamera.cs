@@ -2,8 +2,8 @@ using DG.Tweening;
 using Sirenix.OdinInspector;
 using UnityEngine;
 
-// 사이드뷰 시점에서 플레이어의 X축 이동을 따라가는 카메라 추적 스크립트다.
-// Y와 Z는 고정 offset을 유지하고 X축만 플레이어를 부드럽게 추적한다.
+// 사이드뷰 시점에서 플레이어의 X축/Y축 이동을 따라가는 카메라 추적 스크립트다.
+// Z는 고정 offset을 유지하고 X/Y는 플레이어 위치 기준 상대 offset을 부드럽게 추적한다.
 public class SideViewCamera : MonoBehaviour
 {
     [Title("추적 대상")]
@@ -18,7 +18,9 @@ public class SideViewCamera : MonoBehaviour
 
     [SerializeField, LabelText("Y 오프셋 (높이)")]
     private float offsetY = 2f;
-    // 카메라가 위치할 고정 높이다. 값이 클수록 더 높은 곳에서 바라본다.
+    // 플레이어 Y 위치에 더해지는 상대 오프셋이다(예전엔 고정 절대 높이였으나,
+    // 보스 아레나처럼 발판 높이 차가 커지면서 플레이어를 따라 오르내리도록 변경했다).
+    // 값이 클수록 플레이어보다 더 높은 곳에서 내려다본다.
 
     [SerializeField, LabelText("Z 오프셋 (거리)")]
     private float offsetZ = -10f;
@@ -47,11 +49,11 @@ public class SideViewCamera : MonoBehaviour
 
         _currentTargetX = target.position.x;
 
-        // X축만 플레이어를 따라가고, Y와 Z는 고정 offset 위치를 유지한다.
+        // X/Y축 모두 플레이어 위치 기준 상대 offset을 따라가고, Z만 고정 거리를 유지한다.
         // Lerp로 부드럽게 이동해 갑작스러운 카메라 이동을 방지한다.
         Vector3 targetPosition = new Vector3(
             _currentTargetX + offsetX,
-            offsetY,
+            target.position.y + offsetY,
             offsetZ
         );
 
@@ -78,7 +80,7 @@ public class SideViewCamera : MonoBehaviour
         // 에디터에서 카메라를 원하는 위치에 놓은 뒤 이 버튼을 눌러 offset 값을 빠르게 설정할 수 있다.
         if (target == null) return;
         offsetX = transform.position.x - target.position.x;
-        offsetY = transform.position.y;
+        offsetY = transform.position.y - target.position.y;
         offsetZ = transform.position.z;
     }
 }

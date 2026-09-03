@@ -52,30 +52,8 @@ public class BossSpringPattern : MonoBehaviour
     private float postDashDelay = 0.6f;
     // 착지 폭발/트레일을 만든 뒤 다음 조준을 시작하기 전 잠깐 멈추는 시간이다.
 
-    [Title("착지 지점")]
-    [SerializeField, LabelText("착지 가능 지점 목록")]
-    private List<LandingPoint> landingPoints = new List<LandingPoint>
-    {
-        new LandingPoint { label = "Floor", position = new Vector2(0f, 0.5f) },
-        new LandingPoint { label = "Platform_MidLeft", position = new Vector2(-6.4f, 2.05f) },
-        new LandingPoint { label = "Platform_MidRight", position = new Vector2(6.4f, 2.05f) },
-        new LandingPoint { label = "Platform_TopCenter", position = new Vector2(0f, 3.35f) },
-        new LandingPoint { label = "Platform_TopFarLeft", position = new Vector2(-12.8f, 3.35f) },
-        new LandingPoint { label = "Platform_TopFarRight", position = new Vector2(12.8f, 3.35f) },
-    };
-    // 돌진은 항상 이 목록 중 lockedTarget과 가장 가까운 지점을 향해 이동한다.
-    // 각 좌표는 BossArena 씬의 바닥/발판 윗면 + 보스 몸(BoxCollider 반높이 0.5)을 더한 착지 높이다.
-
-    // Inspector에서 착지 지점을 알아보기 쉽게 이름표를 붙이기 위한 자료구조다.
-    [System.Serializable]
-    private class LandingPoint
-    {
-        [LabelText("이름")]
-        public string label;
-
-        [LabelText("좌표 (X, Y)")]
-        public Vector2 position;
-    }
+    // 착지 지점 목록은 Boss.cs로 옮겨서 BossFlightMovement(평상시 비행 이동)와 공유한다.
+    // 돌진은 항상 Boss.LandingPoints 중 lockedTarget과 가장 가까운 지점을 향해 이동한다.
 
     [Title("트레일 설정")]
     [SerializeField, LabelText("동시 유지 트레일 최대 개수")]
@@ -254,14 +232,14 @@ public class BossSpringPattern : MonoBehaviour
         _rb.linearVelocity = Vector3.zero;
     }
 
-    // landingPoints 중 target(보통 lockedTarget)과 가장 가까운 지점을 찾아 월드 좌표로 반환한다.
+    // Boss.LandingPoints 중 target(보통 lockedTarget)과 가장 가까운 지점을 찾아 월드 좌표로 반환한다.
     // 사이드뷰(X-Y 평면) 기준이라 Z는 돌진을 시작하는 보스의 현재 Z 그대로 고정한다.
     private Vector3 ComputeNearestLandingPoint(Vector3 target, float z)
     {
-        LandingPoint nearest = null;
+        Boss.LandingPoint nearest = null;
         float nearestDistSqr = float.MaxValue;
 
-        foreach (LandingPoint point in landingPoints)
+        foreach (Boss.LandingPoint point in _boss.LandingPoints)
         {
             float distSqr = ((Vector2)target - point.position).sqrMagnitude;
             if (distSqr < nearestDistSqr)

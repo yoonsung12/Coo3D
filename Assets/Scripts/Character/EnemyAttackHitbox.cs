@@ -14,6 +14,12 @@ public class EnemyAttackHitbox : MonoBehaviour
     private LayerMask hitLayers;
     // Inspector에서 Player 레이어를 체크한다.
 
+    [Title("연출")]
+    [SerializeField, LabelText("공격 이펙트")]
+    private ParticleSystem attackEffect;
+    // 히트박스가 켜지는 순간(=실제로 판정이 살아있는 타이밍) 재생해서 "지금 공격 중"임을 눈에 보이게 한다.
+    // 비워두면 기존처럼 이펙트 없이 판정만 동작한다(하위 호환).
+
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("히트박스 활성 중")]
     private bool _isActive;
@@ -37,6 +43,8 @@ public class EnemyAttackHitbox : MonoBehaviour
         // 자신의 Awake()에서 호출하면 실행 순서가 보장되지 않아 아직 null일 수 있다(예: BossSpringPattern).
         // 그 경우 조용히 무시하고, 실제 Awake()가 실행되면 DisableHitbox()가 다시 호출되어 정상 상태가 된다.
         _isActive = true;
+
+        attackEffect?.Play();
     }
 
     public void DisableHitbox()

@@ -27,6 +27,12 @@ public class PlayerController : MonoBehaviour
     // 아래 방향 입력(Move의 Y축 성분)이 이 값보다 더 아래로 눌려 있어야 "아래+점프"로 인식한다.
     // OneWayPlatform이 이 값을 직접 참조하지 않고, 이 클래스가 판정해서 이벤트로 알려준다.
 
+    [Title("공중 상승 점프 설정")]
+    [SerializeField, LabelText("상승 점프 힘")]
+    private float airJumpForce = 10f;
+    // 공중에서 점프 버튼을 한 번 더 누르면 적용되는 수직 속도다.
+    // jumpForce와 합쳐 도달 가능한 최대 높이가 정해지므로, 발판 배치를 바꿀 땐 이 값도 함께 고려해야 한다.
+
     [Title("반동 감속 설정")]
     [SerializeField, LabelText("일반 반동 감속률")]
     private float recoilDecay = 8f;
@@ -75,6 +81,9 @@ public class PlayerController : MonoBehaviour
     private InputAction _jumpAction;
     private Vector2 _moveInput;
 
+    // 공중 상승 점프를 착지 전까지 한 번만 쓸 수 있게 막는 플래그다. 착지하면 자동으로 풀린다.
+    private bool _airJumpUsed;
+
     private void Awake()
     {
         _cc = GetComponent<CharacterController>();
@@ -108,18 +117,26 @@ public class PlayerController : MonoBehaviour
         // 빙결 디버프 중에는 점프도 막는다.
         if (_isFrozen) return;
 
-        // 접지 상태일 때만 점프할 수 있다.
-        if (!IsGrounded) return;
-
-        // 아래 방향을 누른 채 점프하면, 일반 점프 대신 발판 통과(드롭스루)를 요청한다.
-        // 발판 위가 아니라 그냥 바닥이면 OneWayPlatform이 없어서 아무 반응도 없다 — 의도된 동작이다.
-        if (_moveInput.y < -dropThroughInputThreshold)
+        if (IsGrounded)
         {
-            OnDropThroughRequested?.Invoke();
+            // 아래 방향을 누른 채 점프하면, 일반 점프 대신 발판 통과(드롭스루)를 요청한다.
+            // 발판 위가 아니라 그냥 바닥이면 OneWayPlatform이 없어서 아무 반응도 없다 — 의도된 동작이다.
+            if (_moveInput.y < -dropThroughInputThreshold)
+            {
+                OnDropThroughRequested?.Invoke();
+                return;
+            }
+
+            _verticalVelocity = jumpForce;
             return;
         }
 
-        _verticalVelocity = jumpForce;
+        // 공중 상승 점프: 공중에서 점프 버튼을 한 번 더 누르면, 착지 전까지 딱 한 번만 추가로 더 높이 뛴다.
+        if (!_airJumpUsed)
+        {
+            _verticalVelocity = airJumpForce;
+            _airJumpUsed = true;
+        }
     }
 
     private void Update()
@@ -130,6 +147,10 @@ public class PlayerController : MonoBehaviour
         // 접지 중이고 내려가는 중이면 작은 아래 힘을 유지해 경사면 미끄러짐을 방지한다.
         if (IsGrounded && _verticalVelocity < 0f)
             _verticalVelocity = -2f;
+
+        // 착지하면 공중 상승 점프를 다시 쓸 수 있게 풀어준다.
+        if (IsGrounded)
+            _airJumpUsed = false;
 
         HandleMove();
         HandleFacing();

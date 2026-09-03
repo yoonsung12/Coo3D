@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Sirenix.OdinInspector;
 using UnityEngine;
 
@@ -6,9 +7,10 @@ using UnityEngine;
 // 체력 관리/피격 연출/사망 연출은 Enemy를 그대로 재사용하고, 여기서는 보스 전용 로직만 얹는다:
 // - HP 75/50/25/10%마다 순서대로 봄/여름/가을/겨울 계절 패턴 진입 신호를 1회씩 보낸다.
 // - 계절 패턴이 진행되는 동안은 무적 상태가 된다 (TakeDamage를 재정의해서 막는다).
-// - HP 50% 이하부터 EnemyMovement로 플레이어를 향해 추적 이동을 시작한다.
+// - 평상시 이동(발판 사이를 오가는 비행)은 BossFlightMovement가 별도로 담당하고,
+//   Boss는 그 결과(IsFlying)만 참조해서 비행 중엔 공격을 쉰다.
 // 실제 계절 패턴(꽃가루/비구름/은행/고드름)의 연출과 로직은 각 패턴 전용 컨트롤러가
-// OnPatternTriggered 이벤트를 구독해서 구현한다 (이번 단계에서는 아직 없음).
+// OnPatternTriggered 이벤트를 구독해서 구현한다.
 // 기본 패턴(근접/원거리 공격)은 계절 패턴 진행 중(무적 상태)에도 계속 시도한다 — 스펙 문서 기준
 // "패턴 진행 중에도 회피 압박을 유지하기 위해 공격을 멈추지 않는다".
 [RequireComponent(typeof(EnemyMovement), typeof(EnemyCombat))]
@@ -20,10 +22,6 @@ public class Boss : Enemy
     [SerializeField, LabelText("계절 패턴 진입 체력 비율 (봄→여름→가을→겨울 순서)")]
     private float[] patternThresholds = { 0.75f, 0.5f, 0.25f, 0.1f };
     // HealthRatio가 이 값 아래로 내려갈 때마다 배열 순서대로(=봄/여름/가을/겨울 순서로) 패턴이 1회씩 발동한다.
-
-    [SerializeField, LabelText("추적 이동 시작 체력 비율")]
-    private float moveStartHealthRatio = 0.5f;
-    // 이 비율보다 체력이 높을 때는 보스가 제자리에 고정된다.
 
     [SerializeField, LabelText("파훼 성공 후 무방비 지속 시간")]
     private float vulnerableWindowDuration = 2.5f;
@@ -53,9 +51,42 @@ public class Boss : Enemy
     [SerializeField, LabelText("원거리 공격 쿨다운")]
     private float rangedAttackCooldown = 2f;
 
+    [Title("착지 지점")]
+    [SerializeField, LabelText("착지 가능 지점 목록")]
+    private List<LandingPoint> landingPoints = new List<LandingPoint>
+    {
+        new LandingPoint { label = "Floor", position = new Vector2(0f, 1.0f) },
+        new LandingPoint { label = "Platform_MidLeft", position = new Vector2(-8.5f, 4.1f) },
+        new LandingPoint { label = "Platform_MidRight", position = new Vector2(8.5f, 4.1f) },
+        new LandingPoint { label = "Platform_TopCenter", position = new Vector2(0f, 7.1f) },
+        new LandingPoint { label = "Platform_TopFarLeft", position = new Vector2(-19.0f, 7.7f) },
+        new LandingPoint { label = "Platform_TopFarRight", position = new Vector2(19.0f, 7.7f) },
+    };
+    // 봄 패턴 돌진(BossSpringPattern)과 평상시 비행 이동(BossFlightMovement)이 공통으로 쓰는
+    // 착지 지점 목록이다. 각 좌표는 BossArena 씬의 바닥/발판 윗면 + 보스 몸(BoxCollider 반높이 1.0,
+    // 보스 크기를 2배로 키우면서 0.5→1.0으로 변경됨)을 더한 착지 높이다.
+
+    // Inspector에서 착지 지점을 알아보기 쉽게 이름표를 붙이기 위한 자료구조다.
+    [System.Serializable]
+    public class LandingPoint
+    {
+        [LabelText("이름")]
+        public string label;
+
+        [LabelText("좌표 (X, Y)")]
+        public Vector2 position;
+    }
+
+    // BossSpringPattern/BossFlightMovement가 읽기 전용으로 참조하는 공개 접근자다.
+    public IReadOnlyList<LandingPoint> LandingPoints => landingPoints;
+
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("무적 상태")]
     public bool IsInvincible { get; private set; }
+
+    [ReadOnly, ShowInInspector, LabelText("비행 이동 중")]
+    public bool IsFlying { get; private set; }
+    // BossFlightMovement가 SetFlying()으로 갱신한다. 비행 중엔 HandleBasicAttack이 공격을 쉰다.
 
     [ReadOnly, ShowInInspector, LabelText("다음에 발동할 계절 패턴 순번")]
     private int _nextPatternIndex;
@@ -97,7 +128,6 @@ public class Boss : Enemy
         if (IsDead) return;
 
         TickVulnerableWindow();
-        HandleChaseMovement();
         HandleBasicAttack();
     }
 
@@ -113,6 +143,10 @@ public class Boss : Enemy
     // 봄 패턴(꽃가루 트레일 폭발)처럼 "패턴을 직접 파훼했을 때"만 호출해야 하며,
     // IsInvincible 체크를 건너뛰고 곧바로 base.TakeDamage()를 호출한다.
     public void ApplyPatternDamage(float amount) => base.TakeDamage(amount);
+
+    // BossFlightMovement가 비행을 시작/종료할 때 호출해서 IsFlying 상태를 갱신한다.
+    // 비행 중엔 HandleBasicAttack이 공격을 쉬도록 하기 위한 용도다.
+    public void SetFlying(bool flying) => IsFlying = flying;
 
     // 데미지를 받아 체력이 줄어들 때마다 다음 계절 패턴 임계값을 넘었는지 확인한다.
     private void HandleDamageForPatternCheck(float amount) => CheckPatternThreshold();
@@ -165,33 +199,12 @@ public class Boss : Enemy
         OnPatternEnded?.Invoke();
     }
 
-    // HP 50% 이하부터, 계절 패턴이 진행 중이 아닐 때만 플레이어를 향해 좌우로 추적한다.
-    // 패턴이 진행 중일 때는 각 패턴 컨트롤러가 보스의 이동을 직접 담당하므로 여기서는 개입하지 않는다.
-    private void HandleChaseMovement()
-    {
-        if (_activePattern != null) return;
-        if (playerTransform == null || HealthRatio > moveStartHealthRatio)
-        {
-            _movement.Move(0f);
-            return;
-        }
-
-        float dx = playerTransform.position.x - transform.position.x;
-        if (Mathf.Abs(dx) <= _combat.AttackRange)
-        {
-            // 근접 공격 사거리 안까지 왔으면 더 다가가지 않고 멈춰서 공격 타이밍을 잡는다.
-            _movement.Move(0f);
-            return;
-        }
-
-        _movement.Move(Mathf.Sign(dx));
-    }
-
     // 기본 패턴(근접/원거리 공격)이다. 계절 패턴 진행 중(무적 상태)에도 계속 시도해서
-    // 회피 압박을 유지하지만, 파훼 직후 무방비 시간에는 공격하지 않는다.
+    // 회피 압박을 유지하지만, 파훼 직후 무방비 시간과 비행 이동 중에는 공격하지 않는다.
     private void HandleBasicAttack()
     {
         if (_isInVulnerableWindow) return;
+        if (IsFlying) return;
         if (playerTransform == null) return;
 
         float dx = playerTransform.position.x - transform.position.x;
