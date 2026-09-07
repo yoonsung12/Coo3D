@@ -116,14 +116,41 @@ public class BossSummerPattern : MonoBehaviour
     private void OnDisable()
     {
         _boss.OnPatternTriggered -= HandlePatternTriggered;
+        ForceAbort();
+    }
 
+    private void HandlePatternTriggered(Boss.SeasonPattern pattern)
+    {
+        if (pattern != Boss.SeasonPattern.Summer)
+        {
+            // 다른 계절 패턴이 발동됐다면, 여름 패턴이 아직 진행 중이었더라도 즉시 정리하고 물러난다.
+            if (_cycleRoutine != null) ForceAbort();
+            return;
+        }
+
+        if (_cycleRoutine != null) return;
+
+        _cycleRoutine = StartCoroutine(SummerCycleRoutine());
+    }
+
+    // 진행 중이던 사이클을 파훼 성공 없이 즉시 중단하고 물리/연출 상태를 원래대로 되돌린다.
+    // 오브젝트 비활성화(OnDisable)와 다른 계절 패턴에 밀려날 때(HandlePatternTriggered) 둘 다 재사용한다.
+    private void ForceAbort()
+    {
         if (_cycleRoutine != null)
         {
             StopCoroutine(_cycleRoutine);
             _cycleRoutine = null;
         }
 
+        if (_activeLaser != null)
+        {
+            _activeLaser.Interrupt();
+            _activeLaser = null;
+        }
+
         IsLaserActive = false;
+        _boss.SetFlying(false);
         playerController?.ClearWindZone();
         StopPullSound();
 
@@ -132,14 +159,8 @@ public class BossSummerPattern : MonoBehaviour
             _rb.isKinematic = false;
             _rb.useGravity = true;
         }
-    }
 
-    private void HandlePatternTriggered(Boss.SeasonPattern pattern)
-    {
-        if (pattern != Boss.SeasonPattern.Summer) return;
-        if (_cycleRoutine != null) return;
-
-        _cycleRoutine = StartCoroutine(SummerCycleRoutine());
+        _currentPhase = "대기";
     }
 
     private IEnumerator SummerCycleRoutine()

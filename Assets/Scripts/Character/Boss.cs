@@ -88,11 +88,26 @@ public class Boss : Enemy
     public bool IsFlying { get; private set; }
     // BossFlightMovement가 SetFlying()으로 갱신한다. 비행 중엔 HandleBasicAttack이 공격을 쉰다.
 
-    [ReadOnly, ShowInInspector, LabelText("다음에 발동할 계절 패턴 순번")]
     private int _nextPatternIndex;
 
-    [ReadOnly, ShowInInspector, LabelText("현재 진행 중인 계절 패턴")]
     private SeasonPattern? _activePattern;
+
+    // 계절 이름을 한글로 표시하기 위한 표다. SeasonPattern enum 순서(봄/여름/가을/겨울)와 맞춰둔다.
+    private static readonly string[] PatternKoreanNames = { "봄", "여름", "가을", "겨울" };
+
+    // Inspector에서 "봄 계절패턴 대기 중"처럼 한눈에 알아볼 수 있게 보여주기 위한 계산 값이다.
+    // 실제 로직은 _nextPatternIndex를 그대로 쓰고, 이 프로퍼티는 표시 전용이다.
+    [ReadOnly, ShowInInspector, LabelText("다음 계절 패턴")]
+    private string NextPatternDisplay =>
+        _nextPatternIndex < patternThresholds.Length
+            ? $"{PatternKoreanNames[_nextPatternIndex]} 계절패턴 대기 중"
+            : "모든 계절 패턴 소진";
+
+    [ReadOnly, ShowInInspector, LabelText("현재 진행 중인 계절 패턴")]
+    private string ActivePatternDisplay =>
+        _activePattern != null
+            ? $"{PatternKoreanNames[(int)_activePattern.Value]} 계절패턴 발동 중"
+            : "없음";
 
     // 계절 패턴이 발동될 때 발행된다. 각 패턴 전용 컨트롤러가 구독해서 실제 연출/로직을 시작한다.
     public event Action<SeasonPattern> OnPatternTriggered;

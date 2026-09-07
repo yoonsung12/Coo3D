@@ -106,7 +106,27 @@ public class BossSpringPattern : MonoBehaviour
     private void OnDisable()
     {
         _boss.OnPatternTriggered -= HandlePatternTriggered;
+        ForceAbort();
+    }
 
+    private void HandlePatternTriggered(Boss.SeasonPattern pattern)
+    {
+        if (pattern != Boss.SeasonPattern.Spring)
+        {
+            // 다른 계절 패턴이 발동됐다면, 봄 패턴이 아직 진행 중이었더라도 즉시 정리하고 물러난다.
+            if (_cycleRoutine != null) ForceAbort();
+            return;
+        }
+
+        if (_cycleRoutine != null) return;
+
+        _cycleRoutine = StartCoroutine(SpringCycleRoutine());
+    }
+
+    // 진행 중이던 사이클을 파훼 성공 없이 즉시 중단하고 물리/연출 상태를 원래대로 되돌린다.
+    // 오브젝트 비활성화(OnDisable)와 다른 계절 패턴에 밀려날 때(HandlePatternTriggered) 둘 다 재사용한다.
+    private void ForceAbort()
+    {
         if (_cycleRoutine != null)
         {
             StopCoroutine(_cycleRoutine);
@@ -116,19 +136,16 @@ public class BossSpringPattern : MonoBehaviour
         if (dashHitbox != null)
             dashHitbox.DisableHitbox();
 
+        if (aimLine != null)
+            aimLine.enabled = false;
+
         if (_rb != null)
         {
             _rb.isKinematic = false;
             _rb.useGravity = true;
         }
-    }
 
-    private void HandlePatternTriggered(Boss.SeasonPattern pattern)
-    {
-        if (pattern != Boss.SeasonPattern.Spring) return;
-        if (_cycleRoutine != null) return;
-
-        _cycleRoutine = StartCoroutine(SpringCycleRoutine());
+        _currentPhase = "대기";
     }
 
     // 조준 → 돌진 → 트레일 생성 사이클을 파훼될 때까지 반복한다.

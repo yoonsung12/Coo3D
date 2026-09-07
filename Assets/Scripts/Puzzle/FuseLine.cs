@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using DG.Tweening;
@@ -44,6 +45,12 @@ public class FuseLine : MonoBehaviour, IIgnitable
     private float regenSpeed = 4f;
     // 타는 속도보다 빠르게 잡아야 "주루룩" 복구되는 연출 의도에 맞는다.
 
+    [Title("등장(자라나는) 연출")]
+    [SerializeField, LabelText("자라나는 시간(초)"), PropertyRange(0.1f, 10f)]
+    private float growInDuration = 1.5f;
+    // PlayGrowInEffect() 호출 시 waypoints 끝(마지막 웨이포인트) 쪽에서부터 시작점 쪽으로
+    // 이 시간 동안 뿌리가 자라나듯 보이게 한다. 값이 클수록 천천히 자라난다.
+
     [Title("도착 지점")]
     [SerializeField, LabelText("문 앞 덩굴")]
     private FlammableObject doorVine;
@@ -72,6 +79,10 @@ public class FuseLine : MonoBehaviour, IIgnitable
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("현재 상태")]
     public FuseState CurrentState { get; private set; } = FuseState.Unlit;
+
+    // 도화선이 끝까지 다 타면 발행된다. 문이 없는 곳(예: 보스전 뿌리 에스코트)에서도
+    // doorVine 없이 이 이벤트만 구독해서 별도의 결과(보스 피해 등)를 연결할 수 있다.
+    public event Action OnFuseFullyBurned;
 
     private LineRenderer _lineRenderer;
     private readonly List<float> _cumulativeLengths = new List<float>();
@@ -133,6 +144,31 @@ public class FuseLine : MonoBehaviour, IIgnitable
         _totalLength = total;
     }
 
+    // 나무 쪽(마지막 웨이포인트)에서부터 시작점 쪽으로 뿌리가 서서히 드러나는(자라나는) 연출을
+    // 재생한다. 실제 연소 애니메이션과 정반대 방향으로 _burnedDistance를 총 길이에서 0까지
+    // 줄여가며 기존 RefreshLineRenderer()를 그대로 재사용한다 — 다 끝나면 자연스럽게 평소의
+    // "안 탄 상태(_burnedDistance=0, 전체 표시)"가 되므로 별도 마무리 처리가 필요 없다.
+    // onProgress: 매 프레임 현재 컷오프 거리(_burnedDistance)를 전달한다. 뿌리에 붙은 잔가지처럼
+    // 본선 성장과 함께 나타나야 하는 장식 요소를 동기화할 때 사용한다(FuseLine 자체는 그런
+    // 장식 요소의 존재를 몰라도 되게, 값만 넘겨주는 방식으로 분리했다).
+    public void PlayGrowInEffect(Action onComplete = null, Action<float> onProgress = null)
+    {
+        CalcCumulativeLengths();
+        _burnedDistance = _totalLength;
+        RefreshLineRenderer();
+        onProgress?.Invoke(_burnedDistance);
+
+        _burnTween?.Kill();
+        _burnTween = DOTween.To(() => _burnedDistance, x => _burnedDistance = x, 0f, growInDuration)
+            .SetEase(Ease.Linear)
+            .OnUpdate(() =>
+            {
+                RefreshLineRenderer();
+                onProgress?.Invoke(_burnedDistance);
+            })
+            .OnComplete(() => onComplete?.Invoke());
+    }
+
     // TorchTool의 SphereCast에 감지되면 호출된다. 안 탄 상태에서만 반응한다.
     public void OnIgnited()
     {
@@ -162,6 +198,7 @@ public class FuseLine : MonoBehaviour, IIgnitable
         if (burnSparkParticle != null) burnSparkParticle.Stop();
         StopBurnSound();
         if (doorVine != null) doorVine.OnIgnited();
+        OnFuseFullyBurned?.Invoke();
     }
 
     // 타는 동안 반복 재생할 크래클 사운드를 페이드인하며 시작한다.

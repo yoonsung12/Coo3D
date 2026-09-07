@@ -1,4 +1,3 @@
-using System.Collections;
 using DG.Tweening;
 using Sirenix.OdinInspector;
 using UnityEngine;
@@ -6,9 +5,9 @@ using UnityEngine;
 // 가을 계절 낙하물인 은행열매다. 꽃가루(Pollen)와 동일하게 좌우로 흔들리며 천천히 떨어지다가,
 // 착지 Y좌표에 도달하면 그 자리에 멈춰 가만히 있는다.
 // 착지 후 Player가 접촉하면 가을 게이지가 즉시 오르고, 그 자리에 냄새(GinkgoScent)를 남긴 채 사라진다.
-// 착지 전에는 선풍기 바람에 날려 보낼 수 있다(IBlowable).
+// 착지 전에는 우산으로만 막을 수 있다 — 선풍기 반응(IBlowable)은 의도한 동작이 아니라서 제거함.
 [RequireComponent(typeof(Rigidbody), typeof(Collider))]
-public class GinkgoFruit : BaseHazard, IBlowable
+public class GinkgoFruit : BaseHazard
 {
     [Title("떠다니는 움직임 설정")]
     [SerializeField, LabelText("바람에 밀리는 속도")]
@@ -42,15 +41,6 @@ public class GinkgoFruit : BaseHazard, IBlowable
     [SerializeField, LabelText("최대 크기")]
     private float maxScale = 0.5f;
 
-    [Title("바람에 날림 연출 (착지 전)")]
-    [SerializeField, LabelText("날아간 뒤 소멸까지 걸리는 시간")]
-    private float blownFadeTime = 1.5f;
-    // 선풍기에 날린 뒤 소멸까지 걸리는 총 시간이다. 클수록 멀리 날아간다.
-
-    [SerializeField, LabelText("속도 감속률")]
-    private float blownShrinkSpeed = 2f;
-    // 날아가는 동안 속도가 줄어드는 세기(초당)다. 낮을수록 오래 빠르게 날아간다.
-
     [Title("터짐 연출 (착지 후 접촉 시)")]
     [SerializeField, LabelText("냄새 프리팹")]
     private GameObject scentPrefab;
@@ -59,21 +49,13 @@ public class GinkgoFruit : BaseHazard, IBlowable
     [SerializeField, LabelText("터진 뒤 소멸까지 걸리는 시간")]
     private float burstFadeTime = 0.25f;
 
-    [Title("사운드")]
-    [SerializeField, LabelText("날아갈 때 효과음")]
-    private AudioClip blownSound;
-
-    [SerializeField, LabelText("효과음 볼륨"), Range(0f, 1f)]
-    private float soundVolume = 0.8f;
-
     private MeshRenderer _meshRenderer;
     private Color _originalColor;
     private Rigidbody _rb;
     private float _seed;
-    private bool _isBlown;
     private bool _isLanded;
     private bool _hasBurst;
-    private Tween _blowTween;
+    private Tween _fadeTween;
 
     private void Awake()
     {
@@ -99,12 +81,12 @@ public class GinkgoFruit : BaseHazard, IBlowable
     protected override void OnDestroy()
     {
         base.OnDestroy();
-        _blowTween?.Kill();
+        _fadeTween?.Kill();
     }
 
     private void FixedUpdate()
     {
-        if (_isBlown || _isLanded) return;
+        if (_isLanded) return;
         Float();
 
         if (_rb.position.y <= landingY)
@@ -133,21 +115,6 @@ public class GinkgoFruit : BaseHazard, IBlowable
         pos.y = landingY;
         _rb.position = pos;
         _rb.isKinematic = true;
-    }
-
-    // FanTool의 바람 판정에 감지되면 호출된다. 착지 후에는 Rigidbody가 Kinematic이라 실질적으로 반응하지 않는다.
-    public void OnBlown(Vector3 direction, float force, bool impulse = false)
-    {
-        if (_isBlown || _isLanded) return;
-
-        _isBlown = true;
-        _rb.linearVelocity = direction.normalized * force;
-
-        // PlayClipAtPoint를 사용해 오브젝트가 Destroy된 뒤에도 소리가 끝까지 재생된다.
-        if (blownSound != null)
-            AudioSource.PlayClipAtPoint(blownSound, transform.position, soundVolume);
-
-        StartCoroutine(BlownAwayRoutine());
     }
 
     // 플레이어와 접촉하면 즉시 가을 게이지를 올리고, 그 자리에 냄새를 남긴 채 터진다.
@@ -186,34 +153,6 @@ public class GinkgoFruit : BaseHazard, IBlowable
         StartFadeOut(burstFadeTime, () => Destroy(gameObject));
     }
 
-    private IEnumerator BlownAwayRoutine()
-    {
-        float timer = 0f;
-        bool fadeStarted = false;
-        const float fadeStartRatio = 0.5f;
-        // 전반부(0~50%)는 원래 크기로 빠르게 날아가고, 후반부부터 서서히 작아지고 투명해진다.
-        // 이렇게 하면 더 멀리 날아간 뒤 사라지는 느낌을 준다.
-
-        while (timer < blownFadeTime)
-        {
-            timer += Time.deltaTime;
-            float totalT = timer / blownFadeTime;
-
-            if (!fadeStarted && totalT >= fadeStartRatio)
-            {
-                fadeStarted = true;
-                StartFadeOut(blownFadeTime * (1f - fadeStartRatio));
-            }
-
-            // 프레임레이트에 독립적인 속도 감속. MoveTowards로 선형 감속해 자연스럽게 속도가 줄어든다.
-            _rb.linearVelocity = Vector3.MoveTowards(_rb.linearVelocity, Vector3.zero, blownShrinkSpeed * Time.deltaTime);
-
-            yield return null;
-        }
-
-        Destroy(gameObject);
-    }
-
     // 크기를 0으로 줄이고 색상을 투명하게 만드는 DOTween 연출을 시작한다.
     // onComplete가 주어지면 연출이 끝난 뒤 호출한다 (예: 터짐 연출 후 오브젝트 제거).
     private void StartFadeOut(float duration, TweenCallback onComplete = null)
@@ -231,9 +170,6 @@ public class GinkgoFruit : BaseHazard, IBlowable
         if (onComplete != null)
             seq.OnComplete(onComplete);
 
-        _blowTween = seq;
+        _fadeTween = seq;
     }
-
-    [Button("바람에 날리기 테스트")]
-    private void TestBlow() => OnBlown(Vector3.right, 5f);
 }
