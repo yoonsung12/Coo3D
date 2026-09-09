@@ -44,7 +44,10 @@ public class EnemyAttackHitbox : MonoBehaviour
         // 그 경우 조용히 무시하고, 실제 Awake()가 실행되면 DisableHitbox()가 다시 호출되어 정상 상태가 된다.
         _isActive = true;
 
-        attackEffect?.Play();
+        // attackEffect?.Play() 형태는 Inspector에서 비워둔(미할당) ParticleSystem 참조에 대해
+        // UnassignedReferenceException을 던지는 Unity 고유 이슈가 있어, 명시적 null 비교로 우회한다.
+        if (attackEffect != null)
+            attackEffect.Play();
     }
 
     public void DisableHitbox()

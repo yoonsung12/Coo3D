@@ -26,7 +26,9 @@ public class BossLandingBlast : MonoBehaviour
     // 이 값에 맞춰 시각 오브젝트 크기(X/Y)도 자동으로 조절된다.
 
     [SerializeField, LabelText("플레이어 데미지")]
-    private float damage = 10f;
+    private float damage = 20f;
+    // Player 체력 하트 1칸(20)에 맞춘 값이다. 1칸 고정 데미지 원칙에 맞춰 10→20으로 조정됨(봄 패턴 돌진
+    // 착지 폭발과 부리 급강하 찍기가 이 프리팹을 공유해서 쓴다).
 
     [SerializeField, LabelText("타격 레이어")]
     private LayerMask hitLayers;

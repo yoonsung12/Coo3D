@@ -78,6 +78,9 @@ public class BossFlightMovement : MonoBehaviour
     {
         if (_boss.IsDead) return;
         if (_patternBlocking) return;
+        if (_boss.IsBasicAttacking) return;
+        // 부리 급강하 찍기처럼 평범한 패턴이 보스를 직접 이동시키는 동안엔 같은 Rigidbody를
+        // 동시에 건드리지 않도록 새 비행을 시작하지 않는다.
         if (_flightRoutine != null) return; // 이미 비행 중이면 새로 트리거하지 않는다.
 
         _timer -= Time.deltaTime;
