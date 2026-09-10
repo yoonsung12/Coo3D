@@ -58,13 +58,19 @@ public class SwordHitbox : MonoBehaviour
         // 비트 연산으로 레이어 마스크와 비교한다.
         if ((hitLayers & (1 << other.gameObject.layer)) == 0) return;
 
-        if (!other.TryGetComponent<CharacterBase>(out var target)) return;
+        if (other.TryGetComponent<CharacterBase>(out var target))
+        {
+            // 한 번의 베기에서 같은 대상이 여러 프레임에 걸쳐 중복 감지되지 않도록 한다.
+            if (_hitTargets.Contains(target)) return;
 
-        // 한 번의 베기에서 같은 대상이 여러 프레임에 걸쳐 중복 감지되지 않도록 한다.
-        if (_hitTargets.Contains(target)) return;
+            _hitTargets.Add(target);
+            target.TakeDamage(damage);
+            return;
+        }
 
-        _hitTargets.Add(target);
-        target.TakeDamage(damage);
+        // 체력이 없는 환경 오브젝트(고드름 등)는 IHittable로 처리한다.
+        if (other.TryGetComponent<IHittable>(out var hittable))
+            hittable.OnHit();
     }
 
     [Button("히트박스 활성 테스트")]

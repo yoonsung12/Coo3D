@@ -26,7 +26,7 @@ public class BossBeakDiveAttack : MonoBehaviour, IBossBasicAttack
 
     [Title("급강하 설정")]
     [SerializeField, LabelText("급강하 속도")]
-    private float diveSpeed = 25f;
+    private float diveSpeed = 20f;
     // 물러나는 속도(backHopSpeed)보다 확실히 빠르게 맞춰야 "물러섰다가 확 달려든다"는 느낌이 난다.
 
     [SerializeField, LabelText("착지 지점 지면 여유 높이")]
