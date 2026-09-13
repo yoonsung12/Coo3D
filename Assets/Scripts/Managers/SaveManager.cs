@@ -95,9 +95,14 @@ public class SaveManager : MonoBehaviour
         }
         else
         {
+            // 씬 전환이 갑자기 보이지 않도록, ScreenFader로 화면을 먼저 검게 덮은 뒤에 씬을 불러온다.
             _pendingLoadPosition = data.checkpointPosition;
-            SceneManager.sceneLoaded += OnSceneLoadedApplyPosition;
-            SceneManager.LoadScene(data.sceneName);
+            string sceneToLoad = data.sceneName;
+            ScreenFader.Instance.FadeOut(() =>
+            {
+                SceneManager.sceneLoaded += OnSceneLoadedApplyPosition;
+                SceneManager.LoadScene(sceneToLoad);
+            });
         }
     }
 
@@ -105,6 +110,7 @@ public class SaveManager : MonoBehaviour
     {
         SceneManager.sceneLoaded -= OnSceneLoadedApplyPosition;
         ApplyLoadedPosition(_pendingLoadPosition);
+        ScreenFader.Instance.FadeIn();
     }
 
     private void ApplyLoadedPosition(Vector3 position)

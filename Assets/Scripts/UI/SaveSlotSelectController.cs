@@ -160,10 +160,21 @@ public class SaveSlotSelectController : MonoBehaviour
     // SceneManager.LoadScene은 이 프레임 안에서 즉시 활성 씬을 바꾸지 않으므로(다음 프레임에 반영),
     // NewGame(slot)만 호출하면 여전히 "Title"이 활성 씬으로 기록된다.
     // 옮겨갈 씬 이름을 이미 알고 있으므로 NewGame(slot, sceneName) 오버로드로 직접 전달한다.
+    // 씬 전환이 갑자기 보이지 않도록, ScreenFader로 화면을 먼저 검게 덮은 뒤에 씬을 불러온다.
     private void StartNewGame(int slot)
     {
-        SceneManager.LoadScene(gameplaySceneName);
-        SaveManager.Instance.NewGame(slot, gameplaySceneName);
+        ScreenFader.Instance.FadeOut(() =>
+        {
+            SceneManager.LoadScene(gameplaySceneName);
+            SaveManager.Instance.NewGame(slot, gameplaySceneName);
+            SceneManager.sceneLoaded += OnGameplaySceneLoadedFadeIn;
+        });
+    }
+
+    private void OnGameplaySceneLoadedFadeIn(Scene scene, LoadSceneMode mode)
+    {
+        SceneManager.sceneLoaded -= OnGameplaySceneLoadedFadeIn;
+        ScreenFader.Instance.FadeIn();
     }
 
     private void SaveToSlotAndRefresh(int slot)
