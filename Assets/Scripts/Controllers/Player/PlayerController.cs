@@ -173,30 +173,34 @@ public class PlayerController : MonoBehaviour
 
     private void HandleMove()
     {
-        // 속박/빙결 디버프 중에는 이동 입력을 완전히 무시한다.
         if (_isBound || _isFrozen)
         {
             _moveVelocity = Vector3.zero;
             return;
         }
 
-        // 방향 반전 디버프 중에는 좌우 입력 부호를 뒤집는다.
         float xInput = _isReversed ? -_moveInput.x : _moveInput.x;
+        float zInput = _moveInput.y;
 
-        // 사이드뷰: 입력 X → 월드 X축 이동만 사용한다. Z축 이동은 없다.
-        Vector3 moveDir = new Vector3(xInput, 0f, 0f);
+        // X = 좌우
+        // Z = 앞뒤
+        Vector3 moveDir = new Vector3(xInput, 0f, zInput);
+
+        // 대각선 이동이 더 빨라지는 것 방지
+        if (moveDir.sqrMagnitude > 1f)
+            moveDir.Normalize();
+
         _moveVelocity = moveDir * (moveSpeed * _speedMultiplier);
 
-        if (xInput > 0.01f)
+        // 이동하는 방향을 바라보게 함
+        if (moveDir.sqrMagnitude > 0.01f)
         {
-            transform.rotation = Quaternion.Euler(0f, 90f, 0f);
-        }
-        else if (xInput < -0.01f)
-        {
-            transform.rotation = Quaternion.Euler(0f, -90f, 0f);
+            Quaternion targetRotation =
+                Quaternion.LookRotation(moveDir, Vector3.up);
+
+            transform.rotation = targetRotation;
         }
     }
-
     private void HandleFacing()
     {
         // Mouse.current가 없으면 (게임패드 전용 환경 등) 처리를 건너뛴다.
