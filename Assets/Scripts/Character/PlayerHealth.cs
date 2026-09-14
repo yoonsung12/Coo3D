@@ -161,16 +161,19 @@ public class PlayerHealth : CharacterBase
             _playerController.enabled = false;
 
         OnDeath?.Invoke();
+        // GameOverUI가 이 이벤트를 구독해 화면을 띄우고 Time.timeScale을 0으로 멈춘다.
+        // 리스폰은 더 이상 여기서 자동으로 일어나지 않고, GameOverUI의 계속하기 버튼이
+        // RespawnAtCheckpoint()를 직접 호출할 때 이뤄진다.
 
         if (visualBody != null)
             visualBody.material.DOColor(deathDimColor, "_BaseColor", deathFadeDuration)
-                .OnComplete(RespawnAtCheckpoint);
-        else
-            RespawnAtCheckpoint();
+                .SetUpdate(true);
+        // GameOverUI가 Time.timeScale을 0으로 멈추므로, SetUpdate(true)로 Unscaled Time 기준으로
+        // 재생해야 암전 연출이 끝까지 재생된다.
     }
 
-    // 사망 연출이 끝난 뒤 호출된다. 체크포인트 위치로 옮기고 체력/조작을 원래대로 되돌린다.
-    private void RespawnAtCheckpoint()
+    // 게임오버 화면의 계속하기 버튼에서 호출된다. 체크포인트 위치로 옮기고 체력/조작을 원래대로 되돌린다.
+    public void RespawnAtCheckpoint()
     {
         _isDead = false;
         _currentHealth = maxHealth;
@@ -210,6 +213,14 @@ public class PlayerHealth : CharacterBase
         if (_isDead) return;
 
         _currentHealth = Mathf.Min(_currentHealth + amount, maxHealth);
+        OnHealthChanged?.Invoke(_currentHealth, maxHealth);
+    }
+
+    // 체력을 value로 직접 설정한다. 씬 전환 시 이전 씬의 체력을 그대로 이어받기 위해
+    // SceneSpawnPoint에서 호출한다. Heal/TakeDamage와 달리 증감이 아니라 절대값 설정이다.
+    public void SetHealth(float value)
+    {
+        _currentHealth = Mathf.Clamp(value, 0f, maxHealth);
         OnHealthChanged?.Invoke(_currentHealth, maxHealth);
     }
 

@@ -1,3 +1,4 @@
+using System;
 using DG.Tweening;
 using Sirenix.OdinInspector;
 using System.Collections;
@@ -102,6 +103,9 @@ public class SwordAttack : MonoBehaviour
     // NFBTEnemyAI의 Counter(반격) 분기가 Player의 공격 시작/종료 타이밍을 읽기 위해 사용하는 프로퍼티다.
     public bool IsAttacking => _isAttacking;
 
+    // 공격이 실제로 시작될 때마다 발행된다. PillowDurability가 이 이벤트를 구독해 내구도를 소모한다.
+    public event Action OnAttackFired;
+
     // 0 = 아래→위 (Swing 0), 1 = 위→아래 (Swing 1)
     // 공격키를 누를 때마다 즉시 전환된다.
     private int _nextSwingIndex = 0;
@@ -119,6 +123,8 @@ public class SwordAttack : MonoBehaviour
     // ToolManager에서 공격 모드(도구 미장착)로 공격키가 눌릴 때 호출된다.
     public void TryAttack()
     {
+        OnAttackFired?.Invoke();
+
         // 이전 공격이 진행 중이면 즉시 중단한다.
         // SW08은 현재 각도에 멈추며, 새 Sequence가 그 위치에서 바로 이어진다.
         _slashSequence?.Kill();

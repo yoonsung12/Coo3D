@@ -109,10 +109,19 @@ public class SeasonGaugeManager : MonoBehaviour
         _reverseSound = reverseSound;
         _frozenSound = frozenSound;
 
-        // ScriptableObject는 에디터 플레이 세션 사이에 값이 남아있으므로 시작 시 초기화한다.
-        _model.ResetAll();
-        CurrentDebuff = DebuffType.None;
-        _debuffTimer = 0f;
+        if (SceneTransitionData.PreserveSeasonState)
+        {
+            // ScenePortal을 거쳐 온 경우 게이지/디버프 상태를 초기화하지 않고 그대로 이어간다.
+            SceneTransitionData.PreserveSeasonState = false;
+        }
+        else
+        {
+            // ScriptableObject는 에디터 플레이 세션 사이에 값이 남아있으므로, 포털을 거치지 않은
+            // 일반적인 씬 시작(새 게임, 첫 진입 등)에서는 시작 시 초기화한다.
+            _model.ResetAll();
+            CurrentDebuff = DebuffType.None;
+            _debuffTimer = 0f;
+        }
     }
 
     private void Update()

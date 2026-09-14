@@ -19,6 +19,11 @@ public class SwordHitbox : MonoBehaviour
     // 타격 판정이 적용될 레이어를 지정한다.
     // Inspector에서 Enemy 레이어 등 칼에 맞아야 하는 오브젝트의 레이어를 체크한다.
 
+    [SerializeField, LabelText("PillowDurability (선택)")]
+    private PillowDurability pillowDurability;
+    // Inspector에서 Player의 PillowDurability를 연결하면, 내구도가 소진됐을 때 데미지가 줄어든다.
+    // 비워두면 항상 기본 데미지 그대로 적용된다(배게가 아직 없는 다른 무기에도 재사용 가능).
+
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("히트박스 활성 중")]
     private bool _isActive;
@@ -64,7 +69,8 @@ public class SwordHitbox : MonoBehaviour
             if (_hitTargets.Contains(target)) return;
 
             _hitTargets.Add(target);
-            target.TakeDamage(damage);
+            float multiplier = pillowDurability != null ? pillowDurability.GetDamageMultiplier() : 1f;
+            target.TakeDamage(damage * multiplier);
             return;
         }
 

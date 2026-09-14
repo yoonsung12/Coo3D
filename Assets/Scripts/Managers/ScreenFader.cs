@@ -26,6 +26,25 @@ public class ScreenFader : MonoBehaviour
     private Tween _fadeTween;
     // 페이드 중 다시 호출되는 경우를 대비해 현재 실행 중인 Tween을 저장해 둔다.
 
+    // Title.unity를 거치지 않고(예: SampleScene을 바로 열어 Play) 다른 씬에서 곧바로 Play해도
+    // 페이드가 항상 동작하도록, 첫 씬이 로드되기 전에 Resources의 프리팹으로 인스턴스를 미리 만들어 둔다.
+    // Title에 배치된 기존 ScreenFader는 그대로 두어도 되는데, Awake()의 중복 생성 방지 로직이
+    // 이미 있어서 나중에 로드되면 스스로 파괴되고 이 인스턴스만 남는다.
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    private static void EnsureInstanceExists()
+    {
+        if (Instance != null) return;
+
+        GameObject prefab = Resources.Load<GameObject>("ScreenFader");
+        if (prefab == null)
+        {
+            Debug.LogWarning("[ScreenFader] Resources/ScreenFader 프리팹을 찾을 수 없습니다.");
+            return;
+        }
+
+        Instantiate(prefab);
+    }
+
     private void Awake()
     {
         // 씬 전환 후에도 페이더가 하나만 존재하도록 중복 생성을 막는다.
