@@ -117,6 +117,15 @@ public class FuseLine : MonoBehaviour, IIgnitable
             StopCoroutine(_regenCoroutine);
     }
 
+    // 완전 연소 직후(OnFullyBurned) 구독자가 같은 프레임에 이 오브젝트를 SetActive(false)로 꺼버리는
+    // 경우가 있다(보스전 뿌리 에스코트: BossAutumnPattern이 나무를 Deactivate()하며 끔).
+    // 파괴가 아니라 "비활성화"라 OnDestroy는 안 불리는데, 막 시작한 오디오 페이드 트윈이 다음
+    // 프레임에 갱신되려다 대상이 사라진 걸 보고 에러를 던지는 문제가 있어서 여기서도 정리한다.
+    private void OnDisable()
+    {
+        _audioFadeTween?.Kill();
+    }
+
     private void Update()
     {
         if (CurrentState != FuseState.Burning) return;

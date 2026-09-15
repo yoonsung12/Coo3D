@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using DG.Tweening;
 using Sirenix.OdinInspector;
 using UnityEngine;
@@ -52,6 +53,15 @@ public class PlayerHealth : CharacterBase
     [SerializeField, LabelText("사망 연출 시간")]
     private float deathFadeDuration = 0.6f;
 
+    [Title("피격 무적 시간 설정")]
+    [SerializeField, LabelText("무적 지속시간")]
+    private float invincibleDuration = 1f;
+    // 메이플스토리처럼 한 번 맞으면 이 시간 동안 추가 데미지를 받지 않는다.
+
+    [SerializeField, LabelText("깜빡임 간격")]
+    private float blinkInterval = 0.1f;
+    // 무적 시간 동안 이 간격으로 visualBody를 껐다 켜서 점멸시킨다.
+
     // 체력이 바뀔 때마다 발행된다. UI(PlayerHealthUI)가 이 이벤트를 구독해 체력바를 갱신한다.
     public event Action<float, float> OnHealthChanged;
 
@@ -69,6 +79,11 @@ public class PlayerHealth : CharacterBase
 
     private bool _isDead;
     // 이미 사망 처리된 경우 추가 타격을 무시하기 위한 플래그다.
+
+    private bool _isInvincible;
+    // 피격 직후 무적 시간 동안 추가 데미지를 무시하기 위한 플래그다.
+
+    private Coroutine _invincibleRoutine;
 
     private void Awake()
     {
@@ -104,12 +119,13 @@ public class PlayerHealth : CharacterBase
         _flashTween?.Kill();
         _punchTween?.Kill();
         // 오브젝트가 파괴될 때 남아 있는 Tween을 정리해 오류를 방지한다.
+        // 코루틴은 오브젝트가 파괴되면 Unity가 자동으로 정리하므로 별도 StopCoroutine이 필요 없다.
     }
 
     public override void TakeDamage(float amount)
     {
-        // 이미 사망한 경우 타격을 무시한다.
-        if (_isDead) return;
+        // 이미 사망했거나 무적 시간 중이면 타격을 무시한다.
+        if (_isDead || _isInvincible) return;
 
         _currentHealth -= amount;
         _currentHealth = Mathf.Max(_currentHealth, 0f);
@@ -119,7 +135,42 @@ public class PlayerHealth : CharacterBase
         PlayHitEffect();
 
         if (_currentHealth <= 0f)
+        {
             Die();
+            return;
+        }
+
+        StartInvincibility();
+    }
+
+    // 피격 시 호출되어 무적 시간 동안 깜빡이게 한다. 연속으로 맞아도 TakeDamage 자체가
+    // 무적 중엔 막히므로, 이 코루틴이 겹쳐 시작될 일은 없다.
+    private void StartInvincibility()
+    {
+        _isInvincible = true;
+
+        if (_invincibleRoutine != null)
+            StopCoroutine(_invincibleRoutine);
+        _invincibleRoutine = StartCoroutine(InvincibilityRoutine());
+    }
+
+    private IEnumerator InvincibilityRoutine()
+    {
+        float elapsed = 0f;
+        while (elapsed < invincibleDuration)
+        {
+            if (visualBody != null)
+                visualBody.enabled = !visualBody.enabled;
+
+            yield return new WaitForSeconds(blinkInterval);
+            elapsed += blinkInterval;
+        }
+
+        if (visualBody != null)
+            visualBody.enabled = true;
+
+        _isInvincible = false;
+        _invincibleRoutine = null;
     }
 
     private void PlayHitEffect()
@@ -156,6 +207,17 @@ public class PlayerHealth : CharacterBase
         _flashTween?.Kill();
         _punchTween?.Kill();
 
+        // 무적 깜빡임 도중 죽으면 코루틴을 멈추고 몸을 다시 보이게 해서, 사망 연출이 꺼진 채로
+        // 시작되는 일이 없게 한다.
+        if (_invincibleRoutine != null)
+        {
+            StopCoroutine(_invincibleRoutine);
+            _invincibleRoutine = null;
+        }
+        _isInvincible = false;
+        if (visualBody != null)
+            visualBody.enabled = true;
+
         // PlayerController를 비활성화해 더 이상 이동/점프 입력을 받지 않게 한다.
         if (_playerController != null)
             _playerController.enabled = false;
@@ -180,8 +242,18 @@ public class PlayerHealth : CharacterBase
 
         Respawn(CheckpointManager.CurrentCheckpointPosition);
 
+        if (_invincibleRoutine != null)
+        {
+            StopCoroutine(_invincibleRoutine);
+            _invincibleRoutine = null;
+        }
+        _isInvincible = false;
+
         if (visualBody != null)
+        {
+            visualBody.enabled = true;
             visualBody.material.SetColor("_BaseColor", _originalColor);
+        }
 
         if (_playerController != null)
             _playerController.enabled = true;
@@ -242,8 +314,18 @@ public class PlayerHealth : CharacterBase
         _currentHealth = maxHealth;
         transform.localPosition = _initialLocalPosition;
 
+        if (_invincibleRoutine != null)
+        {
+            StopCoroutine(_invincibleRoutine);
+            _invincibleRoutine = null;
+        }
+        _isInvincible = false;
+
         if (visualBody != null)
+        {
+            visualBody.enabled = true;
             visualBody.material.SetColor("_BaseColor", _originalColor);
+        }
 
         if (_playerController != null)
             _playerController.enabled = true;

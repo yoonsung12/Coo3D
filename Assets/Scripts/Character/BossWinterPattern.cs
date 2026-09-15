@@ -59,9 +59,9 @@ public class BossWinterPattern : MonoBehaviour
     [SerializeField, LabelText("착지 펀치 지속시간")]
     private float landPunchDuration = 0.3f;
 
-    [SerializeField, LabelText("냉기 파동 파티클")]
-    private ParticleSystem coldWaveParticle;
-    // 비워두면 파티클 없이 착지 펀치 연출과 카메라 흔들림만으로 표현한다.
+    [SerializeField, LabelText("냉기 충격파(링+균열)")]
+    private BossColdShockwave coldShockwave;
+    // 착지 순간 동심원 링과 사방으로 뻗는 얼음 균열을 재생한다. 비워두면 생략된다.
 
     [SerializeField, LabelText("착지 카메라 흔들림 세기")]
     private float landShakeStrength = 0.4f;
@@ -190,9 +190,11 @@ public class BossWinterPattern : MonoBehaviour
         _visualTween?.Kill();
         _visualTween = transform.DOPunchScale(Vector3.one * landPunchStrength, landPunchDuration, 6, 0.5f);
 
-        // Unity Object 참조는 ?. 대신 명시적으로 null을 비교해야 안전하다(비어 있는 참조에서
-        // ?.가 예외를 던지는 경우가 있음을 헤드리스 테스트 중 확인함).
-        if (coldWaveParticle != null) coldWaveParticle.Play();
+        // 착지 충격으로 냉기가 양옆으로 퍼지며 발판 하단에 고드름이 얼어붙어 생성되는 순간이다.
+        SpawnAllIcicles();
+
+        // 동심원 링과 사방으로 뻗는 얼음 균열로 "쾅" 착지의 충격파를 표현한다.
+        if (coldShockwave != null) coldShockwave.Play();
 
         SideViewCamera cam = Camera.main != null ? Camera.main.GetComponent<SideViewCamera>() : null;
         if (cam != null) cam.Shake(landShakeDuration, landShakeStrength);
@@ -223,8 +225,9 @@ public class BossWinterPattern : MonoBehaviour
 
         if (_isActive)
         {
-            // 여기 도달했다는 건 파훼되지 못하고 불이 다 탄 것이다 — 실패 처리, 고드름을 원위치로 되돌린다.
-            spot.icicle?.ResetIcicle();
+            // 여기 도달했다는 건 파훼되지 못하고 불이 다 탄 것이다 — 실패 처리, 고드름을 원위치로
+            // 되돌린다. 이미 생성(Spawn)된 상태이므로 다시 숨기지 않고 그대로 보이게 둔다.
+            spot.icicle?.ResetIcicle(hide: false);
         }
 
         _currentLureLabel = "-";
@@ -264,11 +267,22 @@ public class BossWinterPattern : MonoBehaviour
         }
     }
 
+    // 겨울 패턴을 새로 시작하기 전(HandlePatternTriggered)이나 컴포넌트가 꺼질 때(OnDisable) 호출된다.
+    // 아직 보스가 "쾅" 착지하기 전 상태로 되돌리는 것이므로 고드름을 다시 숨긴다.
     private void ResetAllIcicles()
     {
         foreach (LureSpot spot in lureSpots)
         {
-            if (spot.icicle != null) spot.icicle.ResetIcicle();
+            if (spot.icicle != null) spot.icicle.ResetIcicle(hide: true);
+        }
+    }
+
+    // 인트로의 "쾅" 착지 순간에 호출되어, 발판 하단의 고드름들이 동시에 얼어붙어 생성되게 한다.
+    private void SpawnAllIcicles()
+    {
+        foreach (LureSpot spot in lureSpots)
+        {
+            if (spot.icicle != null) spot.icicle.Spawn();
         }
     }
 

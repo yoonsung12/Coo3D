@@ -65,17 +65,26 @@ public class PollenTrail : MonoBehaviour, IIgnitable
     private float _explosionRadius;
     private float _explosionDamage;
     private float _explodeDelay;
+    private Vector3 _segmentStart;
+    private Vector3 _segmentEnd;
+    // 돌진 시작점~착지점 선분이다. 트레일이 길게 늘어나면(맵 끝까지 돌진 등) transform.position
+    // (트레일 중심점)만으로 폭발 판정을 하면 보스가 실제로 서 있는 끝지점과 너무 멀어져서
+    // 폭발 반경에 전혀 안 닿는 문제가 있었다(헤드리스 QA로 확인) — 선분 전체를 기준으로 판정한다.
 
     private MeshRenderer _meshRenderer;
     private Tween _visualTween;
 
     // BossSpringPattern이 생성 직후 호출해 이 트레일의 폭발 판정 수치를 주입한다.
-    public void Initialize(Boss boss, float explosionRadius, float explosionDamage, float explodeDelay)
+    // start/end는 돌진의 시작점과 착지점(목적지)이다 — 트레일이 자라나는 연출용 좌표와 별개로,
+    // 폭발 판정은 항상 이 고정된 선분 기준으로 한다.
+    public void Initialize(Boss boss, float explosionRadius, float explosionDamage, float explodeDelay, Vector3 start, Vector3 end)
     {
         _boss = boss;
         _explosionRadius = explosionRadius;
         _explosionDamage = explosionDamage;
         _explodeDelay = explodeDelay;
+        _segmentStart = start;
+        _segmentEnd = end;
     }
 
     private void Awake()
@@ -103,13 +112,23 @@ public class PollenTrail : MonoBehaviour, IIgnitable
 
         SpreadFire();
 
-        if (_boss != null && Vector3.Distance(transform.position, _boss.transform.position) <= _explosionRadius)
+        if (_boss != null && Vector3.Distance(ClosestPointOnSegment(_segmentStart, _segmentEnd, _boss.transform.position), _boss.transform.position) <= _explosionRadius)
         {
             _boss.ApplyPatternDamage(_explosionDamage);
             _boss.NotifyPatternSolved();
         }
 
         PlayExplodeVisual();
+    }
+
+    // 선분(a~b) 위에서 p와 가장 가까운 점을 구한다. 트레일처럼 길게 늘어난 판정 영역에서
+    // "보스가 트레일 어딘가에 닿아있는지"를 중심점 하나가 아니라 전체 길이 기준으로 판정하기 위함이다.
+    private static Vector3 ClosestPointOnSegment(Vector3 a, Vector3 b, Vector3 p)
+    {
+        Vector3 ab = b - a;
+        float t = ab.sqrMagnitude > 0.0001f ? Vector3.Dot(p - a, ab) / ab.sqrMagnitude : 0f;
+        t = Mathf.Clamp01(t);
+        return a + ab * t;
     }
 
     // 확산 반경 안의 다른 PollenTrail에도 불을 옮긴다.

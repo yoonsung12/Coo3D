@@ -25,12 +25,54 @@ public class BossHealthUI : MonoBehaviour
     [SerializeField, LabelText("Ease 타입")]
     private Ease easeType = Ease.OutQuad;
 
+    [Title("페이즈 구간 마커")]
+    [SerializeField, LabelText("마커 두께(px)")]
+    private float markerWidth = 4f;
+    // Boss.PatternThresholds(75/50/25/10%)를 체력바 위에 사선으로 표시해, 다음 계절 패턴이
+    // 언제 발동하는지 한눈에 보이게 한다.
+
+    [SerializeField, LabelText("마커 색상")]
+    private Color markerColor = Color.white;
+
+    [SerializeField, LabelText("마커 기울기(도)")]
+    private float markerTiltDegrees = 15f;
+
     private Tween _fillTween;
 
     private void Awake()
     {
         if (fillImage != null)
             fillImage.fillAmount = 1f;
+
+        BuildThresholdMarkers();
+    }
+
+    // Boss.PatternThresholds를 순회하며 체력바 위에 얇은 사선 마커를 하나씩 만든다.
+    // PlayerHealthUI.BuildHearts()와 동일하게 별도 프리팹 없이 코드로 생성한다.
+    private void BuildThresholdMarkers()
+    {
+        if (fillImage == null || boss == null) return;
+
+        RectTransform barRoot = fillImage.rectTransform.parent as RectTransform;
+        if (barRoot == null) return;
+
+        foreach (float threshold in boss.PatternThresholds)
+        {
+            GameObject markerGo = new GameObject("PhaseMarker_" + threshold.ToString("P0"), typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            markerGo.transform.SetParent(barRoot, false);
+
+            RectTransform rect = markerGo.GetComponent<RectTransform>();
+            rect.anchorMin = new Vector2(threshold, 0f);
+            rect.anchorMax = new Vector2(threshold, 1f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.sizeDelta = new Vector2(markerWidth, 0f);
+            rect.anchoredPosition = Vector2.zero;
+            rect.localRotation = Quaternion.Euler(0f, 0f, markerTiltDegrees);
+
+            Image img = markerGo.GetComponent<Image>();
+            img.color = markerColor;
+            img.raycastTarget = false;
+        }
     }
 
     private void OnEnable()

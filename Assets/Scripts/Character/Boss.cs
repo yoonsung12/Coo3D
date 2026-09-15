@@ -24,6 +24,9 @@ public class Boss : Enemy
     private float[] patternThresholds = { 0.75f, 0.5f, 0.25f, 0.1f };
     // HealthRatio가 이 값 아래로 내려갈 때마다 배열 순서대로(=봄/여름/가을/겨울 순서로) 패턴이 1회씩 발동한다.
 
+    // BossHealthUI가 체력바 위에 페이즈 구간 마커를 그릴 때 이 값을 그대로 참조한다.
+    public IReadOnlyList<float> PatternThresholds => patternThresholds;
+
     [SerializeField, LabelText("파훼 성공 후 무방비 지속 시간")]
     private float vulnerableWindowDuration = 2.5f;
     // 계절 패턴을 파훼하면 이 시간 동안 무적이 풀린 채로 유지된 뒤 기본 패턴으로 돌아간다.
@@ -41,11 +44,11 @@ public class Boss : Enemy
     private List<LandingPoint> landingPoints = new List<LandingPoint>
     {
         new LandingPoint { label = "Floor", position = new Vector2(0f, 1.0f) },
-        new LandingPoint { label = "Platform_MidLeft", position = new Vector2(-8.5f, 4.1f) },
-        new LandingPoint { label = "Platform_MidRight", position = new Vector2(8.5f, 4.1f) },
-        new LandingPoint { label = "Platform_TopCenter", position = new Vector2(0f, 7.1f) },
-        new LandingPoint { label = "Platform_TopFarLeft", position = new Vector2(-19.0f, 7.7f) },
-        new LandingPoint { label = "Platform_TopFarRight", position = new Vector2(19.0f, 7.7f) },
+        new LandingPoint { label = "Platform_MidLeft", position = new Vector2(-8.5f, 5.08f) },
+        new LandingPoint { label = "Platform_MidRight", position = new Vector2(8.5f, 5.08f) },
+        new LandingPoint { label = "Platform_TopCenter", position = new Vector2(0f, 8.55f) },
+        new LandingPoint { label = "Platform_TopFarLeft", position = new Vector2(-19.0f, 8.55f) },
+        new LandingPoint { label = "Platform_TopFarRight", position = new Vector2(19.0f, 8.55f) },
     };
     // 봄 패턴 돌진(BossSpringPattern)과 평상시 비행 이동(BossFlightMovement)이 공통으로 쓰는
     // 착지 지점 목록이다. 각 좌표는 BossArena 씬의 바닥/발판 윗면 + 보스 몸(BoxCollider 반높이 1.0,
@@ -168,6 +171,11 @@ public class Boss : Enemy
 
     private void TriggerNextPattern()
     {
+        // 이전 패턴의 무방비 시간 타이머가 아직 안 끝났는데 다음 패턴이 발동하면, 그 타이머가
+        // 나중에 만료될 때 OnPatternEnded가 엉뚱한 타이밍에 발동해서 지금 진행 중인 패턴의
+        // 코루틴을 잘못 중단시킬 수 있다(헤드리스 QA 중 실제로 재현됨) — 새 패턴 시작 시 무효화한다.
+        _isInVulnerableWindow = false;
+
         var pattern = (SeasonPattern)_nextPatternIndex;
         _nextPatternIndex++;
         _activePattern = pattern;

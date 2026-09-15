@@ -306,7 +306,7 @@ public class BossSpringPattern : MonoBehaviour
         PollenTrail trail = Instantiate(trailPrefab, start, Quaternion.Euler(0f, 0f, angle));
         Vector3 baseScale = trail.transform.localScale;
         trail.transform.localScale = new Vector3(0.1f, baseScale.y, baseScale.z);
-        trail.Initialize(_boss, explosionRadius, explosionDamage, explodeDelay);
+        trail.Initialize(_boss, explosionRadius, explosionDamage, explodeDelay, start, destination);
 
         _trails.Add(trail);
         return trail;
