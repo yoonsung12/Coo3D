@@ -14,7 +14,7 @@ using UnityEngine;
 // 물리 이동 규칙의 예외다. 돌진 중에는 useGravity를 끄고 isKinematic을 켜서(플랫폼에 막히지 않고
 // 목표 착지 지점까지 관통하도록) 직선 궤적을 유지하며, 돌진이 끝나면 즉시 원래 상태로 복구한다.
 [RequireComponent(typeof(Boss), typeof(Rigidbody))]
-public class BossSpringPattern : MonoBehaviour
+public class BossSpringPattern : BossSeasonPatternBase
 {
     [Title("연결")]
     [SerializeField, LabelText("Player Transform")]
@@ -77,15 +77,17 @@ public class BossSpringPattern : MonoBehaviour
     [ReadOnly, ShowInInspector, LabelText("생존 트레일 수")]
     private int _aliveTrailCount;
 
-    private Boss _boss;
     private Rigidbody _rb;
     private Coroutine _cycleRoutine;
     private readonly List<PollenTrail> _trails = new List<PollenTrail>();
     private Vector3 _lockedTarget;
 
-    private void Awake()
+    protected override Boss.SeasonPattern Season => Boss.SeasonPattern.Spring;
+    protected override bool IsRunning => _cycleRoutine != null;
+
+    protected override void Awake()
     {
-        _boss = GetComponent<Boss>();
+        base.Awake();
         _rb = GetComponent<Rigidbody>();
 
         if (aimLine != null)
@@ -98,34 +100,14 @@ public class BossSpringPattern : MonoBehaviour
             dashHitbox.DisableHitbox();
     }
 
-    private void OnEnable()
+    protected override void StartCycle()
     {
-        _boss.OnPatternTriggered += HandlePatternTriggered;
-    }
-
-    private void OnDisable()
-    {
-        _boss.OnPatternTriggered -= HandlePatternTriggered;
-        ForceAbort();
-    }
-
-    private void HandlePatternTriggered(Boss.SeasonPattern pattern)
-    {
-        if (pattern != Boss.SeasonPattern.Spring)
-        {
-            // 다른 계절 패턴이 발동됐다면, 봄 패턴이 아직 진행 중이었더라도 즉시 정리하고 물러난다.
-            if (_cycleRoutine != null) ForceAbort();
-            return;
-        }
-
-        if (_cycleRoutine != null) return;
-
         _cycleRoutine = StartCoroutine(SpringCycleRoutine());
     }
 
     // 진행 중이던 사이클을 파훼 성공 없이 즉시 중단하고 물리/연출 상태를 원래대로 되돌린다.
     // 오브젝트 비활성화(OnDisable)와 다른 계절 패턴에 밀려날 때(HandlePatternTriggered) 둘 다 재사용한다.
-    private void ForceAbort()
+    protected override void Abort()
     {
         if (_cycleRoutine != null)
         {

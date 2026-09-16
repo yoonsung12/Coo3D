@@ -16,7 +16,7 @@ using UnityEngine;
 // 재사용한다: 상승 중과 호버링 내내 isKinematic=true/useGravity=false로 두어 제자리에 고정하고,
 // 대포알에 저지당하는 순간에만 물리를 되돌려 중력으로 떨어지게 한다.
 [RequireComponent(typeof(Boss), typeof(Rigidbody))]
-public class BossSummerPattern : MonoBehaviour
+public class BossSummerPattern : BossSeasonPatternBase
 {
     // BossCannon이 GameObject.Find 없이 "지금 레이저가 활성 상태인지" 확인할 수 있도록
     // TorchTool.IsTorchLit과 동일한 방식으로 정적으로 노출한다.
@@ -96,46 +96,28 @@ public class BossSummerPattern : MonoBehaviour
     [ReadOnly, ShowInInspector, LabelText("현재 단계")]
     private string _currentPhase = "대기";
 
-    private Boss _boss;
     private Rigidbody _rb;
     private Coroutine _cycleRoutine;
     private BossLaserBeam _activeLaser;
     private Tween _pullSoundTween;
 
-    private void Awake()
+    protected override Boss.SeasonPattern Season => Boss.SeasonPattern.Summer;
+    protected override bool IsRunning => _cycleRoutine != null;
+
+    protected override void Awake()
     {
-        _boss = GetComponent<Boss>();
+        base.Awake();
         _rb = GetComponent<Rigidbody>();
     }
 
-    private void OnEnable()
+    protected override void StartCycle()
     {
-        _boss.OnPatternTriggered += HandlePatternTriggered;
-    }
-
-    private void OnDisable()
-    {
-        _boss.OnPatternTriggered -= HandlePatternTriggered;
-        ForceAbort();
-    }
-
-    private void HandlePatternTriggered(Boss.SeasonPattern pattern)
-    {
-        if (pattern != Boss.SeasonPattern.Summer)
-        {
-            // 다른 계절 패턴이 발동됐다면, 여름 패턴이 아직 진행 중이었더라도 즉시 정리하고 물러난다.
-            if (_cycleRoutine != null) ForceAbort();
-            return;
-        }
-
-        if (_cycleRoutine != null) return;
-
         _cycleRoutine = StartCoroutine(SummerCycleRoutine());
     }
 
     // 진행 중이던 사이클을 파훼 성공 없이 즉시 중단하고 물리/연출 상태를 원래대로 되돌린다.
     // 오브젝트 비활성화(OnDisable)와 다른 계절 패턴에 밀려날 때(HandlePatternTriggered) 둘 다 재사용한다.
-    private void ForceAbort()
+    protected override void Abort()
     {
         if (_cycleRoutine != null)
         {

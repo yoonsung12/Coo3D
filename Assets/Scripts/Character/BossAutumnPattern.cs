@@ -10,7 +10,7 @@ using UnityEngine;
 // 피해를 주고 패턴이 파훼된다. 제한시간은 두지 않는다 — 중간에 은행열매를 맞아 꺼져도
 // FuseLine 자체의 소화→복구→재점화 구조로 자연스럽게 재도전하면 된다.
 [RequireComponent(typeof(Boss))]
-public class BossAutumnPattern : MonoBehaviour
+public class BossAutumnPattern : BossSeasonPatternBase
 {
     [Title("연결")]
     [SerializeField, LabelText("왼쪽 은행나무")]
@@ -50,26 +50,17 @@ public class BossAutumnPattern : MonoBehaviour
     [ReadOnly, ShowInInspector, LabelText("선택된 나무")]
     private string _activeTreeLabel = "-";
 
-    private Boss _boss;
     private BossGinkgoTree _activeTree;
     private float _originalIntensity;
     private Tween _skyTween;
 
-    private void Awake()
+    protected override Boss.SeasonPattern Season => Boss.SeasonPattern.Autumn;
+    protected override bool IsRunning => _activeTree != null;
+
+    protected override void Awake()
     {
-        _boss = GetComponent<Boss>();
+        base.Awake();
         if (skyLight != null) _originalIntensity = skyLight.intensity;
-    }
-
-    private void OnEnable()
-    {
-        _boss.OnPatternTriggered += HandlePatternTriggered;
-    }
-
-    private void OnDisable()
-    {
-        _boss.OnPatternTriggered -= HandlePatternTriggered;
-        if (_activeTree != null) ForceAbort();
     }
 
     private void OnDestroy()
@@ -77,29 +68,20 @@ public class BossAutumnPattern : MonoBehaviour
         _skyTween?.Kill();
     }
 
-    private void HandlePatternTriggered(Boss.SeasonPattern pattern)
-    {
-        if (pattern != Boss.SeasonPattern.Autumn)
-        {
-            // 다른 계절 패턴이 발동됐다면, 가을 패턴이 아직 진행 중이었더라도 즉시 정리하고 물러난다.
-            if (_activeTree != null) ForceAbort();
-            return;
-        }
-
-        if (_activeTree != null) return;
-
-        StartPattern();
-    }
-
     // 진행 중이던 나무/뿌리를 파훼 성공 없이 즉시 정리하고 원래 상태로 되돌린다.
     // 오브젝트 비활성화(OnDisable)와 다른 계절 패턴에 밀려날 때(HandlePatternTriggered) 둘 다 재사용한다.
-    private void ForceAbort()
+    protected override void Abort()
     {
         UnsubscribeActiveRoot();
         RestoreSky();
         _activeTree.Deactivate();
         _activeTree = null;
         _activeTreeLabel = "-";
+    }
+
+    protected override void StartCycle()
+    {
+        StartPattern();
     }
 
     private void StartPattern()
@@ -150,7 +132,7 @@ public class BossAutumnPattern : MonoBehaviour
         _boss.ApplyPatternDamage(solveDamage);
         _boss.NotifyPatternSolved();
 
-        ForceAbort();
+        Abort();
     }
 
     private void UnsubscribeActiveRoot()
