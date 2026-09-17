@@ -42,10 +42,6 @@ public class BossAutumnPattern : BossSeasonPatternBase
     [SerializeField, LabelText("복귀(밝아짐) 시간")]
     private float restoreDuration = 1.5f;
 
-    [Title("파훼 보상")]
-    [SerializeField, LabelText("파훼 시 보스 피해량")]
-    private float solveDamage = 40f;
-
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("선택된 나무")]
     private string _activeTreeLabel = "-";
@@ -126,10 +122,10 @@ public class BossAutumnPattern : BossSeasonPatternBase
             .SetEase(Ease.InOutSine);
     }
 
-    // 뿌리(FuseLine)가 끝까지 타면 호출된다. 보스에게 피해를 주고 패턴을 파훼 처리한다.
+    // 뿌리(FuseLine)가 끝까지 타면 호출된다. 패턴을 파훼 처리한다(데미지는 주지 않는다 —
+    // 파훼 직후 Boss.cs의 무방비 시간 동안 일반 공격으로 때려야 실제 피해가 들어간다).
     private void HandleRootFullyBurned()
     {
-        _boss.ApplyPatternDamage(solveDamage);
         _boss.NotifyPatternSolved();
 
         Abort();

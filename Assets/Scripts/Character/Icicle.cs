@@ -44,10 +44,6 @@ public class Icicle : MonoBehaviour, IHittable
     private float hitCheckRadius = 1.5f;
     // 낙하 지점과 보스 사이 거리가 이 값 이하면 명중으로 처리한다.
 
-    [SerializeField, LabelText("보스 데미지")]
-    private float bossDamage = 20f;
-    // 1칸 고정 데미지 원칙(체력바 하트 1칸)에 맞춘 기본값이다.
-
     [Title("생성 연출 설정")]
     [SerializeField, LabelText("생성 시작 크기 배율")]
     private float spawnStartScaleRatio = 0.15f;
@@ -125,12 +121,12 @@ public class Icicle : MonoBehaviour, IHittable
             .OnComplete(HandleLanded);
     }
 
-    // 낙하가 끝난 지점에 보스가 있으면(겨울 패턴으로 유인되어 정지한 상태) 데미지를 주고 패턴을 파훼시킨다.
+    // 낙하가 끝난 지점에 보스가 있으면(겨울 패턴으로 유인되어 정지한 상태) 패턴을 파훼시킨다.
+    // 데미지는 주지 않는다 — 파훼 직후 Boss.cs의 무방비 시간 동안 일반 공격으로 때려야 실제 피해가 들어간다.
     private void HandleLanded()
     {
         if (boss != null && Vector3.Distance(transform.position, boss.transform.position) <= hitCheckRadius)
         {
-            boss.ApplyPatternDamage(bossDamage);
             boss.NotifyPatternSolved();
         }
     }

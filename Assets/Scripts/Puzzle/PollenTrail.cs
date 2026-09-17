@@ -5,9 +5,10 @@ using UnityEngine;
 
 // 보스 봄 패턴(꽃가루 돌진)이 남기는 분진 트레일이다. FlammableObject와 같은 구조로
 // 성냥(TorchTool)에 의해 점화되면 BossSpringPattern이 지정한 지연 시간 뒤 폭발 판정을 한다.
-// 그 순간 보스가 폭발 반경 안에 있으면 데미지를 주고 패턴을 파훼시키며, 반경 밖이면
+// 그 순간 보스가 폭발 반경 안에 있으면 패턴을 파훼시키며(데미지는 주지 않는다 — 파훼 직후
+// Boss.cs의 무방비 시간 동안 일반 공격으로 때려야 실제 피해가 들어간다), 반경 밖이면
 // 트레일만 사라지고 보스는 계속 무적 상태로 다음 돌진 사이클을 이어간다.
-// 폭발/파훼 관련 수치(데미지, 반경, 지연)는 BossSpringPattern이 Initialize()로 주입한다
+// 폭발/파훼 관련 수치(반경, 지연)는 BossSpringPattern이 Initialize()로 주입한다
 // (Boss.TryFireProjectile()이 BossProjectile.Launch()에 수치를 넘기는 것과 동일한 구조) —
 // 이 클래스 자신은 점화/확산 판정과 자기 수명 관리만 책임진다.
 [RequireComponent(typeof(Collider))]
@@ -63,7 +64,6 @@ public class PollenTrail : MonoBehaviour, IIgnitable
 
     private Boss _boss;
     private float _explosionRadius;
-    private float _explosionDamage;
     private float _explodeDelay;
     private Vector3 _segmentStart;
     private Vector3 _segmentEnd;
@@ -77,11 +77,10 @@ public class PollenTrail : MonoBehaviour, IIgnitable
     // BossSpringPattern이 생성 직후 호출해 이 트레일의 폭발 판정 수치를 주입한다.
     // start/end는 돌진의 시작점과 착지점(목적지)이다 — 트레일이 자라나는 연출용 좌표와 별개로,
     // 폭발 판정은 항상 이 고정된 선분 기준으로 한다.
-    public void Initialize(Boss boss, float explosionRadius, float explosionDamage, float explodeDelay, Vector3 start, Vector3 end)
+    public void Initialize(Boss boss, float explosionRadius, float explodeDelay, Vector3 start, Vector3 end)
     {
         _boss = boss;
         _explosionRadius = explosionRadius;
-        _explosionDamage = explosionDamage;
         _explodeDelay = explodeDelay;
         _segmentStart = start;
         _segmentEnd = end;
@@ -114,7 +113,6 @@ public class PollenTrail : MonoBehaviour, IIgnitable
 
         if (_boss != null && Vector3.Distance(ClosestPointOnSegment(_segmentStart, _segmentEnd, _boss.transform.position), _boss.transform.position) <= _explosionRadius)
         {
-            _boss.ApplyPatternDamage(_explosionDamage);
             _boss.NotifyPatternSolved();
         }
 

@@ -64,9 +64,6 @@ public class BossSpringPattern : BossSeasonPatternBase
     [SerializeField, LabelText("폭발 판정 반경")]
     private float explosionRadius = 2f;
 
-    [SerializeField, LabelText("보스 데미지")]
-    private float explosionDamage = 15f;
-
     [SerializeField, LabelText("점화 후 폭발 지연")]
     private float explodeDelay = 0.4f;
 
@@ -288,7 +285,7 @@ public class BossSpringPattern : BossSeasonPatternBase
         PollenTrail trail = Instantiate(trailPrefab, start, Quaternion.Euler(0f, 0f, angle));
         Vector3 baseScale = trail.transform.localScale;
         trail.transform.localScale = new Vector3(0.1f, baseScale.y, baseScale.z);
-        trail.Initialize(_boss, explosionRadius, explosionDamage, explodeDelay, start, destination);
+        trail.Initialize(_boss, explosionRadius, explodeDelay, start, destination);
 
         _trails.Add(trail);
         return trail;

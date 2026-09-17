@@ -145,11 +145,6 @@ public class Boss : Enemy
         base.TakeDamage(amount);
     }
 
-    // 계절 패턴 무적 중에도 예외적으로 통과시켜야 하는 데미지 전용 통로다.
-    // 봄 패턴(꽃가루 트레일 폭발)처럼 "패턴을 직접 파훼했을 때"만 호출해야 하며,
-    // IsInvincible 체크를 건너뛰고 곧바로 base.TakeDamage()를 호출한다.
-    public void ApplyPatternDamage(float amount) => base.TakeDamage(amount);
-
     // BossFlightMovement가 비행을 시작/종료할 때 호출해서 IsFlying 상태를 갱신한다.
     // 비행 중엔 BossBasicPattern이 공격을 쉬도록 하기 위한 용도다.
     public void SetFlying(bool flying) => IsFlying = flying;
