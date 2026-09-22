@@ -45,6 +45,19 @@ public class TorchIgniteMinigameUI : MonoBehaviour
     private float feedbackHoldDuration = 0.15f;
     // 판정 직후 성공/실패 색으로 잠깐 표시했다가 사라지는데, 이 시간만큼 색을 유지한다.
 
+    [Title("사운드 설정")]
+    [SerializeField, LabelText("성공 사운드")]
+    private AudioClip successSound;
+    // 타이밍 판정에 성공했을 때 재생할 오디오 클립이다. Inspector에서 TorchminiGameSuccessSound를 연결한다.
+
+    [SerializeField, LabelText("실패 사운드")]
+    private AudioClip failSound;
+    // 타이밍 판정에 실패했을 때 재생할 오디오 클립이다. Inspector에서 TorchminiGameFailSound를 연결한다.
+
+    [SerializeField, LabelText("오디오 소스")]
+    private AudioSource audioSource;
+    // Inspector에서 이 오브젝트의 AudioSource 컴포넌트를 연결한다.
+
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("진행 중 여부")]
     private bool _isRunning;
@@ -138,6 +151,14 @@ public class TorchIgniteMinigameUI : MonoBehaviour
         _flashTween?.Kill();
         _indicatorImage.color = success ? successColor : failColor;
         _flashTween = _indicatorImage.DOColor(Color.white, popDuration).SetUpdate(true);
+
+        // 성공/실패 색상 피드백과 함께 각각에 맞는 판정 사운드를 재생한다.
+        if (audioSource != null)
+        {
+            AudioClip clip = success ? successSound : failSound;
+            if (clip != null)
+                audioSource.PlayOneShot(clip);
+        }
     }
 
     private void Hide(float delay)

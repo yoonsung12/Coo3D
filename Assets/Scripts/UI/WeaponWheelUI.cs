@@ -68,6 +68,19 @@ public class WeaponWheelUI : MonoBehaviour
     [SerializeField, LabelText("기본 색상")]
     private Color normalColor = Color.white;
 
+    [Title("사운드 설정")]
+    [SerializeField, LabelText("호버 사운드")]
+    private AudioClip hoverSound;
+    // 마우스가 다른 슬롯 위로 넘어갈 때 재생할 오디오 클립이다. Inspector에서 UIHoverSound를 연결한다.
+
+    [SerializeField, LabelText("선택 확정 사운드")]
+    private AudioClip selectSound;
+    // Tab을 떼서 도구 선택이 확정될 때 재생할 오디오 클립이다. Inspector에서 ToolSelectSound를 연결한다.
+
+    [SerializeField, LabelText("오디오 소스")]
+    private AudioSource audioSource;
+    // Inspector에서 이 오브젝트의 AudioSource 컴포넌트를 연결한다.
+
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("현재 선택 슬롯")]
     private WeaponSlot _currentSlot = WeaponSlot.None;
@@ -158,6 +171,10 @@ public class WeaponWheelUI : MonoBehaviour
         // 도구 장착 연출이 휠 닫힘 애니메이션과 동시에 시작되도록 하기 위해서다.
         toolManager?.SelectByWheel(_currentSlot);
 
+        // 실제로 방향을 선택했을 때만(None=중심에서 뗀 취소가 아닐 때) 확정 사운드를 재생한다.
+        if (_currentSlot != WeaponSlot.None && audioSource != null && selectSound != null)
+            audioSource.PlayOneShot(selectSound);
+
         ResetHighlights();
         _currentSlot = WeaponSlot.None;
 
@@ -222,6 +239,10 @@ public class WeaponWheelUI : MonoBehaviour
     {
         if (_currentSlot == slot) return;
         _currentSlot = slot;
+
+        // 중심(None)으로 돌아올 때는 재생하지 않고, 실제로 다른 방향 슬롯으로 넘어갈 때만 재생한다.
+        if (slot != WeaponSlot.None && audioSource != null && hoverSound != null)
+            audioSource.PlayOneShot(hoverSound);
 
         // 모든 슬롯을 기본 색으로 초기화한 뒤 선택 슬롯만 강조한다.
         SetSlotColor(northSlot, normalColor);
