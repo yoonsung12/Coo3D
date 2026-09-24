@@ -57,6 +57,12 @@ public class FlammableObject : MonoBehaviour, IIgnitable
     // true로 켜면 마른 덩굴벽처럼 다 타기 전까지는 실제로 길을 막는 장애물이 되고,
     // 다 타서 재가 되면 지나갈 수 있게 자동으로 열린다.
 
+    [SerializeField, LabelText("다 타면 열 문")]
+    private DoorController doorToOpen;
+    // Inspector에서 이 덩굴이 다 탔을 때 열릴 문(DoorHinge)을 연결한다.
+    // 낙엽더미(LeafMound)로 덩굴에 불을 붙여 문을 여는 퍼즐용이다. 비워두면 문과 연결되지 않는다.
+    // 도화선(FuseLine)처럼 외부에서 따로 문을 연결하는 덩굴은 비워둔다(OpenDoor는 중복 호출돼도 안전하다).
+
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("현재 상태")]
     public FireState CurrentState { get; private set; } = FireState.Unlit;
@@ -80,6 +86,10 @@ public class FlammableObject : MonoBehaviour, IIgnitable
 
         _meshRenderer = GetComponent<MeshRenderer>();
         // material 접근 시 인스턴스 머티리얼이 생성되어 이 오브젝트만의 색상을 독립적으로 바꿀 수 있다.
+
+        if (doorToOpen != null)
+            OnBurnedOut += doorToOpen.OpenDoor;
+        // 완전 연소(재가 되는 순간) 이벤트에 문 열기를 연결해, 덩굴이 다 타면 문이 열리게 한다.
     }
 
     private void OnDestroy()
