@@ -2,6 +2,14 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using Sirenix.OdinInspector;
 
+// 플레이어 이동/카메라 시점 모드다.
+// SideView: 좌우(X)로만 이동하고 Z는 고정한다. TopDown: 위에서 내려다보며 WASD로 X/Z 360도 이동한다.
+public enum ViewMode
+{
+    SideView,
+    TopDown
+}
+
 // CharacterController 기반 3D 쿼터뷰 플레이어 이동을 처리한다.
 // Rigidbody 대신 CharacterController를 사용해 예측 가능한 이동과 충돌을 보장한다.
 [RequireComponent(typeof(CharacterController))]
@@ -41,6 +49,18 @@ public class PlayerController : MonoBehaviour
     private InputActionAsset inputActionAsset;
     // Inspector에서 Assets/InputSystem_Actions 에셋을 연결한다.
 
+    [Title("시점 모드 설정")]
+    [SerializeField, LabelText("사이드뷰 Z 복귀 속도")]
+    private float laneReturnSpeed = 10f;
+    // 탑다운 구역에서 나와 사이드뷰로 돌아올 때, 사이드뷰 라인(Z)으로 되돌아가는 초당 최대 속도다.
+    // 값이 클수록 빨리 복귀하고, 너무 작으면 사이드뷰에서 한동안 앞뒤로 어긋나 보인다.
+
+    [ReadOnly, ShowInInspector, LabelText("현재 시점 모드")]
+    public ViewMode CurrentViewMode { get; private set; } = ViewMode.SideView;
+
+    // 시점 모드가 바뀔 때 알린다. SideViewCamera가 구독해 카메라 시점을 함께 전환한다.
+    public event System.Action<ViewMode> OnViewModeChanged;
+
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("접지 여부")]
     public bool IsGrounded { get; private set; } = true;
@@ -73,6 +93,10 @@ public class PlayerController : MonoBehaviour
 
     // 공중 상승 점프를 착지 전까지 한 번만 쓸 수 있게 막는 플래그다. 착지하면 자동으로 풀린다.
     private bool _airJumpUsed;
+
+    // 사이드뷰로 돌아올 때 복귀할 Z 라인과, 아직 복귀 중인지 여부다.
+    private float _laneZ;
+    private bool _isReturningToLane;
 
     private void Awake()
     {
@@ -146,6 +170,12 @@ public class PlayerController : MonoBehaviour
 
         // 수평 속도 성분을 합산하고 수직 속도를 Y에 적용해 최종 이동한다.
         Vector3 horizontal = _moveVelocity + _recoilVelocity + _blastVelocity + _windVelocity;
+
+        // 사이드뷰에서는 반동/바람 등 어떤 원인이든 Z 이동을 버려 캐릭터가 앞뒤로 벗어나지 않게 한다.
+        // 단, 탑다운 구역에서 막 나온 직후라면 사이드뷰 라인(Z)으로 돌아가는 속도만 허용한다.
+        if (CurrentViewMode == ViewMode.SideView)
+            horizontal.z = GetLaneReturnVelocityZ();
+
         Vector3 finalVelocity = new Vector3(horizontal.x, _verticalVelocity, horizontal.z);
         _cc.Move(finalVelocity * Time.deltaTime);
 
@@ -162,7 +192,13 @@ public class PlayerController : MonoBehaviour
         }
 
         float xInput = _isReversed ? -_moveInput.x : _moveInput.x;
-        float zInput = _moveInput.y;
+
+        // 사이드뷰는 좌우(X)만 사용하므로 W/S 입력을 무시한다.
+        // 탑다운은 카메라를 Y축으로 돌리지 않으므로 W가 항상 월드 +Z(화면 위쪽)가 되어 입력을 그대로 쓴다.
+        // 가을 디버프(방향 반전)는 탑다운에서 앞뒤 입력까지 함께 뒤집는다.
+        float zInput = 0f;
+        if (CurrentViewMode == ViewMode.TopDown)
+            zInput = _isReversed ? -_moveInput.y : _moveInput.y;
 
         // X = 좌우
         // Z = 앞뒤
@@ -191,6 +227,12 @@ public class PlayerController : MonoBehaviour
         // 카메라에서 마우스 스크린 좌표로 광선을 발사한다.
         Ray ray = Camera.main.ScreenPointToRay(Mouse.current.position.ReadValue());
 
+        if (CurrentViewMode == ViewMode.TopDown)
+        {
+            HandleTopDownFacing(ray);
+            return;
+        }
+
         // 사이드뷰: 카메라가 Z축을 따라 바라보므로, 플레이어 위치를 지나는 수직 평면(Z=플레이어Z)과
         // 광선의 교점을 구해 마우스가 가리키는 월드 XY 좌표를 얻는다.
         // 쿼터뷰의 지면 수평 평면 대신, Z축에 수직인 측면 평면을 사용한다.
@@ -215,6 +257,99 @@ public class PlayerController : MonoBehaviour
             }
         }
     }
+
+    private void HandleTopDownFacing(Ray ray)
+    {
+        // 탑다운: 플레이어 높이를 지나는 수평 평면(바닥과 평행)과 마우스 광선의 교점을 구해
+        // 마우스가 가리키는 바닥 위치를 얻는다. 점프 중에도 플레이어 높이 기준이라 조준이 흔들리지 않는다.
+        Plane groundPlane = new Plane(Vector3.up, transform.position);
+        if (!groundPlane.Raycast(ray, out float distance)) return;
+
+        Vector3 dir = ray.GetPoint(distance) - transform.position;
+        dir.y = 0f;
+        // Y 성분을 제거해 바닥과 평행한 XZ 방향만 남긴다. 탑다운에선 위아래 조준을 쓰지 않는다.
+
+        if (dir.sqrMagnitude > 0.01f)
+        {
+            FacingDirection = dir.normalized;
+            // 사이드뷰와 달리 몸통을 마우스 방향으로 360도 자유롭게 돌린다.
+            transform.rotation = Quaternion.LookRotation(FacingDirection, Vector3.up);
+        }
+    }
+
+    private float GetLaneReturnVelocityZ()
+    {
+        if (!_isReturningToLane) return 0f;
+
+        float deltaZ = _laneZ - transform.position.z;
+        if (Mathf.Abs(deltaZ) < 0.01f)
+        {
+            _isReturningToLane = false;
+            return 0f;
+        }
+
+        // 남은 거리를 이번 프레임 안에 채우는 속도를 구하되, laneReturnSpeed를 넘지 않게 제한한다.
+        // Time.deltaTime으로 나누는 이유: 최종 속도에 다시 deltaTime이 곱해지므로 도착 지점을 지나치지 않게 하기 위해서다.
+        return Mathf.Clamp(deltaZ / Time.deltaTime, -laneReturnSpeed, laneReturnSpeed);
+    }
+
+    // ViewModeZone이 구역 진입/이탈 시 호출한다.
+    // laneZ: 사이드뷰로 돌아갈 때 복귀할 Z 위치다. 탑다운으로 전환할 때는 사용하지 않는다.
+    public void SetViewMode(ViewMode mode, float laneZ)
+    {
+        if (CurrentViewMode == mode) return;
+
+        CurrentViewMode = mode;
+        _laneZ = laneZ;
+        // 사이드뷰로 돌아올 때만 Z 라인 복귀를 시작한다. transform.position을 직접 바꾸지 않고
+        // CharacterController.Move()로 이동시키므로 벽을 뚫고 순간이동하지 않는다.
+        _isReturningToLane = mode == ViewMode.SideView;
+
+        // 이전 모드에서 받은 선풍기 반동이 새 모드에서 엉뚱한 방향으로 이어지지 않게 초기화한다.
+        _recoilVelocity = Vector3.zero;
+        _blastVelocity = Vector3.zero;
+
+        OnViewModeChanged?.Invoke(mode);
+    }
+
+    // PlayerHealth.Respawn()이 순간이동 직후 호출한다.
+    // CharacterController를 끈 채 옮기면 트리거 이탈 이벤트가 오지 않으므로, 현재 위치가 ViewModeZone 안인지 직접 검사한다.
+    public void SyncViewModeToPosition()
+    {
+        // 발끝(pivot)은 구역 바닥 경계와 겹칠 수 있어 캐릭터 몸통 중심에서 검사한다.
+        // QueryTriggerInteraction.Collide: ViewModeZone은 트리거 콜라이더라 이 옵션이 있어야 검사에 잡힌다.
+        Vector3 center = transform.TransformPoint(_cc.center);
+        Collider[] hits = Physics.OverlapSphere(center, 0.1f, ~0, QueryTriggerInteraction.Collide);
+
+        foreach (Collider hit in hits)
+        {
+            ViewModeZone zone = hit.GetComponent<ViewModeZone>();
+            if (zone != null)
+            {
+                SetViewMode(ViewMode.TopDown, zone.GetLaneZ());
+                return;
+            }
+        }
+
+        SetViewMode(ViewMode.SideView, transform.position.z);
+        // 구역 밖으로 리스폰했다면 그 위치가 곧 사이드뷰 라인이므로, 이전 라인으로 끌려가지 않게 복귀를 멈춘다.
+        // (이미 사이드뷰였다면 SetViewMode가 무시되므로 여기서 직접 정리한다.)
+        _laneZ = transform.position.z;
+        _isReturningToLane = false;
+    }
+
+    // 테스트 버튼으로 탑다운에 들어간 순간의 Z를 기억해, 사이드뷰 테스트 버튼으로 같은 라인에 돌아오게 한다.
+    private float _testLaneZ;
+
+    [Button("탑다운 전환 테스트")]
+    private void TestTopDown()
+    {
+        _testLaneZ = transform.position.z;
+        SetViewMode(ViewMode.TopDown, _testLaneZ);
+    }
+
+    [Button("사이드뷰 전환 테스트")]
+    private void TestSideView() => SetViewMode(ViewMode.SideView, _testLaneZ);
 
     private void ApplyGravity()
     {

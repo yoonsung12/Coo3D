@@ -70,6 +70,9 @@ public class PlayerHealth : CharacterBase
 
     private Color _originalColor;
     private Vector3 _initialLocalPosition;
+    private Vector3 _visualInitialLocalPosition;
+    // 피격 흔들림은 Player 본체(CharacterController)가 아니라 VisualBody만 흔든다.
+    // 흔들림이 겹치거나 중간에 끊겨도 겉모습이 몸통에서 어긋나지 않게 VisualBody의 원래 위치를 기억한다.
     private PlayerController _playerController;
     private CharacterController _characterController;
     // 체크포인트 리스폰/세이브 로드 시 위치를 안전하게 옮기기 위해 참조해 둔다.
@@ -93,7 +96,10 @@ public class PlayerHealth : CharacterBase
         _characterController = GetComponent<CharacterController>();
         _currentHealth = maxHealth;
         _initialLocalPosition = transform.localPosition;
-        // 진동 연출이 중첩될 때 시작 위치가 밀리지 않도록 초기 위치를 기억한다.
+        // '체력 전체 초기화' 테스트 버튼에서 시작 위치로 되돌리기 위해 기억한다.
+
+        if (visualBody != null)
+            _visualInitialLocalPosition = visualBody.transform.localPosition;
 
         if (visualBody != null)
             // material 접근 시 인스턴스 머티리얼이 생성되어 Player만의 색상을 독립적으로 변경할 수 있다.
@@ -175,20 +181,21 @@ public class PlayerHealth : CharacterBase
 
     private void PlayHitEffect()
     {
-        // 연속 타격 시 이전 진동 Tween을 중단하고 시작 위치로 되돌린 뒤 새 진동을 시작한다.
+        if (hitClip != null)
+            AudioSource.PlayClipAtPoint(hitClip, transform.position);
+
+        if (visualBody == null) return;
+
+        // 연속 타격 시 이전 진동 Tween을 중단하고 VisualBody를 원래 위치로 되돌린 뒤 새 진동을 시작한다.
+        // Player 본체를 흔들면 CharacterController 충돌을 무시하고 위치가 바뀌므로, 겉모습(VisualBody)만 흔든다.
         _punchTween?.Kill();
-        transform.localPosition = _initialLocalPosition;
-        _punchTween = transform.DOPunchPosition(
+        visualBody.transform.localPosition = _visualInitialLocalPosition;
+        _punchTween = visualBody.transform.DOPunchPosition(
             new Vector3(punchStrength, 0f, 0f),
             punchDuration,
             vibrato: 10,
             elasticity: 0.5f
         );
-
-        if (hitClip != null)
-            AudioSource.PlayClipAtPoint(hitClip, transform.position);
-
-        if (visualBody == null) return;
 
         // 피격 순간 플래시 색으로 빠르게 전환 후 원래 색으로 부드럽게 복귀한다.
         _flashTween?.Kill();
@@ -206,6 +213,9 @@ public class PlayerHealth : CharacterBase
 
         _flashTween?.Kill();
         _punchTween?.Kill();
+        if (visualBody != null)
+            visualBody.transform.localPosition = _visualInitialLocalPosition;
+        // 흔들림 도중 죽으면 VisualBody가 어긋난 채 남으므로 원래 위치로 되돌린다.
 
         // 무적 깜빡임 도중 죽으면 코루틴을 멈추고 몸을 다시 보이게 해서, 사망 연출이 꺼진 채로
         // 시작되는 일이 없게 한다.
@@ -277,6 +287,11 @@ public class PlayerHealth : CharacterBase
         {
             transform.position = position;
         }
+
+        // CharacterController를 끈 채 순간이동하면 ViewModeZone의 OnTriggerExit가 호출되지 않는다.
+        // 그래서 옮긴 위치를 직접 검사해 탑다운/사이드뷰 시점을 맞춘다.
+        if (_playerController != null)
+            _playerController.SyncViewModeToPosition();
     }
 
     // 체력을 amount만큼 회복시킨다. 최대 체력을 넘지 않는다. 체크포인트, 회복 아이템 등에서 사용한다.

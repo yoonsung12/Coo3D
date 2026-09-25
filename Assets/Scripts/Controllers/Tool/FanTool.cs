@@ -197,7 +197,7 @@ public class FanTool : BaseTool
 
         // 차징하는 동안 단계별 세기로 뒤로 계속 밀어낸다. SetRecoil은 매 프레임 덮어쓰이므로
         // 단계가 바뀌는 순간 바로 세기가 달라지고, 버튼을 떼면 recoilDecay로 자연스럽게 멈춘다.
-        _player?.SetRecoil(new Vector3(-GetFacingSignX() * GetChargeRecoilByLevel(), 0f, 0f));
+        _player?.SetRecoil(-GetRecoilDirection() * GetChargeRecoilByLevel());
     }
 
     // ToolManager에서 바람 버튼을 뗄 때 호출한다.
@@ -282,8 +282,8 @@ public class FanTool : BaseTool
         }
 
         // 플레이어는 바라보는 방향의 반대로 강하게 튕겨난다. 바람 방향(windDir)은 마우스 조준이라
-        // 위아래 성분이 섞여 있어 그대로 쓰면 조준 높이에 따라 밀리는 거리가 줄어들므로, 좌우 방향만 사용한다.
-        _player.SetBlast(new Vector3(-GetFacingSignX() * recoilAmount, 0f, 0f));
+        // 위아래 성분이 섞여 있어 그대로 쓰면 조준 높이에 따라 밀리는 거리가 줄어들므로, 수평 방향만 사용한다.
+        _player.SetBlast(-GetRecoilDirection() * recoilAmount);
 
         PlaySound(level == 1 ? blastSound1 : level == 2 ? blastSound2 : blastSound3, blastSoundVolume);
 
@@ -343,6 +343,22 @@ public class FanTool : BaseTool
     private float GetFacingSignX()
     {
         return _player.transform.forward.x >= 0f ? 1f : -1f;
+    }
+
+    // 차징/블라스트 반동에 쓸 "바라보는 수평 방향"이다. 반동은 이 방향의 반대로 적용한다.
+    // 사이드뷰: 기존처럼 좌우(±X)만 사용한다.
+    // 탑다운: 마우스 조준 방향(FacingDirection)의 XZ 성분을 사용해 360도 어느 쪽으로든 반대로 밀려나게 한다.
+    private Vector3 GetRecoilDirection()
+    {
+        if (_player.CurrentViewMode == ViewMode.TopDown)
+        {
+            Vector3 dir = _player.FacingDirection;
+            dir.y = 0f;
+            if (dir.sqrMagnitude > 0.0001f)
+                return dir.normalized;
+        }
+
+        return new Vector3(GetFacingSignX(), 0f, 0f);
     }
 
     private int GetFanLevel()
