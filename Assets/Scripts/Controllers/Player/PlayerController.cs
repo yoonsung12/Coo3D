@@ -65,6 +65,9 @@ public class PlayerController : MonoBehaviour
     [ReadOnly, ShowInInspector, LabelText("접지 여부")]
     public bool IsGrounded { get; private set; } = true;
 
+    [ReadOnly, ShowInInspector, LabelText("얼음 미끄러짐 중")]
+    public bool IsSlipping => _slipIce != null;
+
     // 선풍기가 바람을 쏘는 방향 결정에 사용된다.
     public Vector3 FacingDirection { get; private set; } = Vector3.forward;
 
@@ -97,6 +100,12 @@ public class PlayerController : MonoBehaviour
     // 사이드뷰로 돌아올 때 복귀할 Z 라인과, 아직 복귀 중인지 여부다.
     private float _laneZ;
     private bool _isReturningToLane;
+
+    // 미끄러짐을 적용할 얼음 발판이다. null이면 일반 바닥처럼 즉시 반응하는 이동을 한다.
+    // 착지 중에는 발밑 얼음으로 갱신되고, 공중에서는 마지막 값을 유지해 점프 중에도 관성이 이어진다.
+    private IcePlatform _slipIce;
+    // 이번 Move() 중 OnControllerColliderHit에서 발밑으로 감지한 미끄러운 얼음 발판이다.
+    private IcePlatform _groundIceThisMove;
 
     private void Awake()
     {
@@ -177,17 +186,45 @@ public class PlayerController : MonoBehaviour
             horizontal.z = GetLaneReturnVelocityZ();
 
         Vector3 finalVelocity = new Vector3(horizontal.x, _verticalVelocity, horizontal.z);
+        _groundIceThisMove = null;
         _cc.Move(finalVelocity * Time.deltaTime);
 
         // Move() 호출 이후 접지 상태를 갱신해 같은 프레임 내 다른 스크립트에 최신 값을 제공한다.
         IsGrounded = _cc.isGrounded;
+
+        // 착지해 있으면 발밑이 얼음인지로 미끄러짐 여부를 정한다. (일반 바닥에 닿으면 null이 되어 즉시 조작감 복귀)
+        // 공중이면 갱신하지 않아, 얼음에서 점프했을 때 착지 전까지 관성이 유지된다.
+        if (IsGrounded)
+            _slipIce = _groundIceThisMove;
+    }
+
+    // CharacterController.Move() 도중 콜라이더에 닿을 때마다 호출된다.
+    // 접지 중에는 매 프레임 아래로 누르므로(-2f) 발밑 바닥과도 계속 호출되어, 별도 트리거 없이 발판을 판정할 수 있다.
+    private void OnControllerColliderHit(ControllerColliderHit hit)
+    {
+        // 법선이 위를 향하면(0.5 이상 ≒ 60도 이하 경사) 바닥, 아니면 벽/천장으로 본다.
+        if (hit.normal.y > 0.5f)
+        {
+            if (hit.collider.TryGetComponent(out IcePlatform ice) && ice.IsSlippery)
+                _groundIceThisMove = ice;
+            return;
+        }
+
+        // 얼음에서 미끄러지다 벽에 부딪히면 벽 쪽으로 향하는 속도를 없앤다.
+        // 그러지 않으면 남은 관성이 계속 벽을 밀어서, 반대로 방향을 바꿀 때 한동안 멈춰 있는 것처럼 느껴진다.
+        // (일반 바닥에서는 _moveVelocity가 매 프레임 새로 대입되므로 영향이 없다.)
+        Vector3 wallNormal = new Vector3(hit.normal.x, 0f, hit.normal.z);
+        float intoWall = Vector3.Dot(_moveVelocity, wallNormal);
+        if (intoWall < 0f)
+            _moveVelocity -= wallNormal * intoWall;
     }
 
     private void HandleMove()
     {
         if (_isBound || _isFrozen)
         {
-            _moveVelocity = Vector3.zero;
+            // 얼음 위라면 즉시 멈추지 않고 미끄러지다 멈춘다.
+            ApplyMoveVelocity(Vector3.zero, false);
             return;
         }
 
@@ -208,7 +245,8 @@ public class PlayerController : MonoBehaviour
         if (moveDir.sqrMagnitude > 1f)
             moveDir.Normalize();
 
-        _moveVelocity = moveDir * (moveSpeed * _speedMultiplier);
+        bool hasInput = moveDir.sqrMagnitude > 0.01f;
+        ApplyMoveVelocity(moveDir * (moveSpeed * _speedMultiplier), hasInput);
 
         // 이동하는 방향을 바라보게 함
         if (moveDir.sqrMagnitude > 0.01f)
@@ -219,6 +257,27 @@ public class PlayerController : MonoBehaviour
             transform.rotation = targetRotation;
         }
     }
+
+    // 목표 이동 속도를 _moveVelocity에 반영한다.
+    // 일반 바닥: 즉시 대입해 기존과 똑같이 반응한다.
+    // 얼음(공중 관성 포함): MoveTowards로 목표 속도를 천천히 따라가 미끄러지게 만든다.
+    private void ApplyMoveVelocity(Vector3 targetVelocity, bool hasInput)
+    {
+        if (_slipIce == null)
+        {
+            _moveVelocity = targetVelocity;
+            return;
+        }
+
+        // 지금 움직이는 방향 쪽으로 입력 중이면 가속도, 입력이 없거나 반대로 누르면 감속도(마찰)를 쓴다.
+        // Dot >= 0: 현재 속도와 목표 방향이 90도 이내라 같은 쪽으로 가속하는 중이라는 뜻이다.
+        bool isAccelerating = hasInput && Vector3.Dot(targetVelocity, _moveVelocity) >= 0f;
+        float rate = isAccelerating ? _slipIce.Acceleration : _slipIce.Deceleration;
+
+        // Time.deltaTime을 곱해 프레임레이트와 무관하게 초당 rate만큼만 속도가 변하게 한다.
+        _moveVelocity = Vector3.MoveTowards(_moveVelocity, targetVelocity, rate * Time.deltaTime);
+    }
+
     private void HandleFacing()
     {
         // Mouse.current가 없으면 (게임패드 전용 환경 등) 처리를 건너뛴다.
@@ -316,6 +375,11 @@ public class PlayerController : MonoBehaviour
     // CharacterController를 끈 채 옮기면 트리거 이탈 이벤트가 오지 않으므로, 현재 위치가 ViewModeZone 안인지 직접 검사한다.
     public void SyncViewModeToPosition()
     {
+        // 순간이동(리스폰) 후에는 얼음에서 받던 관성을 이어가지 않는다.
+        _slipIce = null;
+        _moveVelocity = Vector3.zero;
+
+
         // 발끝(pivot)은 구역 바닥 경계와 겹칠 수 있어 캐릭터 몸통 중심에서 검사한다.
         // QueryTriggerInteraction.Collide: ViewModeZone은 트리거 콜라이더라 이 옵션이 있어야 검사에 잡힌다.
         Vector3 center = transform.TransformPoint(_cc.center);
