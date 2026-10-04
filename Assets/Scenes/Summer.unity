@@ -3781,6 +3781,10 @@ MonoBehaviour:
   offsetY: 1.71
   offsetZ: -8.98
   followSpeed: 8
+  topDownDistance: 14
+  topDownPitch: 60
+  transitionDuration: 0.6
+  transitionEase: 4
 --- !u!1 &350965556
 GameObject:
   m_ObjectHideFlags: 0
@@ -6958,6 +6962,52 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 90, z: 0}
+--- !u!1 &615154628
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 615154630}
+  - component: {fileID: 615154629}
+  m_Layer: 0
+  m_Name: SceneSpawnPoint_SummerStart
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &615154629
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 615154628}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0335457a9d016f7438a8ad3731d773b6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  spawnId: summer_start
+  fadeInDuration: 0.6
+--- !u!4 &615154630
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 615154628}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -5, y: -0.07, z: 2.2}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &621830192
 GameObject:
   m_ObjectHideFlags: 0
@@ -16910,8 +16960,21 @@ MonoBehaviour:
   maxHeat: 30
   meltDuration: 0.4
   meltEase: 5
+  collapseShakeDuration: 0.15
+  collapseShakeStrength: 0.1
+  collapseShakeRotationStrength: 15
+  iceShardParticle: {fileID: 0}
   regrowDuration: 0.4
   regrowEase: 27
+  crackThresholdRatio: 0.5
+  crackSound: {fileID: 0}
+  meltSound: {fileID: 0}
+  waterDropParticle: {fileID: 0}
+  audioSource: {fileID: 0}
+  crackFlashColor: {r: 1, g: 1, b: 1, a: 1}
+  crackFlashDuration: 0.15
+  crackShakeStrength: 0.05
+  crackShakeDuration: 0.25
 --- !u!23 &985563237
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -19920,6 +19983,7 @@ MonoBehaviour:
     serializedVersion: 2
     m_Bits: 1
   blocksPathUntilBurned: 0
+  doorToOpen: {fileID: 0}
 --- !u!23 &1150907241
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -40647,6 +40711,21 @@ MonoBehaviour:
   chargeRecoilLevel1: 1.5
   chargeRecoilLevel2: 3
   chargeRecoilLevel3: 5
+  minBlastRecoil: 10
+  maxBlastRecoil: 40
+  blowClip: {fileID: 0}
+  blowVolume: 1
+  blowFadeOutDuration: 0.3
+  blowAudioSource: {fileID: 0}
+  chargeSound1: {fileID: 0}
+  chargeSound2: {fileID: 0}
+  chargeSound3: {fileID: 0}
+  chargeSoundVolume: 0.8
+  blastSound1: {fileID: 0}
+  blastSound2: {fileID: 0}
+  blastSound3: {fileID: 0}
+  blastSoundVolume: 1
+  audioSource: {fileID: 0}
   blowableLayer:
     serializedVersion: 2
     m_Bits: 1
@@ -40687,6 +40766,7 @@ MonoBehaviour:
   recoilDecay: 8
   blastDecay: 4
   inputActionAsset: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+  laneReturnSpeed: 10
 --- !u!143 &2031217117
 CharacterController:
   m_ObjectHideFlags: 0
@@ -42157,3 +42237,4 @@ SceneRoots:
   - {fileID: 911493034}
   - {fileID: 1164600573}
   - {fileID: 1389493626}
+  - {fileID: 615154630}
