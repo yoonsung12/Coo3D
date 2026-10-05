@@ -97,9 +97,8 @@ public class PlayerController : MonoBehaviour
     // 공중 상승 점프를 착지 전까지 한 번만 쓸 수 있게 막는 플래그다. 착지하면 자동으로 풀린다.
     private bool _airJumpUsed;
 
-    // 사이드뷰로 돌아올 때 복귀할 Z 라인과, 아직 복귀 중인지 여부다.
+    // 사이드뷰에서 플레이어가 유지할 Z 라인이다. 사이드뷰 동안은 항상 이 Z로 되돌아간다.
     private float _laneZ;
-    private bool _isReturningToLane;
 
     // 미끄러짐을 적용할 얼음 발판이다. null이면 일반 바닥처럼 즉시 반응하는 이동을 한다.
     // 착지 중에는 발밑 얼음으로 갱신되고, 공중에서는 마지막 값을 유지해 점프 중에도 관성이 이어진다.
@@ -110,6 +109,10 @@ public class PlayerController : MonoBehaviour
     private void Awake()
     {
         _cc = GetComponent<CharacterController>();
+
+        // 사이드뷰에서는 항상 이 Z 라인으로 되돌아가므로, 씬에 배치된 위치를 첫 라인으로 삼는다.
+        // (초기값 0으로 두면 시작하자마자 Z 0으로 끌려간다. 이후 순간이동은 Respawn()이 라인을 갱신한다.)
+        _laneZ = transform.position.z;
 
         // 쿼터뷰 3D에서는 계단 자동 오르기가 필요 없으므로 stepOffset을 0으로 설정한다.
         // 이 값이 0이 아니면 평지 BoxCollider 가장자리에서 캐릭터가 공중에 떠오르는 문제가 생긴다.
@@ -181,7 +184,7 @@ public class PlayerController : MonoBehaviour
         Vector3 horizontal = _moveVelocity + _recoilVelocity + _blastVelocity + _windVelocity;
 
         // 사이드뷰에서는 반동/바람 등 어떤 원인이든 Z 이동을 버려 캐릭터가 앞뒤로 벗어나지 않게 한다.
-        // 단, 탑다운 구역에서 막 나온 직후라면 사이드뷰 라인(Z)으로 돌아가는 속도만 허용한다.
+        // 대신 사이드뷰 라인(Z)으로 돌아가는 속도만 허용한다(탑다운에서 나온 직후, 비스듬한 벽에 미끄러져 Z가 밀린 경우).
         if (CurrentViewMode == ViewMode.SideView)
             horizontal.z = GetLaneReturnVelocityZ();
 
@@ -336,16 +339,13 @@ public class PlayerController : MonoBehaviour
         }
     }
 
+    // 사이드뷰 동안 항상 호출되어 Z 라인을 유지한다.
+    // 탑다운에서 막 나왔을 때뿐 아니라, 비스듬한 콜라이더(부서진 나무 등)에 비비다가
+    // CharacterController의 미끄러짐 처리로 Z가 밀려난 경우에도 다음 이동에서 라인으로 되돌린다.
     private float GetLaneReturnVelocityZ()
     {
-        if (!_isReturningToLane) return 0f;
-
         float deltaZ = _laneZ - transform.position.z;
-        if (Mathf.Abs(deltaZ) < 0.01f)
-        {
-            _isReturningToLane = false;
-            return 0f;
-        }
+        if (Mathf.Abs(deltaZ) < 0.01f) return 0f;
 
         // 남은 거리를 이번 프레임 안에 채우는 속도를 구하되, laneReturnSpeed를 넘지 않게 제한한다.
         // Time.deltaTime으로 나누는 이유: 최종 속도에 다시 deltaTime이 곱해지므로 도착 지점을 지나치지 않게 하기 위해서다.
@@ -360,9 +360,8 @@ public class PlayerController : MonoBehaviour
 
         CurrentViewMode = mode;
         _laneZ = laneZ;
-        // 사이드뷰로 돌아올 때만 Z 라인 복귀를 시작한다. transform.position을 직접 바꾸지 않고
+        // 사이드뷰로 돌아오면 Update의 GetLaneReturnVelocityZ()가 이 라인으로 복귀시킨다. transform.position을 직접 바꾸지 않고
         // CharacterController.Move()로 이동시키므로 벽을 뚫고 순간이동하지 않는다.
-        _isReturningToLane = mode == ViewMode.SideView;
 
         // 이전 모드에서 받은 선풍기 반동이 새 모드에서 엉뚱한 방향으로 이어지지 않게 초기화한다.
         _recoilVelocity = Vector3.zero;
@@ -396,10 +395,9 @@ public class PlayerController : MonoBehaviour
         }
 
         SetViewMode(ViewMode.SideView, transform.position.z);
-        // 구역 밖으로 리스폰했다면 그 위치가 곧 사이드뷰 라인이므로, 이전 라인으로 끌려가지 않게 복귀를 멈춘다.
+        // 구역 밖으로 리스폰했다면 그 위치가 곧 사이드뷰 라인이므로, 이전 라인으로 끌려가지 않게 라인을 갱신한다.
         // (이미 사이드뷰였다면 SetViewMode가 무시되므로 여기서 직접 정리한다.)
         _laneZ = transform.position.z;
-        _isReturningToLane = false;
     }
 
     // 테스트 버튼으로 탑다운에 들어간 순간의 Z를 기억해, 사이드뷰 테스트 버튼으로 같은 라인에 돌아오게 한다.

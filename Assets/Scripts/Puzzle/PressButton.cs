@@ -22,8 +22,17 @@ public class PressButton : MonoBehaviour
     private float pressDepth = 0.08f;
     // 버튼 윗면이 눌릴 때 Y축으로 내려가는 거리다.
 
+    [SerializeField, LabelText("눌림 방향")]
+    private Vector3 pressDirection = Vector3.down;
+    // 윗면 오브젝트가 눌릴 때 움직일 방향(월드 기준)이다. 바닥 발판은 기본값(아래)을 그대로 쓰고,
+    // 벽에 붙은 스위치처럼 옆에서 누르는 버튼은 버튼이 튀어나온 쪽의 반대(박스 안쪽)를 넣는다.
+
     [SerializeField, LabelText("눌림/해제 시간")]
     private float pressDuration = 0.15f;
+
+    [SerializeField, LabelText("눌림 펀치")]
+    private float pressPunch = 0f;
+    // 눌리는 순간 윗면이 살짝 찌그러졌다 돌아오는 정도(현재 크기 대비 비율)다. 0이면 펀치 없이 이동만 한다.
 
     [FoldoutGroup("색상 설정")]
     [SerializeField, LabelText("대기 색상")]
@@ -55,14 +64,19 @@ public class PressButton : MonoBehaviour
     public System.Action<PressButton> OnStateChanged;
 
     private Vector3 _topOriginalLocalPos;
+    private Vector3 _topOriginalScale;
     private Tween _moveTween;
+    private Tween _punchTween;
     private Tween _colorTween;
     private Material _buttonMat;
 
     private void Awake()
     {
         if (buttonTop != null)
+        {
             _topOriginalLocalPos = buttonTop.localPosition;
+            _topOriginalScale = buttonTop.localScale;
+        }
 
         // 개별 머티리얼 인스턴스를 생성해 버튼마다 색상을 독립적으로 관리한다.
         if (buttonRenderer != null)
@@ -130,13 +144,26 @@ public class PressButton : MonoBehaviour
         if (buttonTop != null)
         {
             _moveTween?.Kill();
-            float targetY = newState == ButtonState.Pressed
-                ? _topOriginalLocalPos.y - pressDepth
-                : _topOriginalLocalPos.y;
-            // 버튼 윗면을 Y축으로 눌리거나 올라오는 연출이다.
+
+            // 눌림 방향은 월드 기준이므로, 부모가 있으면 부모 기준(local) 방향으로 바꿔서 localPosition에 더한다.
+            Vector3 localDir = buttonTop.parent != null
+                ? buttonTop.parent.InverseTransformDirection(pressDirection.normalized)
+                : pressDirection.normalized;
+            Vector3 target = newState == ButtonState.Pressed
+                ? _topOriginalLocalPos + localDir * pressDepth
+                : _topOriginalLocalPos;
+            // 버튼 윗면이 눌림 방향으로 들어가거나 원래 자리로 돌아오는 연출이다.
             _moveTween = buttonTop
-                .DOLocalMoveY(targetY, pressDuration)
+                .DOLocalMove(target, pressDuration)
                 .SetEase(Ease.OutQuad);
+
+            // 눌리는 순간에만 살짝 찌그러졌다 돌아와 "꾹" 눌린 느낌을 준다.
+            if (newState == ButtonState.Pressed && pressPunch > 0f)
+            {
+                _punchTween?.Kill();
+                buttonTop.localScale = _topOriginalScale;
+                _punchTween = buttonTop.DOPunchScale(_topOriginalScale * pressPunch, pressDuration * 2f, 6, 0.5f);
+            }
         }
 
         Color targetColor = newState == ButtonState.Active ? activeColor : pressedColor;
@@ -166,6 +193,7 @@ public class PressButton : MonoBehaviour
     private void OnDestroy()
     {
         _moveTween?.Kill();
+        _punchTween?.Kill();
         _colorTween?.Kill();
     }
 

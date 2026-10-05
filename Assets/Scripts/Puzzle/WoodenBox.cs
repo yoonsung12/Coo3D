@@ -26,6 +26,9 @@ public class WoodenBox : MonoBehaviour, IBlowable
     private Rigidbody _rb;
     private Vector3 _originPosition;
 
+    public event System.Action Blown;
+    // 바람을 맞을 때마다 알린다. BoxRespawner가 "마지막으로 밀린 시간"을 기록하는 데 사용한다.
+
     private void Start()
     {
         // Start()에서 초기화해야 [RequireComponent]로 추가된 Rigidbody가 확실히 준비된 뒤 참조할 수 있다.
@@ -34,7 +37,8 @@ public class WoodenBox : MonoBehaviour, IBlowable
         _originPosition = transform.position;
 
         // Y축 회전만 허용해 상자가 쓰러지지 않게 한다.
-        _rb.constraints = RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
+        // |=를 쓰는 이유: Inspector에서 추가로 지정한 고정(예: 신호등 퍼즐의 Z 위치 고정)을 덮어쓰지 않기 위해서다.
+        _rb.constraints |= RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
         Debug.Log($"[WoodenBox] Start() 호출됨. _rb={_rb}, _originPosition={_originPosition}");
     }
 
@@ -56,6 +60,8 @@ public class WoodenBox : MonoBehaviour, IBlowable
         Vector3 blowForce = new Vector3(direction.x, 0f, direction.z).normalized * force;
         ForceMode mode = impulse ? ForceMode.Impulse : ForceMode.Force;
         _rb.AddForce(blowForce, mode);
+
+        Blown?.Invoke();
     }
 
     private void ApplyRestoreForce()
