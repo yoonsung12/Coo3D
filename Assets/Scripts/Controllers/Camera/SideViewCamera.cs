@@ -26,6 +26,17 @@ public class SideViewCamera : MonoBehaviour
     private float offsetZ = -10f;
     // 카메라가 플레이어로부터 Z축으로 떨어지는 거리다.
     // 음수값이며 절댓값이 클수록 카메라가 더 뒤로 물러서 화면이 넓어진다.
+    // "플레이어 Z 따라가기"가 꺼져 있을 때만 사용하는 절대 Z 위치다.
+
+    [SerializeField, LabelText("플레이어 Z 따라가기")]
+    private bool followPlayerZ;
+    // 켜면 카메라 Z를 플레이어 Z 기준으로 계산한다.
+    // 탑다운 구역 안에 사이드뷰 라인(SideViewLaneZone)이 따로 있는 씬처럼, 사이드뷰 Z 라인이 여러 개일 때 켠다.
+    // 끄면 기존처럼 Z 오프셋을 절대 위치로 사용한다.
+
+    [SerializeField, LabelText("플레이어와의 Z 거리"), ShowIf(nameof(followPlayerZ))]
+    private float sideDistanceZ = -10f;
+    // 플레이어 Z에 더해지는 값이다. 음수이며 절댓값이 클수록 카메라가 플레이어로부터 더 멀어진다.
 
     [SerializeField, LabelText("추적 속도")]
     private float followSpeed = 8f;
@@ -111,12 +122,15 @@ public class SideViewCamera : MonoBehaviour
 
         _currentTargetX = target.position.x;
 
-        // X/Y축 모두 플레이어 위치 기준 상대 offset을 따라가고, Z만 고정 거리를 유지한다.
+        // X/Y축 모두 플레이어 위치 기준 상대 offset을 따라간다.
+        // Z는 기본적으로 고정 위치지만, "플레이어 Z 따라가기"를 켜면 플레이어 Z 기준 거리를 유지해
+        // 다른 사이드뷰 라인으로 옮겨가도 카메라가 플레이어 정면에 온다.
         // Lerp로 부드럽게 이동해 갑작스러운 카메라 이동을 방지한다.
+        float cameraZ = followPlayerZ ? target.position.z + sideDistanceZ : offsetZ;
         Vector3 targetPosition = new Vector3(
             _currentTargetX + offsetX,
             target.position.y + offsetY,
-            offsetZ
+            cameraZ
         );
 
         // 탑다운 전환 중이거나 탑다운 상태면, 플레이어 뒤쪽 위에서 내려다보는 위치와 섞는다.
@@ -161,6 +175,9 @@ public class SideViewCamera : MonoBehaviour
         if (target == null) return;
         offsetX = transform.position.x - target.position.x;
         offsetY = transform.position.y - target.position.y;
-        offsetZ = transform.position.z;
+        if (followPlayerZ)
+            sideDistanceZ = transform.position.z - target.position.z;
+        else
+            offsetZ = transform.position.z;
     }
 }
