@@ -61,6 +61,18 @@ public class PlayerController : MonoBehaviour
     // 시점 모드가 바뀔 때 알린다. SideViewCamera가 구독해 카메라 시점을 함께 전환한다.
     public event System.Action<ViewMode> OnViewModeChanged;
 
+    // 사이드뷰에서 D키(화면 오른쪽)로 나아가는 월드 방향이다. 기본은 +X이고,
+    // Z 방향으로 뻗은 통로처럼 다른 방향으로 진행해야 하는 구간에서는 SideViewAxisZone이 바꾼다.
+    [ReadOnly, ShowInInspector, LabelText("사이드뷰 진행 축")]
+    public Vector3 SideViewAxis { get; private set; } = Vector3.right;
+
+    // 사이드뷰 진행 축이 바뀔 때 알린다. SideViewCamera가 구독해 카메라를 통로 옆으로 돌린다.
+    public event System.Action<Vector3> OnSideViewAxisChanged;
+
+    // 사이드뷰에서 고정하는 "깊이" 방향(진행 축에 수직인 수평 방향)이다. 카메라가 바라보는 방향과 같다.
+    // 기본 축(+X)이면 +Z가 되어, 기존처럼 Z 좌표를 라인으로 고정하는 것과 똑같이 동작한다.
+    private Vector3 SideViewDepthAxis => Vector3.Cross(SideViewAxis, Vector3.up);
+
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("접지 여부")]
     public bool IsGrounded { get; private set; } = true;
@@ -97,7 +109,8 @@ public class PlayerController : MonoBehaviour
     // 공중 상승 점프를 착지 전까지 한 번만 쓸 수 있게 막는 플래그다. 착지하면 자동으로 풀린다.
     private bool _airJumpUsed;
 
-    // 사이드뷰에서 플레이어가 유지할 Z 라인이다. 사이드뷰 동안은 항상 이 Z로 되돌아간다.
+    // 사이드뷰에서 플레이어가 유지할 라인(깊이 좌표)이다. 사이드뷰 동안은 항상 이 라인으로 되돌아간다.
+    // 기본 축(+X)에서는 Z 좌표 그대로이고, -Z 통로처럼 축이 바뀌면 깊이 방향(X) 좌표가 된다.
     private float _laneZ;
 
     // 미끄러짐을 적용할 얼음 발판이다. null이면 일반 바닥처럼 즉시 반응하는 이동을 한다.
@@ -183,10 +196,15 @@ public class PlayerController : MonoBehaviour
         // 수평 속도 성분을 합산하고 수직 속도를 Y에 적용해 최종 이동한다.
         Vector3 horizontal = _moveVelocity + _recoilVelocity + _blastVelocity + _windVelocity;
 
-        // 사이드뷰에서는 반동/바람 등 어떤 원인이든 Z 이동을 버려 캐릭터가 앞뒤로 벗어나지 않게 한다.
-        // 대신 사이드뷰 라인(Z)으로 돌아가는 속도만 허용한다(탑다운에서 나온 직후, 비스듬한 벽에 미끄러져 Z가 밀린 경우).
+        // 사이드뷰에서는 반동/바람 등 어떤 원인이든 깊이 방향 이동을 버려 캐릭터가 앞뒤로 벗어나지 않게 한다.
+        // 대신 사이드뷰 라인으로 돌아가는 속도만 허용한다(탑다운에서 나온 직후, 비스듬한 벽에 미끄러져 라인에서 밀린 경우).
+        // 기본 축(+X)이면 깊이 방향이 +Z라서 "horizontal.z = 복귀 속도"와 같은 계산이다.
         if (CurrentViewMode == ViewMode.SideView)
-            horizontal.z = GetLaneReturnVelocityZ();
+        {
+            Vector3 depthAxis = SideViewDepthAxis;
+            horizontal -= depthAxis * Vector3.Dot(horizontal, depthAxis);
+            horizontal += depthAxis * GetLaneReturnVelocityZ();
+        }
 
         Vector3 finalVelocity = new Vector3(horizontal.x, _verticalVelocity, horizontal.z);
         _groundIceThisMove = null;
@@ -244,6 +262,11 @@ public class PlayerController : MonoBehaviour
         // Z = 앞뒤
         Vector3 moveDir = new Vector3(xInput, 0f, zInput);
 
+        // 사이드뷰에서는 좌우 입력을 진행 축 방향으로 쓴다. 기본 축(+X)이면 위와 같은 값이고,
+        // -Z 통로에서는 D키가 통로 안쪽(-Z)으로 나아가게 된다.
+        if (CurrentViewMode == ViewMode.SideView)
+            moveDir = SideViewAxis * xInput;
+
         // 대각선 이동이 더 빨라지는 것 방지
         if (moveDir.sqrMagnitude > 1f)
             moveDir.Normalize();
@@ -295,27 +318,28 @@ public class PlayerController : MonoBehaviour
             return;
         }
 
-        // 사이드뷰: 카메라가 Z축을 따라 바라보므로, 플레이어 위치를 지나는 수직 평면(Z=플레이어Z)과
-        // 광선의 교점을 구해 마우스가 가리키는 월드 XY 좌표를 얻는다.
-        // 쿼터뷰의 지면 수평 평면 대신, Z축에 수직인 측면 평면을 사용한다.
-        Plane sidePlane = new Plane(Vector3.forward, transform.position);
+        // 사이드뷰: 카메라가 깊이 방향(기본은 Z축)을 따라 바라보므로, 플레이어 위치를 지나는 측면 평면과
+        // 광선의 교점을 구해 마우스가 가리키는 월드 좌표를 얻는다.
+        // 쿼터뷰의 지면 수평 평면 대신, 깊이 방향에 수직인 측면 평면을 사용한다.
+        Vector3 depthAxis = SideViewDepthAxis;
+        Plane sidePlane = new Plane(depthAxis, transform.position);
         if (sidePlane.Raycast(ray, out float distance))
         {
             Vector3 worldPoint = ray.GetPoint(distance);
             Vector3 dir = worldPoint - transform.position;
-            dir.z = 0f;
-            // Z 성분을 제거해 XY 평면 방향만 남긴다.
+            dir -= depthAxis * Vector3.Dot(dir, depthAxis);
+            // 깊이 성분을 제거해 진행 축 + 위아래 평면 방향만 남긴다. (기본 축이면 dir.z = 0과 같다)
 
             if (dir.sqrMagnitude > 0.01f)
             {
                 FacingDirection = dir.normalized;
                 // FacingDirection에 Y 성분이 포함되어 선풍기/횃불이 위아래 각도로도 작동한다.
 
-                // 캐릭터 몸통은 좌우 방향만 전환한다.
-                // 마우스가 오른쪽이면 +X 방향(90°), 왼쪽이면 -X 방향(-90°)으로 Y축만 회전한다.
-                // 0°/180°를 쓰면 카메라(Z축) 기준 등/정면이 뒤바뀌어 Z축 회전처럼 보이는 문제가 생긴다.
-                float yRotation = dir.x >= 0f ? 90f : -90f;
-                transform.rotation = Quaternion.Euler(0f, yRotation, 0f);
+                // 캐릭터 몸통은 진행 축의 앞/뒤 방향만 전환한다.
+                // 기본 축이면 마우스가 오른쪽일 때 +X(90°), 왼쪽일 때 -X(-90°)로 Y축만 회전한다.
+                // 카메라 쪽(깊이 방향)을 바라보게 하면 등/정면이 뒤바뀌어 Z축 회전처럼 보이는 문제가 생긴다.
+                Vector3 bodyDir = Vector3.Dot(dir, SideViewAxis) >= 0f ? SideViewAxis : -SideViewAxis;
+                transform.rotation = Quaternion.LookRotation(bodyDir, Vector3.up);
             }
         }
     }
@@ -344,7 +368,8 @@ public class PlayerController : MonoBehaviour
     // CharacterController의 미끄러짐 처리로 Z가 밀려난 경우에도 다음 이동에서 라인으로 되돌린다.
     private float GetLaneReturnVelocityZ()
     {
-        float deltaZ = _laneZ - transform.position.z;
+        // 깊이 방향으로 라인까지 남은 거리다. 기본 축이면 깊이 방향이 +Z라서 "라인Z - 현재Z"와 같다.
+        float deltaZ = _laneZ - Vector3.Dot(transform.position, SideViewDepthAxis);
         if (Mathf.Abs(deltaZ) < 0.01f) return 0f;
 
         // 남은 거리를 이번 프레임 안에 채우는 속도를 구하되, laneReturnSpeed를 넘지 않게 제한한다.
@@ -370,6 +395,24 @@ public class PlayerController : MonoBehaviour
         OnViewModeChanged?.Invoke(mode);
     }
 
+    // SideViewAxisZone이 구역 안에서 매 물리 프레임 호출하고, 구역을 나가면 기본 축(+X)으로 되돌릴 때도 호출한다.
+    // axis: 사이드뷰에서 D키로 나아갈 수평 방향. laneDepth: 깊이 방향으로 고정할 라인 좌표.
+    public void SetSideViewAxis(Vector3 axis, float laneDepth)
+    {
+        _laneZ = laneDepth;
+        // 라인은 매번 갱신해, 다른 구역(ViewModeZone 등)이 같은 프레임에 덮어쓴 라인도 바로잡는다.
+
+        if (SideViewAxis == axis) return;
+
+        SideViewAxis = axis;
+
+        // 이전 축 기준으로 받은 선풍기 반동이 새 축에서 엉뚱한 방향으로 이어지지 않게 초기화한다.
+        _recoilVelocity = Vector3.zero;
+        _blastVelocity = Vector3.zero;
+
+        OnSideViewAxisChanged?.Invoke(axis);
+    }
+
     // PlayerHealth.Respawn()이 순간이동 직후 호출한다.
     // CharacterController를 끈 채 옮기면 트리거 이탈 이벤트가 오지 않으므로, 현재 위치가 ViewModeZone 안인지 직접 검사한다.
     public void SyncViewModeToPosition()
@@ -384,6 +427,7 @@ public class PlayerController : MonoBehaviour
         Vector3 center = transform.TransformPoint(_cc.center);
         Collider[] hits = Physics.OverlapSphere(center, 0.1f, ~0, QueryTriggerInteraction.Collide);
 
+        SideViewAxisZone axisZone = null;
         foreach (Collider hit in hits)
         {
             ViewModeZone zone = hit.GetComponent<ViewModeZone>();
@@ -392,12 +436,23 @@ public class PlayerController : MonoBehaviour
                 SetViewMode(ViewMode.TopDown, zone.GetLaneZ());
                 return;
             }
+
+            if (axisZone == null)
+                axisZone = hit.GetComponent<SideViewAxisZone>();
         }
 
-        SetViewMode(ViewMode.SideView, transform.position.z);
+        // 리스폰 위치가 통로(SideViewAxisZone) 안이면 그 구역의 축/라인을, 아니면 기본 축(+X)과 현재 Z를 쓴다.
+        // CharacterController를 끈 채 옮기면 트리거 이벤트가 오지 않으므로 여기서 직접 맞춘다.
+        if (axisZone != null)
+            SetSideViewAxis(axisZone.Axis, axisZone.LaneDepth);
+        else
+            SetSideViewAxis(Vector3.right, transform.position.z);
+
+        float laneDepth = Vector3.Dot(transform.position, SideViewDepthAxis);
+        SetViewMode(ViewMode.SideView, axisZone != null ? axisZone.LaneDepth : laneDepth);
         // 구역 밖으로 리스폰했다면 그 위치가 곧 사이드뷰 라인이므로, 이전 라인으로 끌려가지 않게 라인을 갱신한다.
         // (이미 사이드뷰였다면 SetViewMode가 무시되므로 여기서 직접 정리한다.)
-        _laneZ = transform.position.z;
+        _laneZ = axisZone != null ? axisZone.LaneDepth : laneDepth;
     }
 
     // 테스트 버튼으로 탑다운에 들어간 순간의 Z를 기억해, 사이드뷰 테스트 버튼으로 같은 라인에 돌아오게 한다.

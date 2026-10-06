@@ -358,6 +358,11 @@ public class FanTool : BaseTool
                 return dir.normalized;
         }
 
+        // 진행 축이 기본(+X)이 아닌 통로(SideViewAxisZone)에서는 몸통이 바라보는 진행 축 방향(앞/뒤)을 쓴다.
+        Vector3 axis = _player.SideViewAxis;
+        if (axis != Vector3.right)
+            return Vector3.Dot(_player.transform.forward, axis) >= 0f ? axis : -axis;
+
         return new Vector3(GetFacingSignX(), 0f, 0f);
     }
 

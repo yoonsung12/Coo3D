@@ -37,6 +37,7 @@ public class SideViewCamera : MonoBehaviour
     [SerializeField, LabelText("플레이어와의 Z 거리"), ShowIf(nameof(followPlayerZ))]
     private float sideDistanceZ = -10f;
     // 플레이어 Z에 더해지는 값이다. 음수이며 절댓값이 클수록 카메라가 플레이어로부터 더 멀어진다.
+    // SideViewAxisZone으로 진행 축이 바뀐 통로에서는 이 설정과 상관없이 이 값을 통로 옆 거리로 사용한다.
 
     [SerializeField, LabelText("추적 속도")]
     private float followSpeed = 8f;
@@ -77,7 +78,14 @@ public class SideViewCamera : MonoBehaviour
     private Quaternion _sideRotation;
     // 씬에 배치된 사이드뷰 카메라의 원래 회전이다. 사이드뷰로 돌아올 때 이 회전으로 복구한다.
 
+    private Quaternion _currentSideRotation;
+    // 지금 진행 축 기준의 사이드뷰 회전이다. 기본 축(+X)이면 _sideRotation과 같고,
+    // -Z 통로처럼 축이 바뀌면 _sideRotation을 Y축으로 돌린 값이 된다.
+
     private Tween _blendTween;
+
+    private Tween _axisTween;
+    // 진행 축이 바뀔 때 카메라가 통로 옆으로 돌아가는 회전 연출이다. 다시 바뀌면 끊고 새로 시작한다.
 
     private Vector3 _shakeOffset;
     // 보스 패턴 폭발 등 임팩트 연출에서 Shake()를 호출하면 이 오프셋이 흔들리며 최종 위치에 더해진다.
@@ -88,13 +96,39 @@ public class SideViewCamera : MonoBehaviour
     private void Start()
     {
         _sideRotation = transform.rotation;
+        _currentSideRotation = _sideRotation;
 
         // 시점 모드는 PlayerController가 관리하고, 카메라는 이벤트를 받아 따라 바뀐다.
         // 이렇게 하면 구역 트리거는 플레이어에게만 알리면 되고 카메라를 따로 연결할 필요가 없다.
         if (target != null)
             _player = target.GetComponent<PlayerController>();
         if (_player != null)
+        {
             _player.OnViewModeChanged += HandleViewModeChanged;
+            _player.OnSideViewAxisChanged += HandleSideViewAxisChanged;
+        }
+    }
+
+    // 진행 축이 바뀌면, 원래 사이드뷰 회전을 Y축으로 돌려 새 깊이 방향(진행 축 × 위쪽)을 바라보게 한다.
+    // 기본 축(+X)의 깊이 방향은 +Z이므로, +Z에서 새 깊이 방향까지의 각도만큼 돌리면 된다.
+    private void HandleSideViewAxisChanged(Vector3 axis)
+    {
+        Vector3 depthAxis = Vector3.Cross(axis, Vector3.up);
+        float yaw = Vector3.SignedAngle(Vector3.forward, depthAxis, Vector3.up);
+        Quaternion from = _currentSideRotation;
+        Quaternion to = Quaternion.AngleAxis(yaw, Vector3.up) * _sideRotation;
+        Quaternion topRotation = Quaternion.Euler(topDownPitch, 0f, 0f);
+
+        _axisTween?.Kill();
+        // 통로 입구를 오가며 축이 연달아 바뀌어도 현재 각도에서 새 목표로 자연스럽게 이어지게 이전 Tween을 끊는다.
+
+        _axisTween = DOTween.To(() => 0f, v =>
+            {
+                _currentSideRotation = Quaternion.Slerp(from, to, v);
+                // 탑다운 전환이 섞여 있는 중이면 그 비율도 함께 반영해 두 연출이 서로 덮어쓰지 않게 한다.
+                transform.rotation = Quaternion.Slerp(_currentSideRotation, topRotation, _topDownBlend);
+            }, 1f, transitionDuration)
+            .SetEase(transitionEase);
     }
 
     private void HandleViewModeChanged(ViewMode mode)
@@ -110,7 +144,7 @@ public class SideViewCamera : MonoBehaviour
                 _topDownBlend = v;
                 // 회전은 플레이어 위치와 무관하므로 Tween이 진행되는 동안에만 갱신한다.
                 // 전환이 끝난 뒤에는 회전을 건드리지 않아 기존 사이드뷰 동작과 똑같이 유지된다.
-                transform.rotation = Quaternion.Slerp(_sideRotation, topRotation, v);
+                transform.rotation = Quaternion.Slerp(_currentSideRotation, topRotation, v);
             }, targetBlend, transitionDuration)
             .SetEase(transitionEase);
     }
@@ -133,6 +167,15 @@ public class SideViewCamera : MonoBehaviour
             cameraZ
         );
 
+        // -Z 통로처럼 진행 축이 바뀐 구간에서는, 플레이어에서 깊이 방향 반대쪽으로 물러난 통로 옆 위치를 쓴다.
+        // (기본 축(+X)이면 이 블록을 건너뛰어 위의 기존 계산을 그대로 사용한다.)
+        if (_player != null && _player.SideViewAxis != Vector3.right)
+        {
+            Vector3 axis = _player.SideViewAxis;
+            Vector3 depthAxis = Vector3.Cross(axis, Vector3.up);
+            targetPosition = target.position + axis * offsetX + Vector3.up * offsetY + depthAxis * sideDistanceZ;
+        }
+
         // 탑다운 전환 중이거나 탑다운 상태면, 플레이어 뒤쪽 위에서 내려다보는 위치와 섞는다.
         // 각도(pitch)와 거리로 위치를 계산하므로 각도를 바꿔도 카메라가 항상 플레이어를 정면으로 바라본다.
         if (_topDownBlend > 0f)
@@ -153,10 +196,14 @@ public class SideViewCamera : MonoBehaviour
     {
         _shakeTween?.Kill();
         _blendTween?.Kill();
+        _axisTween?.Kill();
         // 씬 전환 등으로 카메라가 파괴될 때 남은 전환 Tween이 파괴된 transform에 접근하지 않게 정리한다.
 
         if (_player != null)
+        {
             _player.OnViewModeChanged -= HandleViewModeChanged;
+            _player.OnSideViewAxisChanged -= HandleSideViewAxisChanged;
+        }
     }
 
     // 보스 패턴 폭발 등 임팩트가 필요한 순간에 외부(예: PollenTrail)에서 호출한다.

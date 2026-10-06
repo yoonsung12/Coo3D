@@ -41,7 +41,25 @@ public class ViewModeZone : MonoBehaviour
         PlayerController player = other.GetComponent<PlayerController>();
         if (player == null) return;
 
+        // 구역을 여러 박스(ㄱ자 등)로 겹쳐 만든 경우, 한 박스에서 나가도 아직 다른 박스 안에 있으면 탑다운을 유지한다.
+        if (IsStillInsideAnyZone(player)) return;
+
         player.SetViewMode(ViewMode.SideView, GetLaneZ());
+    }
+
+    // 플레이어 몸통 중심이 아직 ViewModeZone 콜라이더(이 구역의 다른 박스 포함) 안에 있는지 검사한다.
+    // QueryTriggerInteraction.Collide: 구역 콜라이더는 트리거라 이 옵션이 있어야 검사에 잡힌다.
+    private bool IsStillInsideAnyZone(PlayerController player)
+    {
+        CharacterController cc = player.GetComponent<CharacterController>();
+        Vector3 center = player.transform.TransformPoint(cc.center);
+        Collider[] hits = Physics.OverlapSphere(center, 0.1f, ~0, QueryTriggerInteraction.Collide);
+
+        foreach (Collider hit in hits)
+        {
+            if (hit.GetComponent<ViewModeZone>() != null) return true;
+        }
+        return false;
     }
 
     // 이 구역을 나갈 때 돌아갈 사이드뷰 Z 라인이다. PlayerController가 리스폰 후 시점을 맞출 때도 사용한다.
