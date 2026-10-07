@@ -14,6 +14,11 @@ public class WaterArea : MonoBehaviour
     // 실제로 눈에 보이는 물 표면 역할을 하는 Quad/Cube를 연결한다.
     // 콜라이더(트리거)는 판정용이라 렌더러가 없으므로, 이 오브젝트가 없으면 Play Mode에서 물이 안 보이고 상자만 떠오르는 것처럼 보인다.
 
+    [SerializeField, LabelText("수면 오브젝트 (위치만 이동)")]
+    private Transform waterSurfacePlane;
+    // OptiWater Plane처럼 평면 메쉬로 된 물 표면을 연결한다. 크기는 그대로 두고 수위가 오른 만큼 위로만 올린다.
+    // 평면은 세로로 늘려도 두께가 생기지 않으므로 위의 "물 표면 오브젝트"와 달리 위치만 움직인다. 둘 중 하나만 연결해도 된다.
+
     [Title("수위 설정")]
     [SerializeField, LabelText("빗방울 1개당 상승량")]
     private float risePerDrop = 0.05f;
@@ -31,9 +36,17 @@ public class WaterArea : MonoBehaviour
     [SerializeField, LabelText("배수 속도 (유닛/초)")]
     private float drainSpeed = 0.5f;
 
+    [SerializeField, LabelText("가득 차면 물 고정")]
+    private bool lockWhenFull;
+    // 켜면 최대 높이까지 한 번 차오른 뒤에는 더 이상 빠지지 않는다.
+    // 비 ON/OFF 주기 사이에 물이 빠져 "다 채우기"가 안 되는 퍼즐 웅덩이에 켠다.
+
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("현재 오른 높이")]
     private float _currentOffset;
+
+    [ReadOnly, ShowInInspector, LabelText("가득 차서 고정됨")]
+    private bool _isLockedFull;
 
     private BoxCollider _collider;
     private float _baseColliderHeight;
@@ -43,6 +56,9 @@ public class WaterArea : MonoBehaviour
     private Vector3 _visualBaseScale;
     // waterSurfaceVisual의 가로/깊이(X, Z) 원본 크기를 기억해둔다.
     // 세로(Y) 크기만 매 프레임 수위에 맞춰 바꿀 때, 가로/깊이는 처음 설정값을 그대로 유지하기 위해 필요하다.
+
+    private float _surfacePlaneBaseY;
+    // waterSurfacePlane의 처음 월드 Y 좌표다. 여기에 오른 수위(_currentOffset)를 더해 평면 높이를 정한다.
 
 
     // FloatingBox가 참조하는 현재 물 표면의 월드 Y 좌표다.
@@ -62,6 +78,9 @@ public class WaterArea : MonoBehaviour
         if (waterSurfaceVisual != null)
             _visualBaseScale = waterSurfaceVisual.localScale;
         // 물 표면 오브젝트의 처음 크기를 기억해둔다 — 이후 UpdateWaterVisual()에서 세로 크기만 바꿀 때 가로/깊이를 이 값으로 유지한다.
+
+        if (waterSurfacePlane != null)
+            _surfacePlaneBaseY = waterSurfacePlane.position.y;
     }
 
     private void Update()
@@ -73,6 +92,8 @@ public class WaterArea : MonoBehaviour
 
     private void UpdateDrain()
     {
+        if (_isLockedFull) return;
+
         bool canDrain = Time.time - _lastFilledTime > drainDelay;
         if (canDrain)
             _currentOffset = Mathf.MoveTowards(_currentOffset, 0f, drainSpeed * Time.deltaTime);
@@ -97,6 +118,8 @@ public class WaterArea : MonoBehaviour
     // 얇은 판이 위치만 움직이는 대신 실제로 부피가 있는 블록처럼 세로 크기 자체를 키운다.
     private void UpdateWaterVisual()
     {
+        UpdateSurfacePlane();
+
         if (waterSurfaceVisual == null) return;
 
         // 콜라이더와 동일하게 바닥은 고정(_baseSurfaceY - _baseColliderHeight)이고, 높이만 현재 수위만큼 자란다.
@@ -112,11 +135,36 @@ public class WaterArea : MonoBehaviour
     }
 
 
+    // 평면 수면을 처음 높이에서 오른 수위만큼만 위로 올린다. 기울기·크기·X/Z 위치는 씬에 배치한 그대로 둔다.
+    private void UpdateSurfacePlane()
+    {
+        if (waterSurfacePlane == null) return;
+
+        Vector3 pos = waterSurfacePlane.position;
+        pos.y = _surfacePlaneBaseY + _currentOffset;
+        waterSurfacePlane.position = pos;
+    }
+
     // RainDrop이 이 물 표면에 닿았을 때 호출한다.
     public void OnRainDropHit()
     {
         _currentOffset = Mathf.Min(_currentOffset + risePerDrop, maxRiseHeight);
         _lastFilledTime = Time.time;
+
+        if (lockWhenFull && _currentOffset >= maxRiseHeight)
+            _isLockedFull = true;
+    }
+
+    [Button("가득 채우기 테스트")]
+    private void TestFillToMax()
+    {
+        if (!Application.isPlaying) return;
+
+        _currentOffset = maxRiseHeight;
+        _lastFilledTime = Time.time;
+        if (lockWhenFull)
+            _isLockedFull = true;
+        // Play Mode에서 비를 기다리지 않고 바로 최대 수위로 만들어 상자 탑승/넘어가기를 확인한다.
     }
 
 #if UNITY_EDITOR

@@ -19,6 +19,15 @@ public class ViewModeZone : MonoBehaviour
     private float customLaneZ;
     // 구역을 나갈 때 플레이어가 돌아갈 사이드뷰 Z 위치다.
 
+    [SerializeField, LabelText("두 라인 중 가까운 쪽으로 복귀"), ShowIf(nameof(useCustomLaneZ))]
+    private bool useSecondLane;
+    // 입구와 출구가 서로 다른 사이드뷰 라인에 붙어 있어 양쪽으로 나갈 수 있는 구역에 켠다.
+    // 켜면 나가는 순간 플레이어 Z가 "복귀 Z"와 "두 번째 복귀 Z" 중 더 가까운 라인으로 돌아간다.
+
+    [SerializeField, LabelText("두 번째 복귀 Z"), ShowIf(nameof(useSecondLane))]
+    private float secondLaneZ;
+    // 보통 입구 쪽 사이드뷰 라인의 Z를 넣는다. 위의 "복귀 Z"에는 출구 쪽 라인을 넣는다.
+
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("진입 시 Z")]
     private float _enteredZ;
@@ -44,7 +53,17 @@ public class ViewModeZone : MonoBehaviour
         // 구역을 여러 박스(ㄱ자 등)로 겹쳐 만든 경우, 한 박스에서 나가도 아직 다른 박스 안에 있으면 탑다운을 유지한다.
         if (IsStillInsideAnyZone(player)) return;
 
-        player.SetViewMode(ViewMode.SideView, GetLaneZ());
+        player.SetViewMode(ViewMode.SideView, GetExitLaneZ(player));
+    }
+
+    // 구역을 나갈 때 돌아갈 라인을 정한다. 두 라인 옵션이 꺼져 있으면 기존과 똑같이 GetLaneZ()를 쓴다.
+    // 켜져 있으면 나가는 위치에서 더 가까운 라인을 고른다 — 입구로 되돌아 나가면 입구 라인, 출구로 나가면 출구 라인이 된다.
+    private float GetExitLaneZ(PlayerController player)
+    {
+        if (!useCustomLaneZ || !useSecondLane) return GetLaneZ();
+
+        float z = player.transform.position.z;
+        return Mathf.Abs(z - secondLaneZ) < Mathf.Abs(z - customLaneZ) ? secondLaneZ : customLaneZ;
     }
 
     // 플레이어 몸통 중심이 아직 ViewModeZone 콜라이더(이 구역의 다른 박스 포함) 안에 있는지 검사한다.

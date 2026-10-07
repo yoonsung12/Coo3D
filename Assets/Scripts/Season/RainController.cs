@@ -34,6 +34,15 @@ public class RainController : BaseHazard, IBlowable
     private float returnSpeed = 0.8f;
     // pushSpeed보다 작게 설정하면 밀기보다 느리게 복귀한다.
 
+    [SerializeField, LabelText("밀리는 축")]
+    private Vector3 pushAxis = Vector3.right;
+    // 구름이 밀리고 빗방울이 퍼지는 월드 방향이다. 기본 사이드뷰는 (1, 0, 0) 그대로 둔다.
+    // -Z 통로(SideViewAxisZone)처럼 진행 축이 바뀐 곳에 둔 구름은 (0, 0, -1)처럼 통로 진행 방향을 넣는다.
+
+    [SerializeField, LabelText("바람이 멈춰도 그 자리에 머물기")]
+    private bool stayWhenPushed;
+    // 켜면 선풍기를 멈춰도 원위치로 돌아가지 않는다. 구름을 옮겨 놓아야 풀리는 퍼즐용 구름에 켠다.
+
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("현재 밀린 거리")]
     private float _currentOffset;
@@ -50,8 +59,11 @@ public class RainController : BaseHazard, IBlowable
     private float _lastBlownTime = -999f;
     // 마지막으로 OnBlown이 호출된 시간이다. Time.time과 비교해 선풍기가 멈췄는지 판단한다.
 
-    private float _pendingPushDirX;
-    // OnBlown에서 받은 바람의 X 방향이다 (+1 오른쪽, -1 왼쪽).
+    private float _pendingPushSign;
+    // OnBlown에서 받은 바람이 밀리는 축의 어느 쪽을 향하는지다 (+1 축 방향, -1 반대 방향).
+
+    private Vector3 PushAxis => pushAxis.sqrMagnitude > 0.0001f ? pushAxis.normalized : Vector3.right;
+    // Inspector에 (0, 0, 0)이 들어가도 깨지지 않도록 기본 +X로 대신한다.
 
     private const float BlownCooldown = 0.15f;
     // 이 시간(초) 이내에 OnBlown이 호출되면 선풍기가 켜진 상태로 간주한다.
@@ -92,8 +104,17 @@ public class RainController : BaseHazard, IBlowable
         if (_dropTimer >= dropInterval)
         {
             _dropTimer = 0f;
-            Instantiate(rainDropPrefab, GetSpawnPosition(), Quaternion.identity);
+            Instantiate(rainDropPrefab, GetRainSpawnPosition(), Quaternion.identity);
         }
+    }
+
+    // 밀리는 축을 따라 ±spawnHalfWidth 범위에 빗방울을 퍼뜨린다.
+    // BaseHazard.GetSpawnPosition()은 X축으로만 퍼뜨려서, -Z 통로에서는 카메라 기준 깊이 방향으로 퍼져 비가 한 줄기로 보인다.
+    // 축이 기본(+X)이면 기존과 똑같은 위치가 나온다.
+    private Vector3 GetRainSpawnPosition()
+    {
+        float offset = Random.Range(-spawnHalfWidth, spawnHalfWidth);
+        return transform.position + PushAxis * offset;
     }
 
     // 매 프레임 구름 위치를 갱신한다.
@@ -104,15 +125,16 @@ public class RainController : BaseHazard, IBlowable
 
         if (isBeingBlown)
         {
-            float targetOffset = _pendingPushDirX * maxPushDistance;
+            float targetOffset = _pendingPushSign * maxPushDistance;
             _currentOffset = Mathf.MoveTowards(_currentOffset, targetOffset, pushSpeed * Time.deltaTime);
         }
-        else
+        else if (!stayWhenPushed)
         {
             _currentOffset = Mathf.MoveTowards(_currentOffset, 0f, returnSpeed * Time.deltaTime);
         }
 
-        transform.position = new Vector3(_homePosition.x + _currentOffset, _homePosition.y, _homePosition.z);
+        // 원래 위치에서 밀리는 축 방향으로 _currentOffset만큼 떨어진 곳에 둔다.
+        transform.position = _homePosition + PushAxis * _currentOffset;
     }
 
     // FanTool의 바람 판정에 감지되면 매 프레임 호출된다.
@@ -120,21 +142,21 @@ public class RainController : BaseHazard, IBlowable
     public void OnBlown(Vector3 direction, float force, bool impulse = false)
     {
         _lastBlownTime = Time.time;
-        _pendingPushDirX = Mathf.Sign(direction.x);
-        // X 방향만 사용한다. 구름은 좌우로만 밀린다.
+        _pendingPushSign = Mathf.Sign(Vector3.Dot(direction, PushAxis));
+        // 바람 방향 중 밀리는 축 성분의 부호만 사용한다. 구름은 이 축을 따라 앞뒤로만 밀린다.
     }
 
     [Title("테스트")]
-    [Button("오른쪽으로 밀기 테스트")]
+    [Button("축 방향으로 밀기 테스트")]
     private void TestPushRight()
     {
-        if (Application.isPlaying) OnBlown(Vector3.right, 8f);
+        if (Application.isPlaying) OnBlown(PushAxis, 8f);
     }
 
-    [Button("왼쪽으로 밀기 테스트")]
+    [Button("축 반대 방향으로 밀기 테스트")]
     private void TestPushLeft()
     {
-        if (Application.isPlaying) OnBlown(Vector3.left, 8f);
+        if (Application.isPlaying) OnBlown(-PushAxis, 8f);
     }
 
     [Button("강제 복귀")]
