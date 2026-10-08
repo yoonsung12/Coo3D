@@ -2,9 +2,10 @@ using Sirenix.OdinInspector;
 using UnityEngine;
 using UnityEngine.Rendering;
 
-// 사이드뷰 카메라와 플레이어 사이에 끼어 화면을 가리는 오브젝트(집 등)를 사이드뷰일 때만 숨기는 컴포넌트다.
-// 탑다운에서는 그대로 보이고, 콜라이더는 건드리지 않으므로 충돌은 계속 유지된다.
-// 같은 씬에 사이드뷰 라인이 여러 개일 수 있으므로, 플레이어 Z가 지정한 범위 안에 있을 때만 숨긴다.
+// 카메라와 플레이어 사이에 끼어 화면을 가리는 오브젝트(집 등)를 지정한 시점일 때만 숨기는 컴포넌트다.
+// 기본은 사이드뷰일 때만 숨기고, "숨길 시점"을 탑다운으로 바꾸면 지하 통로 천장처럼 탑다운 카메라를 가리는 오브젝트에도 쓸 수 있다.
+// 콜라이더는 건드리지 않으므로 충돌은 계속 유지된다.
+// 같은 씬에 사이드뷰 라인/탑다운 구역이 여러 개일 수 있으므로, 플레이어 위치가 지정한 범위 안에 있을 때만 숨긴다.
 public class SideViewHideObject : MonoBehaviour
 {
     [Title("연결")]
@@ -13,12 +14,27 @@ public class SideViewHideObject : MonoBehaviour
     // Inspector에서 씬의 Player를 연결한다. 시점 모드와 Z 위치를 읽는 데 사용한다.
 
     [Title("숨길 조건")]
+    [SerializeField, LabelText("숨길 시점")]
+    private ViewMode hideInViewMode = ViewMode.SideView;
+    // 플레이어가 이 시점일 때만 숨긴다. 기본값(사이드뷰)이면 기존과 똑같이 동작한다.
+    // 탑다운 카메라를 가리는 천장/벽에 붙일 때는 탑다운으로 바꾼다.
+
+    [SerializeField, LabelText("플레이어 X 범위 사용")]
+    private bool useXRange;
+    // 켜면 플레이어 X도 범위 안일 때만 숨긴다. 같은 Z에 다른 구역이 겹쳐 있을 때(예: 다른 탑다운 통로) 구분하려고 쓴다.
+
+    [SerializeField, LabelText("플레이어 X 최소"), ShowIf(nameof(useXRange))]
+    private float minPlayerX;
+
+    [SerializeField, LabelText("플레이어 X 최대"), ShowIf(nameof(useXRange))]
+    private float maxPlayerX;
+
     [SerializeField, LabelText("플레이어 Z 최소")]
     private float minPlayerZ = 26f;
 
     [SerializeField, LabelText("플레이어 Z 최대")]
     private float maxPlayerZ = 33f;
-    // 사이드뷰인 플레이어의 Z가 이 범위 안일 때만 숨긴다.
+    // "숨길 시점"인 플레이어의 Z가 이 범위 안일 때만 숨긴다.
     // 이 오브젝트가 가리는 사이드뷰 라인을 감싸도록 넣는다(다른 라인을 걸을 땐 배경으로 계속 보이게 하기 위해).
 
     [Title("런타임 상태 (읽기 전용)")]
@@ -50,7 +66,9 @@ public class SideViewHideObject : MonoBehaviour
         // 시점 전환 이벤트만 쓰면, 사이드뷰 상태 그대로 리스폰으로 다른 라인에 옮겨졌을 때 반응하지 못한다.
         // 그래서 매 프레임 조건만 확인하고, 실제 렌더러 변경은 상태가 바뀔 때만 한다.
         float z = player.transform.position.z;
-        bool shouldHide = player.CurrentViewMode == ViewMode.SideView && z >= minPlayerZ && z <= maxPlayerZ;
+        float x = player.transform.position.x;
+        bool inXRange = !useXRange || (x >= minPlayerX && x <= maxPlayerX);
+        bool shouldHide = player.CurrentViewMode == hideInViewMode && inXRange && z >= minPlayerZ && z <= maxPlayerZ;
         if (_useTestOverride)
             shouldHide = _testHidden;
 

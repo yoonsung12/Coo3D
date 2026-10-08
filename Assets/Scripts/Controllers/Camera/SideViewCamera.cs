@@ -154,6 +154,14 @@ public class SideViewCamera : MonoBehaviour
         // LateUpdate에서 카메라를 이동시켜 플레이어 이동이 완전히 처리된 뒤에 따라가게 한다.
         if (target == null) return;
 
+        Vector3 targetPosition = CalculateTargetPosition();
+        transform.position = Vector3.Lerp(transform.position, targetPosition, followSpeed * Time.deltaTime) + _shakeOffset;
+    }
+
+    // 지금 플레이어 위치 기준으로 카메라가 있어야 할 위치를 계산한다.
+    // LateUpdate의 부드러운 추적과 SnapToTarget의 즉시 이동이 같은 계산을 쓰도록 분리했다.
+    private Vector3 CalculateTargetPosition()
+    {
         _currentTargetX = target.position.x;
 
         // X/Y축 모두 플레이어 위치 기준 상대 offset을 따라간다.
@@ -189,7 +197,15 @@ public class SideViewCamera : MonoBehaviour
             targetPosition = Vector3.Lerp(targetPosition, topDownPosition, _topDownBlend);
         }
 
-        transform.position = Vector3.Lerp(transform.position, targetPosition, followSpeed * Time.deltaTime) + _shakeOffset;
+        return targetPosition;
+    }
+
+    // 같은 씬 안에서 플레이어를 멀리 순간이동시킨 직후(예: EntrancePortal) 호출한다.
+    // 평소처럼 Lerp로 따라가면 화면이 밝아질 때 카메라가 이전 위치에서 쓸려 오는 모습이 보이므로, 목표 위치로 바로 옮긴다.
+    public void SnapToTarget()
+    {
+        if (target == null) return;
+        transform.position = CalculateTargetPosition();
     }
 
     private void OnDestroy()

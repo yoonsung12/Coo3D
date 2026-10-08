@@ -37,6 +37,24 @@ public class FlammableObject : MonoBehaviour, IIgnitable
     [SerializeField, LabelText("색상 전환 시간")]
     private float colorChangeDuration = 0.6f;
 
+    [SerializeField, LabelText("색을 바꿀 렌더러")]
+    private Renderer colorTargetRenderer;
+    // 재 색으로 바뀔 렌더러다. 덩굴 덮인 돌 블록처럼 잎과 돌이 자식으로 나뉜 오브젝트는
+    // 잎 렌더러만 연결해 잎만 그을리게 한다. 비워두면 기존처럼 자기 자신의 MeshRenderer를 쓴다.
+
+    [Title("다 탄 뒤 사라짐 연출 (선택)")]
+    [SerializeField, LabelText("다 타면 사라질 오브젝트")]
+    private Transform hideOnBurnedOut;
+    // 재가 된 뒤 작아지며 사라질 오브젝트(예: 돌 아치를 덮은 잎/덩굴)다. 비워두면 사라지는 연출 없이 색만 바뀐다.
+
+    [SerializeField, LabelText("사라지는 시간"), ShowIf("@hideOnBurnedOut != null")]
+    private float hideDuration = 0.8f;
+    // 잎이 크기 0까지 줄어드는 데 걸리는 시간이다. 값이 클수록 천천히 사그라든다.
+
+    [SerializeField, LabelText("사라지는 Ease"), ShowIf("@hideOnBurnedOut != null")]
+    private Ease hideEase = Ease.InBack;
+    // InBack은 살짝 부풀었다가 빨려 들어가듯 줄어들어 "타서 바스러지는" 느낌을 준다.
+
     [Title("확산 설정")]
     [SerializeField, LabelText("확산 반경")]
     private float spreadRadius = 2.5f;
@@ -72,8 +90,10 @@ public class FlammableObject : MonoBehaviour, IIgnitable
     public event Action OnBurnedOut;
 
     private Collider _collider;
-    private MeshRenderer _meshRenderer;
+    private Renderer _meshRenderer;
     private Tween _colorTween;
+    private Sequence _burnOutSequence;
+    // 재 색 전환 → 잎 축소 → 비활성화로 이어지는 연출이다. 파괴 시 정리하기 위해 저장한다.
     private Coroutine _burnCoroutine;
 
     private void Awake()
@@ -84,7 +104,7 @@ public class FlammableObject : MonoBehaviour, IIgnitable
         // 하므로 콜라이더를 막힌 상태(isTrigger = false)로 시작한다.
         _collider.isTrigger = !blocksPathUntilBurned;
 
-        _meshRenderer = GetComponent<MeshRenderer>();
+        _meshRenderer = colorTargetRenderer != null ? colorTargetRenderer : GetComponent<MeshRenderer>();
         // material 접근 시 인스턴스 머티리얼이 생성되어 이 오브젝트만의 색상을 독립적으로 바꿀 수 있다.
 
         if (doorToOpen != null)
@@ -95,6 +115,7 @@ public class FlammableObject : MonoBehaviour, IIgnitable
     private void OnDestroy()
     {
         _colorTween?.Kill();
+        _burnOutSequence?.Kill();
         if (_burnCoroutine != null)
             StopCoroutine(_burnCoroutine);
     }
@@ -153,10 +174,27 @@ public class FlammableObject : MonoBehaviour, IIgnitable
 
         OnBurnedOut?.Invoke();
 
-        if (_meshRenderer == null) return;
+        if (_meshRenderer != null)
+        {
+            _colorTween?.Kill();
+            _colorTween = _meshRenderer.material.DOColor(ashColor, "_BaseColor", colorChangeDuration);
+        }
 
-        _colorTween?.Kill();
-        _colorTween = _meshRenderer.material.DOColor(ashColor, "_BaseColor", colorChangeDuration);
+        PlayHideSequence();
+    }
+
+    // 잎처럼 다 타면 없어져야 하는 부분을 재 색 전환이 끝난 뒤 줄여서 숨긴다.
+    private void PlayHideSequence()
+    {
+        if (hideOnBurnedOut == null) return;
+
+        _burnOutSequence?.Kill();
+        _burnOutSequence = DOTween.Sequence()
+            .AppendInterval(colorChangeDuration)
+            // 잎이 먼저 까맣게 그을린 모습을 보여준 뒤 사라지도록 색 전환 시간만큼 기다린다.
+            .Append(hideOnBurnedOut.DOScale(Vector3.zero, hideDuration).SetEase(hideEase))
+            .OnComplete(() => hideOnBurnedOut.gameObject.SetActive(false));
+            // 크기 0인 채로 남겨두지 않고 꺼서 렌더링 비용도 없앤다.
     }
 
     private void SetParticles(bool playing)
