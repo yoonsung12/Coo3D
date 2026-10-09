@@ -69,6 +69,11 @@ public class DarkZone : MonoBehaviour
     [ReadOnly, ShowInInspector, LabelText("현재 플레이어 밝기")]
     private float _playerBrightness = 1f;
 
+    [ReadOnly, ShowInInspector, LabelText("전원 켜짐")]
+    private bool _isPowered;
+    // PowerOn()이 호출되면 true가 되고, 이후로는 구역 안에 있어도 다시 어두워지지 않는다.
+    // (예: 지하 터빈을 돌려 조명이 켜진 뒤)
+
     private Collider _zoneCollider;
     private Collider _playerCollider;
     // 발끝(transform.position)은 바닥 높이와 거의 같아 구역 아래 경계에 걸리기 쉬우므로,
@@ -156,6 +161,13 @@ public class DarkZone : MonoBehaviour
     {
         if (!_playerInTrigger || _playerCollider == null) return;
 
+        // 전원이 켜진 뒤에는 구역 안에 있어도 밝은 상태를 유지한다.
+        if (_isPowered)
+        {
+            Brighten();
+            return;
+        }
+
         if (_zoneCollider.bounds.Contains(_playerCollider.bounds.center))
             Darken();
         else
@@ -208,6 +220,16 @@ public class DarkZone : MonoBehaviour
         if (other.GetComponent<PlayerController>() == null) return;
 
         _playerInTrigger = false;
+        Brighten();
+    }
+
+    // 구역의 전원을 켠다. 지금 어두운 상태라면 원래 밝기로 서서히 돌아오고, 이후로는 다시 어두워지지 않는다.
+    // TurbineGenerator처럼 "장치를 작동시켜 불을 켜는" 퍼즐에서 호출한다.
+    public void PowerOn()
+    {
+        if (_isPowered) return;
+
+        _isPowered = true;
         Brighten();
     }
 
