@@ -17,6 +17,13 @@ public class SaveManager : MonoBehaviour
     [ReadOnly, ShowInInspector, LabelText("현재 사용 중인 슬롯")]
     private int _currentSlot;
 
+    [ReadOnly, ShowInInspector, LabelText("횃불 획득 기록")]
+    public bool TorchUnlocked { get; private set; }
+    // 이 매니저는 씬을 넘어가도 살아 있으므로, 가을에서 얻은 횃불 기록이 다음 씬까지 이어진다.
+
+    public event Action<bool> TorchUnlockLoaded;
+    // 새 게임/불러오기로 해금 기록이 바뀌면 알린다. 같은 씬에서 이어하기를 해도 ToolManager가 상태를 다시 맞출 수 있게 한다.
+
     private Vector3 _pendingLoadPosition;
     // 세이브된 씬과 현재 씬이 달라 씬을 새로 불러와야 할 때, 씬 로드가 끝난 뒤 적용할 위치를 잠시 담아둔다.
 
@@ -62,11 +69,16 @@ public class SaveManager : MonoBehaviour
         if (ES3.FileExists(path))
             ES3.DeleteFile(path);
 
+        // 새 게임은 횃불을 얻지 않은 상태로 시작한다.
+        TorchUnlocked = false;
+        TorchUnlockLoaded?.Invoke(TorchUnlocked);
+
         var data = new SaveData
         {
             sceneName = sceneName,
             checkpointPosition = Vector3.zero,
-            savedAtIso = DateTime.UtcNow.ToString("o")
+            savedAtIso = DateTime.UtcNow.ToString("o"),
+            torchUnlocked = false
         };
 
         ES3.Save(saveKey, data, path);
@@ -86,6 +98,10 @@ public class SaveManager : MonoBehaviour
         _currentSlot = slot;
         var data = ES3.Load<SaveData>(saveKey, path);
         CheckpointManager.SetCheckpoint(data.checkpointPosition, data.sceneName);
+
+        // 위치를 옮기기 전에 해금 기록부터 복원해, 이어하기 직후부터 도구 상태가 맞도록 한다.
+        TorchUnlocked = data.torchUnlocked;
+        TorchUnlockLoaded?.Invoke(TorchUnlocked);
 
         // 지금은 씬이 하나뿐이라 대부분 이 분기로 처리되지만, 스테이지가 늘어났을 때를 대비해
         // 세이브된 씬 이름이 다르면 그 씬을 불러온 뒤 위치를 적용하도록 분리해 둔다.
@@ -133,11 +149,15 @@ public class SaveManager : MonoBehaviour
         {
             sceneName = CheckpointManager.HasCheckpoint ? CheckpointManager.CurrentCheckpointScene : SceneManager.GetActiveScene().name,
             checkpointPosition = CheckpointManager.CurrentCheckpointPosition,
-            savedAtIso = DateTime.UtcNow.ToString("o")
+            savedAtIso = DateTime.UtcNow.ToString("o"),
+            torchUnlocked = TorchUnlocked
         };
 
         ES3.Save(saveKey, data, GetFilePath(slot));
     }
+
+    // 횃불을 얻었을 때 ToolManager가 호출한다. 파일에는 다음 체크포인트 저장 때 함께 기록된다.
+    public void SetTorchUnlocked(bool unlocked) => TorchUnlocked = unlocked;
 
     // 슬롯의 세이브 파일을 완전히 삭제한다. 세이브 삭제 UI 등에서 사용한다.
     public void DeleteSlot(int slot)

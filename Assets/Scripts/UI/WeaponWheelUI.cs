@@ -68,6 +68,10 @@ public class WeaponWheelUI : MonoBehaviour
     [SerializeField, LabelText("기본 색상")]
     private Color normalColor = Color.white;
 
+    [SerializeField, LabelText("잠김 색상")]
+    private Color lockedColor = new Color(0.35f, 0.35f, 0.35f, 0.6f);
+    // 아직 얻지 못한 도구(가을 퍼즐② 전의 횃불) 슬롯에 표시할 색이다. 마우스를 올려도 강조되지 않는다.
+
     [Title("사운드 설정")]
     [SerializeField, LabelText("호버 사운드")]
     private AudioClip hoverSound;
@@ -112,6 +116,10 @@ public class WeaponWheelUI : MonoBehaviour
         _wheelAction.Enable();
         _wheelAction.performed += OnWheelPerformed;
         _wheelAction.canceled  += OnWheelCanceled;
+
+        if (toolManager != null)
+            toolManager.OnUnlockStateChanged += ResetHighlights;
+        // 횃불을 얻거나 잠기면 슬롯 색(잠김/기본)을 바로 다시 칠한다.
     }
 
     private void OnDisable()
@@ -119,6 +127,9 @@ public class WeaponWheelUI : MonoBehaviour
         _wheelAction.performed -= OnWheelPerformed;
         _wheelAction.canceled  -= OnWheelCanceled;
         _wheelAction.Disable();
+
+        if (toolManager != null)
+            toolManager.OnUnlockStateChanged -= ResetHighlights;
     }
 
     // Update는 Time.timeScale=0에서도 매 프레임 호출된다.
@@ -150,6 +161,9 @@ public class WeaponWheelUI : MonoBehaviour
         _isOpen = true;
         Time.timeScale = 0f;
         // 게임 시간을 정지해 도구 선택 중 피격이나 이동이 발생하지 않도록 한다.
+
+        // 열 때마다 잠긴 슬롯이 회색으로 보이도록 색을 맞춘다.
+        ResetHighlights();
 
         if (wheelPanel != null)
         {
@@ -231,6 +245,10 @@ public class WeaponWheelUI : MonoBehaviour
         else
             slot = WeaponSlot.Umbrella;   // 남 — 아래쪽
 
+        // 잠긴 도구 방향이면 아무것도 고르지 않은 것으로 본다. 휠을 닫아도 현재 도구가 유지된다.
+        if (!IsUnlocked(slot))
+            slot = WeaponSlot.None;
+
         SetHighlight(slot);
     }
 
@@ -244,11 +262,8 @@ public class WeaponWheelUI : MonoBehaviour
         if (slot != WeaponSlot.None && audioSource != null && hoverSound != null)
             audioSource.PlayOneShot(hoverSound);
 
-        // 모든 슬롯을 기본 색으로 초기화한 뒤 선택 슬롯만 강조한다.
-        SetSlotColor(northSlot, normalColor);
-        SetSlotColor(westSlot,  normalColor);
-        SetSlotColor(southSlot, normalColor);
-        SetSlotColor(eastSlot,  normalColor);
+        // 모든 슬롯을 기본(또는 잠김) 색으로 초기화한 뒤 선택 슬롯만 강조한다.
+        ResetHighlights();
 
         GameObject targetSlot = slot switch
         {
@@ -274,14 +289,19 @@ public class WeaponWheelUI : MonoBehaviour
         // SetUpdate(true)로 Time.timeScale=0에서도 색상 전환이 재생된다.
     }
 
-    // 모든 슬롯을 기본 색으로 되돌린다.
+    // 모든 슬롯을 기본 색으로 되돌린다. 잠긴 도구 슬롯은 잠김 색으로 칠한다.
     private void ResetHighlights()
     {
-        SetSlotColor(northSlot, normalColor);
-        SetSlotColor(westSlot,  normalColor);
-        SetSlotColor(southSlot, normalColor);
-        SetSlotColor(eastSlot,  normalColor);
+        SetSlotColor(northSlot, RestColor(WeaponSlot.Attack));
+        SetSlotColor(westSlot,  RestColor(WeaponSlot.Fan));
+        SetSlotColor(southSlot, RestColor(WeaponSlot.Umbrella));
+        SetSlotColor(eastSlot,  RestColor(WeaponSlot.Torch));
     }
+
+    private Color RestColor(WeaponSlot slot) => IsUnlocked(slot) ? normalColor : lockedColor;
+
+    // ToolManager가 연결되지 않은 씬에서는 잠금 없이 기존처럼 모두 선택 가능하게 둔다.
+    private bool IsUnlocked(WeaponSlot slot) => toolManager == null || toolManager.IsSlotUnlocked(slot);
 
     [Button("휠 열기 테스트")]
     private void TestOpen() => OpenWheel();

@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using Sirenix.OdinInspector;
@@ -34,7 +35,21 @@ public class ToolManager : MonoBehaviour
     private WeaponWheelUI weaponWheelUI;
     // Inspector에서 GameCanvas의 WeaponWheelUI 컴포넌트를 연결한다.
 
+    [Title("도구 해금")]
+    [SerializeField, LabelText("시작할 때 횃불 해금")]
+    private bool torchUnlockedAtStart = true;
+    // 봄·여름·가을 씬은 꺼 둔다(횃불은 가을 퍼즐②에서 얻는다). 겨울 이후 씬은 켜 둔다.
+    // 꺼져 있어도 세이브에 "횃불 획득" 기록이 있으면 해금된 상태로 시작한다.
+
     [Title("런타임 상태 (읽기 전용)")]
+    [ReadOnly, ShowInInspector, LabelText("횃불 해금됨")]
+    public bool IsTorchUnlocked => _torchUnlocked;
+
+    public event Action OnUnlockStateChanged;
+    // 해금 상태가 바뀌면 알린다. WeaponWheelUI가 잠긴 슬롯 색을 다시 칠하는 데 사용한다.
+
+    private bool _torchUnlocked;
+
     [ReadOnly, ShowInInspector, LabelText("현재 장착 도구")]
     private string _activeToolName => _activeTool != null ? _activeTool.GetType().Name : "없음 (공격 모드)";
 
@@ -54,6 +69,22 @@ public class ToolManager : MonoBehaviour
         var playerMap = inputActionAsset.FindActionMap("Player", throwIfNotFound: true);
         _attackAction = playerMap.FindAction("Attack", throwIfNotFound: true);
         _sprintAction = playerMap.FindAction("Sprint", throwIfNotFound: true);
+    }
+
+    // SaveManager는 씬에 따라 이 컴포넌트보다 늦게 Awake될 수 있어서, 세이브 기록은 Start에서 읽는다.
+    private void Start()
+    {
+        bool savedUnlock = SaveManager.Instance != null && SaveManager.Instance.TorchUnlocked;
+        _torchUnlocked = torchUnlockedAtStart || savedUnlock;
+
+        if (SaveManager.Instance != null)
+            SaveManager.Instance.TorchUnlockLoaded += HandleTorchUnlockLoaded;
+    }
+
+    private void OnDestroy()
+    {
+        if (SaveManager.Instance != null)
+            SaveManager.Instance.TorchUnlockLoaded -= HandleTorchUnlockLoaded;
     }
 
     private void OnEnable()
@@ -91,7 +122,9 @@ public class ToolManager : MonoBehaviour
                 SelectTool(umbrellaTool);
                 break;
             case WeaponSlot.Torch:
-                SelectTool(torchTool);
+                // 아직 얻지 못한 횃불은 장착하지 않는다. 휠에서도 회색으로 막혀 있지만 한 번 더 확인한다.
+                if (_torchUnlocked)
+                    SelectTool(torchTool);
                 break;
             case WeaponSlot.Attack:
                 // 공격 모드는 도구를 해제한 상태다.
@@ -189,5 +222,49 @@ public class ToolManager : MonoBehaviour
         _activeTool.OnUnequip();
         Debug.Log($"[ToolManager] 도구 해제: {_activeTool.GetType().Name}");
         _activeTool = null;
+    }
+
+    // 웨폰 휠이 슬롯을 강조/선택할 수 있는지 묻는다. 지금 잠글 수 있는 도구는 횃불뿐이다.
+    public bool IsSlotUnlocked(WeaponSlot slot) => slot != WeaponSlot.Torch || _torchUnlocked;
+
+    // 횃불을 얻었을 때 호출한다(TorchUnlockItem). 세이브 매니저에도 기록해 두어
+    // 다음 체크포인트 저장 때 함께 저장되고, 씬을 넘어가도 유지되게 한다.
+    public void UnlockTorch()
+    {
+        if (_torchUnlocked) return;
+
+        _torchUnlocked = true;
+        if (SaveManager.Instance != null)
+            SaveManager.Instance.SetTorchUnlocked(true);
+
+        OnUnlockStateChanged?.Invoke();
+    }
+
+    // 세이브를 불러왔을 때(같은 씬에서 이어하기 포함) 저장된 해금 기록으로 상태를 다시 맞춘다.
+    private void HandleTorchUnlockLoaded(bool savedUnlock)
+    {
+        SetTorchUnlockedInternal(torchUnlockedAtStart || savedUnlock);
+    }
+
+    private void SetTorchUnlockedInternal(bool unlocked)
+    {
+        _torchUnlocked = unlocked;
+
+        // 잠기는데 횃불을 들고 있었다면 내려놓게 한다.
+        if (!_torchUnlocked && _activeTool == torchTool)
+            UnequipCurrent();
+
+        OnUnlockStateChanged?.Invoke();
+    }
+
+    [Button("횃불 해금 테스트")]
+    private void TestUnlockTorch() => UnlockTorch();
+
+    [Button("횃불 잠금 테스트")]
+    private void TestLockTorch()
+    {
+        if (SaveManager.Instance != null)
+            SaveManager.Instance.SetTorchUnlocked(false);
+        SetTorchUnlockedInternal(false);
     }
 }
