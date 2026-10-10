@@ -65,6 +65,77 @@ public class NFBTEnemyAI : MonoBehaviour
     private float counterRushSpeedMultiplier = 1.6f;
     // 평소 추적 속도보다 빠르게 돌진해 반격다운 급박함을 준다.
 
+    [Title("도약공격 (후퇴 대체)")]
+    [InfoBox("켜면 학습기가 Evade/Recover 전술을 고를 때 도망 대신 앞으로 도약하며 공격한다. 비둘기처럼 도망가지 않는 적에서만 켠다.")]
+    [SerializeField, LabelText("후퇴 대신 도약공격")]
+    private bool replaceEvadeWithLeap = false;
+    // 기본값은 꺼짐이라 이 옵션을 켜지 않은 다른 적은 기존 후퇴 행동을 그대로 유지한다.
+    // 켜면 후퇴를 하지 않으므로 "후퇴하다 막히면 발동하는" 궁지몰림 발악도 발동하지 않는다.
+
+    [SerializeField, LabelText("도약 최소 거리"), ShowIf(nameof(replaceEvadeWithLeap))]
+    private float leapMinRange = 2f;
+    // Player와의 X 거리가 이보다 가까우면 도약하지 않고 일반 추적/공격을 한다.
+
+    [SerializeField, LabelText("도약 최대 거리"), ShowIf(nameof(replaceEvadeWithLeap))]
+    private float leapMaxRange = 4.5f;
+    // 이보다 멀면 걸어서 다가간 뒤 이 거리 안에 들어오면 도약한다.
+
+    [SerializeField, LabelText("도약 수평 속도"), ShowIf(nameof(replaceEvadeWithLeap))]
+    private float leapHorizontalSpeed = 5f;
+    // 도약할 때 앞으로 나아가는 속도다. 체공 시간 × 이 값이 대략 도약 거리가 된다.
+
+    [SerializeField, LabelText("도약 점프 힘"), ShowIf(nameof(replaceEvadeWithLeap))]
+    private float leapUpForce = 4.5f;
+    // 위로 튀어오르는 속도다. 클수록 높이, 오래 떠 있어서 더 멀리 날아간다.
+    // 기본값(수평 5, 점프 4.5)이면 약 0.9초 동안 4.5m 정도 날아간다.
+
+    [SerializeField, LabelText("도약 쿨다운"), ShowIf(nameof(replaceEvadeWithLeap))]
+    private float leapCooldown = 3f;
+    // 착지 후 바로 또 뛰지 않도록 두는 쉬는 시간이다. 착지한 순간부터 센다. 쿨다운 중에는 일반 추적/공격을 한다.
+    // 값이 클수록 도약 빈도가 줄어든다.
+
+    [Title("원거리 공격 (반격 대체)")]
+    [InfoBox("켜면 학습기가 Counter 전술을 고를 때 빈틈을 기다리는 대신 뒤로 백스텝해 자리를 잡고 투사체를 쏜다. 비둘기처럼 먼저 공격해야 하는 적에서만 켠다.")]
+    [SerializeField, LabelText("반격 대신 원거리 공격")]
+    private bool replaceCounterWithRanged = false;
+    // 기본값은 꺼짐이라 이 옵션을 켜지 않은 다른 적은 기존 반격 행동을 그대로 유지한다.
+
+    [SerializeField, LabelText("투사체 프리팹"), ShowIf(nameof(replaceCounterWithRanged))]
+    private BossProjectile rangedProjectilePrefab;
+    // Inspector에서 Assets/Prefabs/Boss/BossProjectile.prefab처럼 BossProjectile이 달린 프리팹을 연결한다.
+
+    [SerializeField, LabelText("발사 위치 오프셋"), ShowIf(nameof(replaceCounterWithRanged))]
+    private Vector3 rangedSpawnOffset = new Vector3(0.8f, 0.1f, 0f);
+    // 적 중심에서 발사 위치까지의 거리다. X는 "바라보는 쪽 앞" 기준이라 방향에 맞춰 자동으로 반전된다.
+    // 몸통과 겹치면 바로 바닥에 닿아 사라질 수 있으니 몸 바깥으로 둔다.
+
+    [SerializeField, LabelText("투사체 속도"), ShowIf(nameof(replaceCounterWithRanged))]
+    private float rangedProjectileSpeed = 8f;
+    // 값이 클수록 피하기 어려워진다.
+
+    [SerializeField, LabelText("투사체 데미지"), ShowIf(nameof(replaceCounterWithRanged))]
+    private float rangedProjectileDamage = 20f;
+    // Player 체력 하트 1칸(20)에 맞춘 값이다.
+
+    [SerializeField, LabelText("백스텝 수평 속도"), ShowIf(nameof(replaceCounterWithRanged))]
+    private float backstepHorizontalSpeed = 4f;
+
+    [SerializeField, LabelText("백스텝 점프 힘"), ShowIf(nameof(replaceCounterWithRanged))]
+    private float backstepUpForce = 3f;
+    // 기본값(수평 4, 점프 3)이면 약 0.6초 동안 뒤로 2m 정도 물러난다.
+
+    [SerializeField, LabelText("조준 시간"), ShowIf(nameof(replaceCounterWithRanged))]
+    private float rangedAimDuration = 0.4f;
+    // 착지 후 발사하기 전까지 멈춰 있는 시간이다. Player가 공격을 눈치채고 피할 틈이 된다.
+
+    [SerializeField, LabelText("원거리 공격 쿨다운"), ShowIf(nameof(replaceCounterWithRanged))]
+    private float rangedCooldown = 4f;
+    // 발사한 순간부터 센다. 쿨다운 중에는 일반 추적/공격을 해서 계속 뒤로만 물러나는 것을 막는다.
+
+    [SerializeField, LabelText("원거리 최대 사거리"), ShowIf(nameof(replaceCounterWithRanged))]
+    private float rangedMaxRange = 8f;
+    // Player와의 X 거리가 이보다 멀면 걸어서 다가간 뒤 원거리 공격을 시작한다.
+
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("추적 중")]
     private bool _isChasing;
@@ -74,6 +145,19 @@ public class NFBTEnemyAI : MonoBehaviour
 
     [ReadOnly, ShowInInspector, LabelText("반격 중")]
     private bool _isCountering;
+
+    [ReadOnly, ShowInInspector, LabelText("도약 중")]
+    private bool _isLeaping;
+
+    [ReadOnly, ShowInInspector, LabelText("도약 쿨다운 남은 시간"), ShowIf(nameof(replaceEvadeWithLeap))]
+    private float LeapCooldownRemaining => Mathf.Max(0f, leapCooldown - (Time.time - _lastLeapLandTime));
+    // Play Mode에서 다음 도약까지 얼마나 남았는지 확인하기 위한 값이다.
+
+    [ReadOnly, ShowInInspector, LabelText("원거리 공격 중"), ShowIf(nameof(replaceCounterWithRanged))]
+    private bool _isRangedAttacking;
+
+    [ReadOnly, ShowInInspector, LabelText("원거리 쿨다운 남은 시간"), ShowIf(nameof(replaceCounterWithRanged))]
+    private float RangedCooldownRemaining => Mathf.Max(0f, rangedCooldown - (Time.time - _lastRangedFireTime));
 
     [ReadOnly, ShowInInspector, LabelText("현재 전술 (학습 선택)")]
     private string _activeBranch = "Chase/Attack";
@@ -87,6 +171,24 @@ public class NFBTEnemyAI : MonoBehaviour
     private float _corneredTimer;
     private float _tacticsTimer;
     private bool _playerWasAttacking;
+    private float _leapStartTime;
+    private float _lastLeapLandTime = -999f;
+    // 마지막으로 도약에서 착지한 시간이다. 도약 쿨다운은 뛴 순간이 아니라 이 시간부터 센다.
+    // (뛴 순간부터 세면 체공 시간(약 0.9초)만큼 쿨다운이 깎여 착지하자마자 또 뛰게 된다.)
+
+    private const float LeapMinAirTime = 0.15f;
+    // 도약 직후에는 IsGrounded가 다음 물리 프레임까지 true로 남아 있어 바로 "착지"로 오판정된다.
+    // 이 시간이 지나기 전에는 착지 판정을 하지 않는다.
+
+    private const float LeapMaxDuration = 3f;
+    // 어딘가에 걸려 착지 판정이 안 오더라도 도약 상태에 갇히지 않도록 하는 안전장치다.
+
+    private float _rangedStartTime;
+    private float _rangedAimStartTime = -1f;
+    // 백스텝 후 착지해서 조준을 시작한 시간이다. -1이면 아직 백스텝 중(공중)이라는 뜻이다.
+    private float _rangedDir;
+    // 원거리 공격을 시작할 때의 Player 방향(+1/-1)이다. 백스텝은 이 반대로 뛴다.
+    private float _lastRangedFireTime = -999f;
 
     private EnemyVision _vision;
     private EnemyMovement _movement;
@@ -144,6 +246,21 @@ public class NFBTEnemyAI : MonoBehaviour
             return;
         }
 
+        if (_isLeaping)
+        {
+            // 공중에 있는 동안은 전술이 바뀌어도 착지할 때까지 도약을 끝까지 진행한다.
+            // 여기서 Move()를 부르면 도약 속도가 걷기 속도로 덮어써져 제자리 점프처럼 보이게 된다.
+            UpdateLeap();
+            return;
+        }
+
+        if (_isRangedAttacking)
+        {
+            // 도약과 같은 이유로, 백스텝~발사가 끝날 때까지는 전술이 바뀌어도 끊지 않는다.
+            UpdateRangedAttack();
+            return;
+        }
+
         if (_isChasing && HorizontalDistance() > chaseAbandonRange)
             _isChasing = false;
 
@@ -161,10 +278,16 @@ public class NFBTEnemyAI : MonoBehaviour
         switch (_activeBranch)
         {
             case "Evade/Recover":
-                Evade();
+                if (replaceEvadeWithLeap)
+                    LeapAttack();
+                else
+                    Evade();
                 break;
             case "Counter":
-                HandleCounterBranch();
+                if (replaceCounterWithRanged)
+                    RangedAttack();
+                else
+                    HandleCounterBranch();
                 break;
             default:
                 ChaseAndAttack();
@@ -263,6 +386,162 @@ public class NFBTEnemyAI : MonoBehaviour
         // 후퇴 방향 앞에 벽이 있거나 낭떠러지면 더 물러날 곳이 없다는 뜻이므로 궁지몰림으로 전환한다.
         if (_movement.HasWallAhead(awayDir) || !_movement.HasGroundAhead(awayDir))
             SetCornered();
+    }
+
+    // Evade/Recover 전술 대신 쓰는 도약공격이다(replaceEvadeWithLeap가 켜진 경우).
+    // 도약 거리 안에 들어오면 앞으로 뛰어들고, 너무 가깝거나 쿨다운 중이면 일반 추적/공격을 한다.
+    private void LeapAttack()
+    {
+        float dx = playerTransform.position.x - transform.position.x;
+        float dir = Mathf.Sign(dx);
+        float distance = Mathf.Abs(dx);
+
+        bool leapReady = Time.time - _lastLeapLandTime >= leapCooldown;
+        if (distance < leapMinRange || !leapReady)
+        {
+            ChaseAndAttack();
+            return;
+        }
+
+        if (distance > leapMaxRange || _movement.HasWallAhead(dir))
+        {
+            // 아직 멀거나 바로 앞이 벽이면 걸어서 다가간다.
+            _movement.Move(dir);
+            _vision.SetFacingDirection(dir);
+            return;
+        }
+
+        StartLeap(dir);
+    }
+
+    private void StartLeap(float dir)
+    {
+        // 바닥에 서 있을 때만 뛴다. 공중이면 JumpMove가 false를 돌려주고 아무 일도 하지 않는다.
+        if (!_movement.JumpMove(dir, leapHorizontalSpeed, leapUpForce)) return;
+
+        _isLeaping = true;
+        _leapStartTime = Time.time;
+        _vision.SetFacingDirection(dir);
+    }
+
+    // 도약 중 매 프레임 호출된다. 날아가다 Player가 공격 사거리 안에 들어오는 순간 공격해서
+    // 뛰어든 몸이 부딪히는 타이밍에 히트박스가 켜지게 한다(뛰는 순간 공격하면 닿기 전에 판정이 끝나 버린다).
+    private void UpdateLeap()
+    {
+        float dx = playerTransform.position.x - transform.position.x;
+        if (Mathf.Abs(dx) <= _combat.AttackRange && _combat.CanAttack)
+            _combat.StartAttack();
+
+        float airTime = Time.time - _leapStartTime;
+        bool landed = airTime >= LeapMinAirTime && _movement.IsGrounded;
+        if (landed || airTime >= LeapMaxDuration)
+        {
+            _isLeaping = false;
+            _lastLeapLandTime = Time.time;
+            // 착지한 순간부터 쿨다운을 센다.
+        }
+    }
+
+    [Button("도약공격 테스트")]
+    private void TestLeap()
+    {
+        // Play Mode에서 Player 쪽으로 즉시 도약시켜 거리/높이/공격 타이밍을 확인한다.
+        if (!Application.isPlaying || playerTransform == null) return;
+        StartLeap(Mathf.Sign(playerTransform.position.x - transform.position.x));
+    }
+
+    // Counter 전술 대신 쓰는 원거리 공격이다(replaceCounterWithRanged가 켜진 경우).
+    // 쿨다운 중이면 일반 추적/공격, 너무 멀면 걸어서 다가가고, 사거리 안이면 백스텝 후 발사한다.
+    private void RangedAttack()
+    {
+        float dx = playerTransform.position.x - transform.position.x;
+        float dir = Mathf.Sign(dx);
+
+        bool rangedReady = Time.time - _lastRangedFireTime >= rangedCooldown;
+        if (!rangedReady)
+        {
+            ChaseAndAttack();
+            return;
+        }
+
+        if (Mathf.Abs(dx) > rangedMaxRange)
+        {
+            _movement.Move(dir);
+            _vision.SetFacingDirection(dir);
+            return;
+        }
+
+        StartRangedAttack(dir);
+    }
+
+    private void StartRangedAttack(float dir)
+    {
+        if (!_movement.IsGrounded) return;
+
+        _isRangedAttacking = true;
+        _rangedDir = dir;
+        _rangedStartTime = Time.time;
+        _rangedAimStartTime = -1f;
+
+        // 뒤에 벽이 있거나 낭떠러지면 물러날 곳이 없으므로 백스텝 없이 바로 제자리 조준으로 넘어간다.
+        bool canBackstep = !_movement.HasWallAhead(-dir) && _movement.HasGroundAhead(-dir);
+        if (canBackstep)
+            _movement.JumpMove(-dir, backstepHorizontalSpeed, backstepUpForce);
+        else
+            _rangedAimStartTime = Time.time;
+
+        // JumpMove가 뛰는 방향(뒤)을 바라보게 하므로, 몸은 다시 Player 쪽으로 돌려 "뒷걸음질"처럼 보이게 한다.
+        _movement.FaceDirection(dir);
+        _vision.SetFacingDirection(dir);
+    }
+
+    // 원거리 공격 중 매 프레임 호출된다. 백스텝 착지 → 조준(rangedAimDuration) → 발사 순서로 진행한다.
+    private void UpdateRangedAttack()
+    {
+        float elapsed = Time.time - _rangedStartTime;
+
+        if (_rangedAimStartTime < 0f)
+        {
+            // 도약과 같은 이유(점프 직후 IsGrounded가 잠깐 true로 남음)로 최소 체공 시간 뒤에만 착지 판정한다.
+            bool landed = elapsed >= LeapMinAirTime && _movement.IsGrounded;
+            if (!landed && elapsed < LeapMaxDuration) return;
+
+            _movement.Move(0f);
+            _rangedAimStartTime = Time.time;
+        }
+
+        // 조준 중에는 제자리에 서서 Player 쪽을 계속 바라본다. 조준 도중 Player가 반대편으로 넘어가도 그쪽으로 쏜다.
+        float dir = Mathf.Sign(playerTransform.position.x - transform.position.x);
+        _movement.Move(0f);
+        _movement.FaceDirection(dir);
+        _vision.SetFacingDirection(dir);
+        _rangedDir = dir;
+
+        if (Time.time - _rangedAimStartTime < rangedAimDuration) return;
+
+        FireRangedProjectile(_rangedDir);
+        _lastRangedFireTime = Time.time;
+        _isRangedAttacking = false;
+    }
+
+    // 사이드뷰라 X축 방향(±1)으로만 수평 발사한다. Player가 점프하면 피할 수 있다.
+    private void FireRangedProjectile(float dir)
+    {
+        if (rangedProjectilePrefab == null) return;
+
+        // 적 오브젝트는 Y축으로 ±90도 회전해 있으므로, 회전된 로컬 좌표 대신 월드 X 기준으로 직접 계산한다.
+        Vector3 spawnPos = transform.position + new Vector3(Mathf.Abs(rangedSpawnOffset.x) * dir, rangedSpawnOffset.y, rangedSpawnOffset.z);
+
+        BossProjectile projectile = Instantiate(rangedProjectilePrefab, spawnPos, Quaternion.identity);
+        projectile.Launch(new Vector3(dir, 0f, 0f), rangedProjectileSpeed, rangedProjectileDamage);
+    }
+
+    [Button("원거리 공격 테스트")]
+    private void TestRangedAttack()
+    {
+        // Play Mode에서 쿨다운과 무관하게 즉시 백스텝 → 조준 → 발사를 실행해 거리/타이밍을 확인한다.
+        if (!Application.isPlaying || playerTransform == null || _isRangedAttacking) return;
+        StartRangedAttack(Mathf.Sign(playerTransform.position.x - transform.position.x));
     }
 
     private void SetCornered()

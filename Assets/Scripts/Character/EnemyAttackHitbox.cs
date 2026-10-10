@@ -20,6 +20,12 @@ public class EnemyAttackHitbox : MonoBehaviour
     // 히트박스가 켜지는 순간(=실제로 판정이 살아있는 타이밍) 재생해서 "지금 공격 중"임을 눈에 보이게 한다.
     // 비워두면 기존처럼 이펙트 없이 판정만 동작한다(하위 호환).
 
+    [Title("디버그")]
+    [SerializeField, LabelText("씬에 범위 표시")]
+    private bool showRangeInScene = true;
+    // 켜면 Scene 뷰에 공격 범위를 그린다. 공격 판정이 살아있는 동안은 선택하지 않아도 빨간 박스로,
+    // 평소에는 선택했을 때만 주황 테두리로 보인다. 기즈모라 빌드된 게임 화면에는 나오지 않는다.
+
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("히트박스 활성 중")]
     private bool _isActive;
@@ -66,4 +72,55 @@ public class EnemyAttackHitbox : MonoBehaviour
         _hasHitThisSwing = true;
         target.TakeDamage(damage);
     }
+
+#if UNITY_EDITOR
+    // 공격 판정이 켜져 있는 순간에는 선택 여부와 상관없이 Scene 뷰에 빨간 박스로 보여준다.
+    private void OnDrawGizmos()
+    {
+        if (!showRangeInScene || !_isActive) return;
+        DrawRangeGizmo(new Color(1f, 0.1f, 0.1f, 0.35f), Color.red);
+    }
+
+    // 평소에는 오브젝트를 선택했을 때만 범위 위치를 연한 테두리로 보여준다.
+    private void OnDrawGizmosSelected()
+    {
+        if (!showRangeInScene || _isActive) return;
+        DrawRangeGizmo(Color.clear, new Color(1f, 0.6f, 0.2f, 0.8f));
+    }
+
+    // 실제 판정 콜라이더의 모양/크기/회전을 그대로 그린다. fillColor가 투명이면 테두리만 그린다.
+    private void DrawRangeGizmo(Color fillColor, Color wireColor)
+    {
+        Collider col = _collider != null ? _collider : GetComponent<Collider>();
+        if (col == null) return;
+
+        if (col is BoxCollider box)
+        {
+            // 로컬 좌표계로 그려야 오브젝트 회전/스케일이 콜라이더와 똑같이 반영된다.
+            Gizmos.matrix = transform.localToWorldMatrix;
+            if (fillColor.a > 0f) { Gizmos.color = fillColor; Gizmos.DrawCube(box.center, box.size); }
+            Gizmos.color = wireColor;
+            Gizmos.DrawWireCube(box.center, box.size);
+        }
+        else if (col is SphereCollider sphere)
+        {
+            Vector3 center = transform.TransformPoint(sphere.center);
+            Vector3 scale = transform.lossyScale;
+            float radius = sphere.radius * Mathf.Max(Mathf.Abs(scale.x), Mathf.Abs(scale.y), Mathf.Abs(scale.z));
+            if (fillColor.a > 0f) { Gizmos.color = fillColor; Gizmos.DrawSphere(center, radius); }
+            Gizmos.color = wireColor;
+            Gizmos.DrawWireSphere(center, radius);
+        }
+        else
+        {
+            // 그 외 콜라이더는 월드 bounds 박스로 대신 표시한다. 꺼진 콜라이더는 bounds가 0이므로 공격 중에만 정확하다.
+            Bounds b = col.bounds;
+            if (fillColor.a > 0f) { Gizmos.color = fillColor; Gizmos.DrawCube(b.center, b.size); }
+            Gizmos.color = wireColor;
+            Gizmos.DrawWireCube(b.center, b.size);
+        }
+
+        Gizmos.matrix = Matrix4x4.identity;
+    }
+#endif
 }

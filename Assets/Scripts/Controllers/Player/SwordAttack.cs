@@ -93,12 +93,23 @@ public class SwordAttack : MonoBehaviour
     private float comboResetTime = 2f;
     // 마지막 공격 후 이 시간 동안 다음 공격이 없으면 콤보를 처음(아래→위)으로 되돌린다.
 
+    [SerializeField, LabelText("공격 간격(초)")]
+    private float attackCooldown = 1f;
+    // 한 번 휘두른 뒤 이 시간이 지나야 다음 공격이 나간다. 그 사이의 클릭은 무시된다.
+    // 값이 작을수록 연타가 빨라지고, 0이면 예전처럼 클릭할 때마다 바로 휘두른다.
+
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("다음 공격 방향")]
     private string NextSwingLabel => _nextSwingIndex == 0 ? "아래→위 (Swing 0)" : "위→아래 (Swing 1)";
 
     [ReadOnly, ShowInInspector, LabelText("공격 중")]
     private bool _isAttacking;
+
+    [ReadOnly, ShowInInspector, LabelText("다음 공격까지 남은 시간")]
+    private float CooldownRemaining => Mathf.Max(0f, attackCooldown - (Time.time - _lastAttackTime));
+
+    private float _lastAttackTime = -999f;
+    // 마지막으로 공격이 실제로 나간 시간이다. 공격 간격 판정에 사용한다.
 
     // NFBTEnemyAI의 Counter(반격) 분기가 Player의 공격 시작/종료 타이밍을 읽기 위해 사용하는 프로퍼티다.
     public bool IsAttacking => _isAttacking;
@@ -123,6 +134,11 @@ public class SwordAttack : MonoBehaviour
     // ToolManager에서 공격 모드(도구 미장착)로 공격키가 눌릴 때 호출된다.
     public void TryAttack()
     {
+        // 공격 간격이 아직 안 지났으면 입력을 무시한다.
+        // 이벤트 발행보다 앞에서 막아야 무시된 클릭이 베개 내구도를 소모하지 않는다.
+        if (Time.time - _lastAttackTime < attackCooldown) return;
+        _lastAttackTime = Time.time;
+
         OnAttackFired?.Invoke();
 
         // 이전 공격이 진행 중이면 즉시 중단한다.

@@ -129,15 +129,23 @@ public class EnemyMovement : MonoBehaviour
     // 접지 상태일 때만 발동해 공중에서 중복 점프하지 않게 한다.
     public void JumpMove(float dir)
     {
-        if (!IsGrounded) return;
+        JumpMove(dir, moveSpeed, jumpForce);
+    }
+
+    // 수평 속도와 점프 힘을 직접 지정하는 도약이다. NFBTEnemyAI의 도약공격처럼
+    // 걷기 속도보다 멀리 뛰어들어야 할 때 사용한다. 실제로 뛰었으면 true를 반환한다.
+    public bool JumpMove(float dir, float horizontalSpeed, float upForce)
+    {
+        if (!IsGrounded) return false;
 
         Vector3 velocity = _rb.linearVelocity;
-        velocity.x = dir * moveSpeed;
-        velocity.y = jumpForce;
+        velocity.x = dir * horizontalSpeed;
+        velocity.y = upForce;
         velocity.z = 0f;
         _rb.linearVelocity = velocity;
 
         FaceDirection(dir);
+        return true;
     }
 
     // dir 방향 앞쪽에 벽이 있으면 true. 순찰 중 방향을 반전시킬지 판단하는 데 사용한다.

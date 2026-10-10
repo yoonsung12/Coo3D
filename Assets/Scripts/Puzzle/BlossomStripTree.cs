@@ -53,6 +53,14 @@ public class BlossomStripTree : MonoBehaviour, IBlowable
     [SerializeField, LabelText("튕길 때 꽃잎 수")]
     private int repelPetalCount = 15;
 
+    [SerializeField, LabelText("튕김 사운드")]
+    private AudioClip repelSound;
+    // 플레이어를 튕겨낼 때 재생할 "보잉" 사운드다. 비워두면 소리 없이 흔들림/꽃잎만 재생된다.
+
+    [SerializeField, LabelText("오디오 소스")]
+    private AudioSource audioSource;
+    // 튕김 사운드를 재생할 AudioSource다. 나무 위치에서 소리가 나도록 나무 오브젝트에 붙인 것을 연결한다.
+
     [Title("흔들림 연출 (DOTween)")]
     [SerializeField, LabelText("튕길 때 흔들림 각도")]
     private float repelShakeAngle = 6f;
@@ -133,6 +141,10 @@ public class BlossomStripTree : MonoBehaviour, IBlowable
         Shake(repelShakeAngle, repelPunchScale);
         if (petalParticle != null)
             petalParticle.Emit(repelPetalCount);
+
+        // PlayOneShot은 이전 소리를 끊지 않고 겹쳐 재생하므로 연속으로 튕겨도 소리가 잘리지 않는다.
+        if (audioSource != null && repelSound != null)
+            audioSource.PlayOneShot(repelSound);
     }
 
     // 덤불을 월드 Z축(화면 안쪽 축) 기준으로 좌우로 출렁이게 하고, 필요하면 살짝 부풀게 한다.
