@@ -1,6 +1,7 @@
 using DG.Tweening;
 using Sirenix.OdinInspector;
 using UnityEngine;
+using UnityEngine.Events;
 
 // 선풍기 바람으로 돌리는 발전 터빈이다. 일정 시간 바람을 맞으면(또는 블라스트 한 방) 작동을 시작해
 // 날개가 계속 돌고, 연결된 DarkZone의 전원을 켜고, 지하 조명들을 순서대로 하나씩 켠다.
@@ -33,6 +34,11 @@ public class TurbineGenerator : MonoBehaviour, IBlowable
     private Light[] lights;
     // 작동하면 위에서부터 순서대로 켜질 조명들이다. 씬에서는 꺼진 상태(오브젝트 비활성)로 둬도 되고 켜 둬도 된다.
     // 각 조명의 Inspector Intensity 값이 켜졌을 때의 목표 밝기가 된다.
+
+    [Title("외부 연결")]
+    [SerializeField, LabelText("작동 시 이벤트")]
+    private UnityEvent onActivated;
+    // 터빈 작동에 반응할 오브젝트(예: 지상 열선 가로등)를 Inspector에서 연결한다. 비워두면 기존과 동일하게 동작한다.
 
     [Title("회전 연출 (DOTween)")]
     [SerializeField, LabelText("회전축 (회전체 로컬 기준)")]
@@ -199,6 +205,8 @@ public class TurbineGenerator : MonoBehaviour, IBlowable
             darkZone.PowerOn();
 
         PlayLightSequence();
+
+        onActivated?.Invoke();
     }
 
     // 회전 Tween의 timeScale을 목표 비율까지 부드럽게 바꿔 속도를 조절한다. (1 = 최고 속도, 0 = 정지)

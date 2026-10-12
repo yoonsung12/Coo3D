@@ -89,6 +89,9 @@ public class IceBlock : MonoBehaviour, IMeltable
     [ReadOnly, ShowInInspector, LabelText("중간 단계 재생 여부")]
     private bool _hasCracked;
 
+    public bool IsMelted => _isMelted;
+    // 다른 오브젝트(예: 얼음에 갇힌 고드름)가 이 얼음이 녹았는지 확인하는 용도다. 읽기 전용이다.
+
     private Collider _collider;
     private MeshRenderer _meshRenderer;
     private Vector3 _originalScale;

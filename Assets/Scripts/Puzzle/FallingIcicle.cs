@@ -26,6 +26,12 @@ public class FallingIcicle : MonoBehaviour, IHittable
     private Ease fallEase = Ease.InQuad;
     // 중력처럼 갈수록 빨라지는 느낌을 주기 위한 기본값이다.
 
+    [Title("얼음 연동 설정")]
+    [SerializeField, LabelText("감싸고 있는 얼음 (선택)")]
+    private IceBlock encasingIce;
+    // 연결하면 이 얼음이 녹기 전까지 검에 맞아도 떨어지지 않는다(횃불로 먼저 녹이고 검으로 치는 순서).
+    // 비워두면 기존 동작과 동일하다.
+
     [Title("적 착지 판정 설정")]
     [SerializeField, LabelText("적 레이어")]
     private LayerMask enemyLayer;
@@ -63,6 +69,18 @@ public class FallingIcicle : MonoBehaviour, IHittable
     [SerializeField, LabelText("파편 파티클 (선택)")]
     private ParticleSystem shatterParticle;
     // Inspector에서 얼음 파편 파티클을 연결하면 파괴 순간 재생된다. 비워두면 생략된다.
+
+    [Title("발판 고정 설정 (불꽃놀이 퍼즐용)")]
+    [SerializeField, LabelText("착지 후 부서지지 않음")]
+    private bool unbreakableWhenLanded;
+    // 켜면 착지한 뒤 검으로 쳐도 부서지지 않고 영구 발판으로 남는다. 끄면 기존 동작과 동일하다.
+
+    [SerializeField, LabelText("착지 자리의 플레이어를 위로 올림")]
+    private bool liftPlayerOnLanding;
+    // 켜면 착지한 콜라이더 안에 플레이어가 있을 때 고드름 꼭대기 위로 옮겨 준다. 끄면 기존 동작과 동일하다.
+
+    // 고드름이 착지(발판이 됨)했을 때 발행된다. 불꽃놀이 발사대가 "깔려서 부서짐" 연출을 하는 데 쓴다.
+    public event System.Action Landed;
 
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("현재 상태")]
@@ -102,9 +120,11 @@ public class FallingIcicle : MonoBehaviour, IHittable
         switch (_state)
         {
             case IcicleState.Hanging:
+                if (encasingIce != null && !encasingIce.IsMelted) return; // 얼음이 아직 안 녹았으면 반응 없음
                 Fall();
                 break;
             case IcicleState.Landed:
+                if (unbreakableWhenLanded) return; // 영구 발판이면 타격을 무시한다
                 RegisterBreakHit();
                 break;
             default:
@@ -142,6 +162,38 @@ public class FallingIcicle : MonoBehaviour, IHittable
 
         _state = IcicleState.Landed;
         _collider.enabled = true;
+
+        if (liftPlayerOnLanding)
+            LiftPlayerOnTop();
+
+        Landed?.Invoke();
+    }
+
+    // 고드름이 플레이어 위로 떨어지면 CharacterController가 새 콜라이더 안에 갇힌다.
+    // 그래서 겹친 플레이어를 고드름 꼭대기 위로 옮겨 "위에 올라선" 상태로 만든다.
+    // 순간이동은 CLAUDE.md 규칙대로 PlayerHealth.Respawn()을 거쳐야 시점(ViewMode)도 함께 맞춰진다.
+    private void LiftPlayerOnTop()
+    {
+        Physics.SyncTransforms(); // 방금 움직인 transform이 물리 쪽에 반영되어야 겹침 검사가 정확하다.
+
+        Bounds b = _collider.bounds;
+        Collider[] overlaps = Physics.OverlapBox(b.center, b.extents * 0.95f, Quaternion.identity,
+            ~0, QueryTriggerInteraction.Ignore);
+
+        foreach (Collider other in overlaps)
+        {
+            if (other == _collider) continue;
+
+            PlayerController player = other.GetComponentInParent<PlayerController>();
+            if (player == null) continue;
+
+            PlayerHealth health = player.GetComponent<PlayerHealth>();
+            if (health == null) continue;
+
+            Vector3 p = player.transform.position;
+            health.Respawn(new Vector3(p.x, b.max.y + 0.05f, p.z));
+            return;
+        }
     }
 
     // 발판이 된 뒤 검에 맞을 때마다 호출된다. 금이 가는 연출(흔들림+색 변화)을 보여주고,

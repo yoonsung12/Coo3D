@@ -65,6 +65,10 @@ public class SwordHitbox : MonoBehaviour
 
         if (other.TryGetComponent<CharacterBase>(out var target))
         {
+            // 칼날은 플레이어의 자식이라, 고드름(Default 레이어)을 치려고 hitLayers에 Default를 넣은 씬에서는
+            // 같은 Default 레이어인 플레이어 자신의 몸도 감지된다. 칼을 든 캐릭터 자신은 맞지 않게 걸러낸다.
+            if (transform.IsChildOf(target.transform)) return;
+
             // 한 번의 베기에서 같은 대상이 여러 프레임에 걸쳐 중복 감지되지 않도록 한다.
             if (_hitTargets.Contains(target)) return;
 
