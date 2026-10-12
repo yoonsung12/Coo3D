@@ -227,6 +227,9 @@ public class WindZoneVolume : MonoBehaviour
 
     private void OnTriggerExit(Collider other)
     {
+        // 플레이어가 구역 밖일 때(_playerInZone == null) 은행 같은 다른 물체가 나가면
+        // GetComponent 결과도 null이라 아래 비교를 통과해 버리므로, 먼저 걸러낸다.
+        if (_playerInZone == null) return;
         if (other.GetComponent<PlayerController>() != _playerInZone) return;
 
         _playerInZone.ClearWindZone();

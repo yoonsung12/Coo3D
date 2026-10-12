@@ -52,6 +52,47 @@ public class Drawbridge : MonoBehaviour
     [SerializeField, LabelText("오디오 소스")]
     private AudioSource audioSource;
 
+    [FoldoutGroup("불 붙으면 카메라 연출")]
+    [InfoBox("비워두면 기존처럼 '묶여 있는 대상' 하나만 다 타면 바로 쓰러진다. 채우면 이 목록이 전부 재가 될 때까지 기다린 뒤 쓰러진다.")]
+    [SerializeField, LabelText("다 탈 때까지 기다릴 대상")]
+    private FlammableObject[] burnGroup;
+    // 아치 더미와 다리 덩굴처럼 여러 개가 다 타야 다리가 내려오는 경우 전부 연결한다.
+    // 이 중 하나라도 불이 붙으면 카메라 연출이 시작된다.
+
+    [FoldoutGroup("불 붙으면 카메라 연출")]
+    [SerializeField, LabelText("카메라가 비출 지점"), ShowIf("@burnGroup != null && burnGroup.Length > 0")]
+    private Transform focusPoint;
+    // 아치 더미와 다리가 함께 보이는 위치에 빈 오브젝트를 두고 연결한다. 비워두면 카메라는 움직이지 않는다.
+
+    [FoldoutGroup("불 붙으면 카메라 연출")]
+    [SerializeField, LabelText("조작 잠글 플레이어"), ShowIf("@burnGroup != null && burnGroup.Length > 0")]
+    private PlayerController player;
+    // 연출 동안 enabled를 꺼서 조작을 잠근다(EntrancePortal과 같은 방식). 비워두면 조작을 잠그지 않는다.
+
+    [FoldoutGroup("불 붙으면 카메라 연출")]
+    [SerializeField, LabelText("카메라 이동 시간"), ShowIf("@burnGroup != null && burnGroup.Length > 0")]
+    private float focusMoveDuration = 1.2f;
+
+    [FoldoutGroup("불 붙으면 카메라 연출")]
+    [SerializeField, LabelText("카메라 복귀 시간"), ShowIf("@burnGroup != null && burnGroup.Length > 0")]
+    private float focusReturnDuration = 1f;
+
+    [FoldoutGroup("불 붙으면 카메라 연출")]
+    [SerializeField, LabelText("카메라 Ease"), ShowIf("@burnGroup != null && burnGroup.Length > 0")]
+    private Ease focusEase = Ease.InOutSine;
+
+    [FoldoutGroup("불 붙으면 카메라 연출")]
+    [SerializeField, LabelText("다리가 내려온 뒤 머무는 시간"), ShowIf("@burnGroup != null && burnGroup.Length > 0")]
+    private float holdAfterLowered = 0.8f;
+    // 다리가 땅에 닿은 뒤 플레이어에게 돌아가기 전에 결과를 보여 주는 시간이다.
+
+    [FoldoutGroup("불 붙으면 카메라 연출")]
+    [ReadOnly, ShowInInspector, LabelText("불 연출 중")]
+    private bool _isFireCutscene;
+
+    private bool _fireCutsceneStarted;
+    // 첫 점화에만 연출을 시작하기 위한 플래그다. 여러 대상에 불이 붙어도 한 번만 실행된다.
+
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("내려감")]
     private bool _isLowered;
@@ -61,16 +102,78 @@ public class Drawbridge : MonoBehaviour
 
     private void Start()
     {
-        if (bindingObject != null)
+        if (burnGroup != null && burnGroup.Length > 0)
+        {
+            // 묶음 모드: 전부 재가 될 때까지 기다려야 하므로 bindingObject 하나에는 구독하지 않는다(일찍 내려가는 것 방지).
+            foreach (FlammableObject flammable in burnGroup)
+            {
+                if (flammable == null) continue;
+                flammable.OnStartedBurning += HandleGroupIgnited;
+                flammable.OnBurnedOut += HandleGroupBurnedOut;
+            }
+        }
+        else if (bindingObject != null)
             bindingObject.OnBurnedOut += Lower;
     }
 
     private void OnDestroy()
     {
-        if (bindingObject != null)
+        if (burnGroup != null && burnGroup.Length > 0)
+        {
+            foreach (FlammableObject flammable in burnGroup)
+            {
+                if (flammable == null) continue;
+                flammable.OnStartedBurning -= HandleGroupIgnited;
+                flammable.OnBurnedOut -= HandleGroupBurnedOut;
+            }
+        }
+        else if (bindingObject != null)
             bindingObject.OnBurnedOut -= Lower;
 
         _fallSequence?.Kill();
+    }
+
+    // 묶음 중 처음으로 불이 붙었을 때 한 번만 호출된다. 조작을 잠그고 카메라를 다리 쪽으로 붙잡아 둔다.
+    private void HandleGroupIgnited()
+    {
+        if (_fireCutsceneStarted) return;
+        _fireCutsceneStarted = true;
+        _isFireCutscene = true;
+
+        if (player != null)
+            player.enabled = false;
+        // 카메라가 다리를 비추는 동안 플레이어가 화면 밖에서 움직이지 않게 잠근다.
+        // 공중에서 잠기면 그 자리에 잠깐 멈춘다.
+
+        if (sideViewCamera != null && focusPoint != null)
+            sideViewCamera.StartFocus(focusPoint.position, focusMoveDuration, focusEase);
+    }
+
+    // 묶음 중 하나가 재가 될 때마다 호출된다. 전부 재가 됐을 때만 다리를 내린다.
+    private void HandleGroupBurnedOut()
+    {
+        foreach (FlammableObject flammable in burnGroup)
+        {
+            if (flammable != null && flammable.CurrentState != FlammableObject.FireState.Ash)
+                return;
+        }
+        Lower();
+    }
+
+    // 다리가 내려오고 잠시 머문 뒤 카메라를 플레이어에게 돌려보내고 조작을 풀어 준다.
+    private void EndFireCutscene()
+    {
+        if (sideViewCamera != null)
+            sideViewCamera.EndFocus(focusReturnDuration, focusEase, RestorePlayerControl);
+        else
+            RestorePlayerControl();
+    }
+
+    private void RestorePlayerControl()
+    {
+        if (player != null)
+            player.enabled = true;
+        _isFireCutscene = false;
     }
 
     // 묶은 대상이 다 타면 호출된다. 한 번 내려간 다리는 다시 세우지 않는다.
@@ -84,8 +187,16 @@ public class Drawbridge : MonoBehaviour
             .AppendInterval(fallDelay)
             .AppendCallback(PlayFallSound)
             .Append(bridgeHinge.DOLocalRotate(loweredEuler, fallDuration).SetEase(fallEase))
-            .AppendCallback(ShakeCamera)
-            .SetLink(gameObject);
+            .AppendCallback(ShakeCamera);
+
+        if (_isFireCutscene)
+        {
+            _fallSequence
+                .AppendInterval(holdAfterLowered)
+                .AppendCallback(EndFireCutscene);
+        }
+
+        _fallSequence.SetLink(gameObject);
     }
 
     private void PlayFallSound()
@@ -105,5 +216,19 @@ public class Drawbridge : MonoBehaviour
     {
         if (Application.isPlaying)
             Lower();
+    }
+
+    [Button("불 연출 전체 테스트 (Play Mode)")]
+    private void TestFireCutscene()
+    {
+        if (!Application.isPlaying || burnGroup == null) return;
+
+        // 실제 점화와 같은 경로(OnIgnited)로 첫 대상에 불을 붙여 이벤트 연쇄 전체를 확인한다.
+        foreach (FlammableObject flammable in burnGroup)
+        {
+            if (flammable == null) continue;
+            flammable.OnIgnited();
+            return;
+        }
     }
 }

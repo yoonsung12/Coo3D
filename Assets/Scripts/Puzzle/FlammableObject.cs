@@ -89,6 +89,9 @@ public class FlammableObject : MonoBehaviour, IIgnitable
     // 구독해서 반응할 수 있게 하기 위한 이벤트다.
     public event Action OnBurnedOut;
 
+    // 불이 붙는 순간(Unlit → Burning) 알리는 이벤트다. 예: 다리 퍼즐이 카메라 연출을 시작한다.
+    public event Action OnStartedBurning;
+
     private Collider _collider;
     private Renderer _meshRenderer;
     private Tween _colorTween;
@@ -127,6 +130,7 @@ public class FlammableObject : MonoBehaviour, IIgnitable
         if (CurrentState != FireState.Unlit) return;
 
         CurrentState = FireState.Burning;
+        OnStartedBurning?.Invoke();
         SetParticles(true);
         _burnCoroutine = StartCoroutine(BurnRoutine());
     }

@@ -59,6 +59,39 @@ public class EntrancePortal : MonoBehaviour
     [SerializeField, LabelText("안내문 페이드 시간")]
     private float promptFadeDuration = 0.2f;
 
+    [FoldoutGroup("도착 후 카메라 안내")]
+    [SerializeField, LabelText("도착 후 보여줄 지점")]
+    private Transform arrivalFocusPoint;
+    // 비워두면 기존처럼 도착 후 바로 조작이 돌아온다.
+    // 도착한 뒤 다음에 할 일(예: 태울 덩굴 아치와 다리)을 카메라로 보여줄 위치를 연결한다.
+
+    [FoldoutGroup("도착 후 카메라 안내")]
+    [SerializeField, LabelText("이동 시간"), ShowIf("@arrivalFocusPoint != null")]
+    private float focusMoveDuration = 1.5f;
+    // 카메라가 플레이어에서 보여줄 지점까지 움직이는 시간이다.
+
+    [FoldoutGroup("도착 후 카메라 안내")]
+    [SerializeField, LabelText("머무는 시간"), ShowIf("@arrivalFocusPoint != null")]
+    private float focusHoldDuration = 1.5f;
+    // 보여줄 지점에서 멈춰 있는 시간이다. 너무 짧으면 무엇인지 알아보기 어렵다.
+
+    [FoldoutGroup("도착 후 카메라 안내")]
+    [SerializeField, LabelText("복귀 시간"), ShowIf("@arrivalFocusPoint != null")]
+    private float focusReturnDuration = 1f;
+    // 카메라가 다시 플레이어에게 돌아오는 시간이다.
+
+    [FoldoutGroup("도착 후 카메라 안내")]
+    [SerializeField, LabelText("Ease"), ShowIf("@arrivalFocusPoint != null")]
+    private Ease focusEase = Ease.InOutSine;
+
+    [FoldoutGroup("도착 후 카메라 안내")]
+    [SerializeField, LabelText("처음 한 번만"), ShowIf("@arrivalFocusPoint != null")]
+    private bool showFocusOnlyOnce = true;
+    // 켜면 첫 도착 때만 보여 주고, 이후 재입장 때는 바로 조작이 돌아온다.
+
+    private bool _hasShownFocus;
+    // 도착 후 카메라 안내를 이미 보여 줬는지 기억한다.
+
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("플레이어가 범위 안에 있는지")]
     private bool _playerInRange;
@@ -170,6 +203,16 @@ public class EntrancePortal : MonoBehaviour
         _player.SyncViewModeToPosition();
         // 걸어 나오며 Z가 바뀐 경우(예: 엘리베이터에서 카메라 쪽으로 걸어 나옴) 멈춘 위치를 사이드뷰 라인으로 삼는다.
         // 이 호출이 없으면 라인이 도착 지점 Z로 남아, 조작이 돌아오자마자 그쪽으로 다시 끌려간다.
+
+        // 입장 직후 다음 목표를 몰라 헤매지 않게, 보여줄 지점이 있으면 카메라가 한 바퀴 비춰 준다.
+        // 이 동안 플레이어는 계속 비활성 상태라 조작할 수 없다.
+        if (arrivalFocusPoint != null && sideViewCamera != null && !(showFocusOnlyOnce && _hasShownFocus))
+        {
+            _hasShownFocus = true;
+            bool focusDone = false;
+            sideViewCamera.PlayFocusPan(arrivalFocusPoint.position, focusMoveDuration, focusHoldDuration, focusReturnDuration, focusEase, () => focusDone = true);
+            yield return new WaitUntil(() => focusDone);
+        }
 
         _player.enabled = true;
         _isEntering = false;

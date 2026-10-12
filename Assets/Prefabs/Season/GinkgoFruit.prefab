@@ -148,23 +148,18 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e22da7920080cc046bae474291f7ed87, type: 3}
   m_Name: 
-  m_EditorClassIdentifier:
+  m_EditorClassIdentifier: 
   seasonType: 2
   gaugeSlots: 1
   spawnHalfWidth: 5
   destroyBelowY: -20
-  windSpeed: 0.6
-  swaySpeed: 2
-  swayAmount: 0.4
-  verticalSwayAmount: 0.15
-  rotateSpeed: 80
-  fallSpeed: 1.2
-  landingY: 0.5
+  blockedShrinkDuration: 0.2
+  gravity: 20
+  maxFallSpeed: 15
+  groundLayer:
+    serializedVersion: 2
+    m_Bits: 4294967039
   minScale: 0.3
   maxScale: 0.5
-  blownFadeTime: 1.5
-  blownShrinkSpeed: 2
   scentPrefab: {fileID: 5734316456629390560, guid: e853c3c699060b742970fa46def694de, type: 3}
   burstFadeTime: 0.25
-  blownSound: {fileID: 0}
-  soundVolume: 0.8

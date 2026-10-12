@@ -72,6 +72,16 @@ public class SideViewCamera : MonoBehaviour
     private float _topDownBlend;
     // 0~1 사이 값을 DOTween으로 변화시켜, 두 시점의 위치/회전을 섞어 부드럽게 전환한다.
 
+    [ReadOnly, ShowInInspector, LabelText("주목 연출 정도 (0=플레이어, 1=주목 지점)")]
+    private float _focusBlend;
+    // 0~1 사이 값을 DOTween으로 변화시켜, 추적 기준점을 플레이어에서 주목 지점으로 옮겼다 되돌린다.
+
+    private Vector3 _focusPoint;
+    // PlayFocusPan()에서 지정한, 카메라가 잠시 비춰 줄 월드 좌표다.
+
+    private Sequence _focusSequence;
+    // 주목 연출(이동 → 정지 → 복귀)을 담은 Sequence다. 다시 호출되면 끊고 새로 시작한다.
+
     private PlayerController _player;
     // 플레이어의 시점 모드 변경 이벤트를 구독하기 위해 target에서 가져온다.
 
@@ -162,16 +172,19 @@ public class SideViewCamera : MonoBehaviour
     // LateUpdate의 부드러운 추적과 SnapToTarget의 즉시 이동이 같은 계산을 쓰도록 분리했다.
     private Vector3 CalculateTargetPosition()
     {
-        _currentTargetX = target.position.x;
+        // 추적 기준점이다. _focusBlend가 0이면 target.position과 완전히 같아 기존 동작 그대로이고,
+        // 1에 가까워질수록 주목 지점을 기준으로 카메라 위치를 계산한다.
+        Vector3 followPosition = Vector3.Lerp(target.position, _focusPoint, _focusBlend);
+        _currentTargetX = followPosition.x;
 
         // X/Y축 모두 플레이어 위치 기준 상대 offset을 따라간다.
         // Z는 기본적으로 고정 위치지만, "플레이어 Z 따라가기"를 켜면 플레이어 Z 기준 거리를 유지해
         // 다른 사이드뷰 라인으로 옮겨가도 카메라가 플레이어 정면에 온다.
         // Lerp로 부드럽게 이동해 갑작스러운 카메라 이동을 방지한다.
-        float cameraZ = followPlayerZ ? target.position.z + sideDistanceZ : offsetZ;
+        float cameraZ = followPlayerZ ? followPosition.z + sideDistanceZ : offsetZ;
         Vector3 targetPosition = new Vector3(
             _currentTargetX + offsetX,
-            target.position.y + offsetY,
+            followPosition.y + offsetY,
             cameraZ
         );
 
@@ -181,7 +194,7 @@ public class SideViewCamera : MonoBehaviour
         {
             Vector3 axis = _player.SideViewAxis;
             Vector3 depthAxis = Vector3.Cross(axis, Vector3.up);
-            targetPosition = target.position + axis * offsetX + Vector3.up * offsetY + depthAxis * sideDistanceZ;
+            targetPosition = followPosition + axis * offsetX + Vector3.up * offsetY + depthAxis * sideDistanceZ;
         }
 
         // 탑다운 전환 중이거나 탑다운 상태면, 플레이어 뒤쪽 위에서 내려다보는 위치와 섞는다.
@@ -189,7 +202,7 @@ public class SideViewCamera : MonoBehaviour
         if (_topDownBlend > 0f)
         {
             float pitchRad = topDownPitch * Mathf.Deg2Rad;
-            Vector3 topDownPosition = target.position + new Vector3(
+            Vector3 topDownPosition = followPosition + new Vector3(
                 0f,
                 Mathf.Sin(pitchRad) * topDownDistance,
                 -Mathf.Cos(pitchRad) * topDownDistance
@@ -213,6 +226,7 @@ public class SideViewCamera : MonoBehaviour
         _shakeTween?.Kill();
         _blendTween?.Kill();
         _axisTween?.Kill();
+        _focusSequence?.Kill();
         // 씬 전환 등으로 카메라가 파괴될 때 남은 전환 Tween이 파괴된 transform에 접근하지 않게 정리한다.
 
         if (_player != null)
@@ -229,6 +243,62 @@ public class SideViewCamera : MonoBehaviour
         _shakeOffset = Vector3.zero;
 
         _shakeTween = DOTween.Shake(() => _shakeOffset, v => _shakeOffset = v, duration, strength, vibrato: 20, randomness: 90f);
+    }
+
+    // 카메라가 플레이어를 떠나 focusPoint를 잠시 비춘 뒤 다시 플레이어로 돌아오는 연출이다.
+    // 도착 후 다음 목표를 보여 줄 때처럼 플레이어 조작을 잠근 상태에서 외부(예: EntrancePortal)가 호출한다.
+    // 연출이 모두 끝나면 onComplete를 호출하므로, 호출한 쪽은 그때 조작을 되돌려 주면 된다.
+    public void PlayFocusPan(Vector3 focusPoint, float moveDuration, float holdDuration, float returnDuration, Ease ease, System.Action onComplete = null)
+    {
+        _focusSequence?.Kill();
+        // 연출 중 다시 호출돼도 현재 _focusBlend 값에서 이어지게 이전 Sequence만 끊는다.
+
+        _focusPoint = focusPoint;
+
+        _focusSequence = DOTween.Sequence();
+        _focusSequence.Append(DOTween.To(() => _focusBlend, v => _focusBlend = v, 1f, moveDuration).SetEase(ease));
+        _focusSequence.AppendInterval(holdDuration);
+        _focusSequence.Append(DOTween.To(() => _focusBlend, v => _focusBlend = v, 0f, returnDuration).SetEase(ease));
+        _focusSequence.OnComplete(() =>
+        {
+            _focusBlend = 0f;
+            onComplete?.Invoke();
+        });
+        // LateUpdate의 Lerp(followSpeed)가 위에 한 번 더 덧입혀져 움직임이 더 부드럽게 보인다.
+    }
+
+    // 끝나는 시점을 미리 모를 때(예: 불이 다 탈 때까지) 쓴다. StartFocus로 주목 지점에 붙잡아 두고,
+    // 조건이 끝나면 EndFocus로 플레이어에게 돌려보낸다. PlayFocusPan처럼 시간으로 자동 복귀하지 않는다.
+    public void StartFocus(Vector3 focusPoint, float moveDuration, Ease ease)
+    {
+        _focusSequence?.Kill();
+        _focusPoint = focusPoint;
+
+        _focusSequence = DOTween.Sequence();
+        _focusSequence.Append(DOTween.To(() => _focusBlend, v => _focusBlend = v, 1f, moveDuration).SetEase(ease));
+        // Sequence에는 이동만 담고 끝나도 _focusBlend를 1로 유지해, EndFocus가 올 때까지 그 자리에 머문다.
+    }
+
+    // StartFocus로 붙잡아 둔 카메라를 플레이어에게 되돌린다. 복귀가 끝나면 onComplete를 호출하므로
+    // 호출한 쪽은 그때 조작을 되돌려 주면 된다.
+    public void EndFocus(float returnDuration, Ease ease, System.Action onComplete = null)
+    {
+        _focusSequence?.Kill();
+
+        _focusSequence = DOTween.Sequence();
+        _focusSequence.Append(DOTween.To(() => _focusBlend, v => _focusBlend = v, 0f, returnDuration).SetEase(ease));
+        _focusSequence.OnComplete(() =>
+        {
+            _focusBlend = 0f;
+            onComplete?.Invoke();
+        });
+    }
+
+    [Button("주목 연출 테스트 (Play Mode)")]
+    private void TestFocusPan(Vector3 point)
+    {
+        if (!Application.isPlaying) return;
+        PlayFocusPan(point, 1.5f, 1.5f, 1f, Ease.InOutSine);
     }
 
     [Button("현재 위치를 오프셋으로 저장")]
