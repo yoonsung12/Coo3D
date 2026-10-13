@@ -12,7 +12,18 @@ public class DoorController : MonoBehaviour
     private List<PressButton> buttons = new List<PressButton>();
     // Inspector에서 이 문을 여는 데 필요한 PressButton을 모두 연결한다.
 
+    // 문이 열리는 방식이다. Rotate는 기존 힌지 회전, LiftUp은 셔터처럼 위로 올라간다.
+    public enum OpenMode { Rotate, LiftUp }
+
     [Title("문 연출 설정")]
+    [SerializeField, LabelText("열림 방식")]
+    private OpenMode openMode = OpenMode.Rotate;
+    // 기본값 Rotate라서 기존 문(가을 게이트 등)은 동작이 바뀌지 않는다.
+
+    [SerializeField, LabelText("올라가는 높이"), ShowIf(nameof(openMode), OpenMode.LiftUp)]
+    private float liftHeight = 4f;
+    // LiftUp일 때 닫힌 위치에서 위로 올라가는 거리(m)다. 셔터 높이보다 크게 잡아야 통로가 열린다.
+
     [SerializeField, LabelText("열림 각도 (Y축)")]
     private float openAngle = 90f;
     // DoorHinge 오브젝트가 Y축으로 회전하는 각도다.
@@ -37,10 +48,14 @@ public class DoorController : MonoBehaviour
     private bool _isOpen;
 
     private Vector3 _closedEuler;
+    private Vector3 _closedPosition;
     private Tween _doorTween;
 
     private void Start()
     {
+        // LiftUp 방식에서 올라갈 높이의 기준이 되는 닫힌 위치를 저장한다.
+        _closedPosition = transform.position;
+
         // 씬 시작 시 닫힌 상태의 회전값을 저장한다.
         _closedEuler = transform.eulerAngles;
 
@@ -82,6 +97,14 @@ public class DoorController : MonoBehaviour
             audioSource.PlayOneShot(openSound);
 
         _doorTween?.Kill();
+        if (openMode == OpenMode.LiftUp)
+        {
+            _doorTween = transform
+                .DOMoveY(_closedPosition.y + liftHeight, openDuration)
+                .SetEase(openEase);
+            return;
+        }
+
         // DoorHinge를 Y축으로 회전시켜 문이 열리는 연출을 한다.
         _doorTween = transform
             .DORotate(_closedEuler + new Vector3(0f, openAngle, 0f), openDuration)
