@@ -4,6 +4,8 @@ using Sirenix.OdinInspector;
 using System.Collections;
 using UnityEngine;
 
+// 내려찍기 연출: 낮은 시작 위치 -> 들어 올리며 확대 -> 빠르게 내려찍기 -> 압축/반동 -> 즉시 숨김.
+// 바닥 물리 충돌이 아니라 내려찍기 종료 시점을 바닥 타격으로 간주한다.
 // 공격키 입력 시 SW08을 교번 대각선 베기로 휘두르는 스크립트다.
 // 첫 공격은 아래→위, 두 번째 공격은 위→아래로 번갈아 연결된다.
 // 공격 중 재입력하면 현재 모션을 즉시 중단하고 다음 방향으로 바로 이어진다.
@@ -13,6 +15,9 @@ public class SwordAttack : MonoBehaviour
     [SerializeField, LabelText("칼 Transform")]
     private Transform sw08Transform;
     // Inspector에서 Player 자식으로 이동시킨 SW08의 Transform을 연결한다.
+
+    [Header("캐릭터 애니메이션")]
+    [SerializeField] private Animator playerAnimator;
 
     [BoxGroup("Swing 0 — 아래→위")]
     [SerializeField, LabelText("준비 각도")]
@@ -25,6 +30,52 @@ public class SwordAttack : MonoBehaviour
     private Vector3 slashAngle0 = new Vector3(50f, 0f, 0f);
     // 아래→위 베기의 완료 자세다. 칼끝이 화면 오른쪽 위를 향한다.
     // 이 값은 Swing 1의 준비 각도와 일치시켜야 두 궤적이 같아진다.
+
+    [Header("베개 효과")]
+    [SerializeField] private Transform pillowMesh;
+    [SerializeField, LabelText("내려올 때 베개 기울기 (로컬)")]
+    private Vector3 pillowStartRotation = new Vector3(30f, 0f, 0f);
+    [SerializeField, LabelText("착지 시 베개 각도 (로컬)")]
+    private Vector3 pillowImpactRotation = Vector3.zero;
+    [SerializeField, Min(0f)] private float attackStartDelay = 0.08f;
+    [Header("공격 시작: 중간 지점에서 살짝 들어 올리기")]
+    [SerializeField] private Vector3 preLiftStartAngle = new Vector3(75f, 0f, -10f);
+    [SerializeField, Min(0.01f)] private float preLiftDuration = 0.24f;
+    [SerializeField, LabelText("시작 위치 오프셋 (로컬)")]
+    private Vector3 preLiftStartPositionOffset = new Vector3(0f, -0.2f, 0f);
+    [SerializeField, LabelText("들어 올렸을 때 크기 배율")]
+    private float preLiftScaleMultiplier = 1.2f;
+    [SerializeField] private Vector3 squashMultiplier = new Vector3(1.25f, 1.25f, 0.55f);
+    [Header("통통 반동 효과")]
+    [SerializeField, Min(0f)] private float bounceHeight = 0.13f;
+    [SerializeField, Min(0.01f)] private float bounceDuration = 0.17f;
+    [SerializeField] private Vector3 bounceStretch = new Vector3(0.94f, 0.94f, 1.17f);
+    [Header("내려찍기 후 연출")]
+    [SerializeField, Min(0f), LabelText("통통 반동 후 사라지기 전 대기")]
+    private float impactHoldDuration = 0.06f;
+    [SerializeField, Min(0.01f)] private float squashDuration = 0.065f;
+    // 바닥 타격 뒤 말랑한 두 번의 반동이 끝나면 제자리에서 바로 사라진다.
+    // SW08 전체가 아닌 Pillow의 시각 Mesh만 이동한다 (히트박스 유지).
+    private Vector3 _pillowBaseScale;
+    private Vector3 _pillowBaseLocalPosition;
+    private Quaternion _pillowBaseLocalRotation;
+    private Transform _cachedPillowMesh;
+    private Sequence _pillowSequence;
+
+    private void Awake()
+    {
+        CachePillowScale();
+    }
+
+    private void CachePillowScale()
+    {
+        if (pillowMesh == null) return;
+        if (_cachedPillowMesh == pillowMesh) return;
+        _cachedPillowMesh = pillowMesh;
+        _pillowBaseScale = pillowMesh.localScale;
+        _pillowBaseLocalPosition = pillowMesh.localPosition;
+        _pillowBaseLocalRotation = pillowMesh.localRotation;
+    }
 
     [BoxGroup("Swing 1 — 위→아래")]
     [SerializeField, LabelText("준비 각도")]
@@ -127,6 +178,7 @@ public class SwordAttack : MonoBehaviour
     private void OnDestroy()
     {
         _slashSequence?.Kill();
+        _pillowSequence?.Kill();
         if (_comboResetCoroutine != null)
             StopCoroutine(_comboResetCoroutine);
     }
@@ -141,13 +193,19 @@ public class SwordAttack : MonoBehaviour
 
         OnAttackFired?.Invoke();
 
+        if (playerAnimator != null)
+        {
+            playerAnimator.SetTrigger("Attack");
+        }
+
         // 이전 공격이 진행 중이면 즉시 중단한다.
         // SW08은 현재 각도에 멈추며, 새 Sequence가 그 위치에서 바로 이어진다.
         _slashSequence?.Kill();
+        _pillowSequence?.Kill();
+        ResetPillowVisual();
 
         // 누른 시점에 즉시 다음 방향을 결정하고 인덱스를 전환한다.
-        int swingIndex = _nextSwingIndex;
-        _nextSwingIndex = 1 - _nextSwingIndex;
+        int swingIndex = 1; // 언제나 위에서 아래로 내려찍기
 
         // 콤보 리셋 타이머를 재시작한다.
         if (_comboResetCoroutine != null)
@@ -166,27 +224,39 @@ public class SwordAttack : MonoBehaviour
         // 이전 연출이 남아 있을 경우를 대비해 빛을 꺼진 상태로 초기화한다.
         if (tipLight != null) tipLight.intensity = 0f;
 
-        Vector3 readyAngle   = index == 0 ? readyAngle0 : readyAngle1;
+        CachePillowScale();
+        sw08Transform.localRotation = Quaternion.Euler(preLiftStartAngle);
+        if (pillowMesh != null)
+        {
+            pillowMesh.localPosition = _pillowBaseLocalPosition + preLiftStartPositionOffset;
+            pillowMesh.localScale = _pillowBaseScale;
+            pillowMesh.localRotation = Quaternion.Euler(pillowStartRotation);
+        }
+        Vector3 readyAngle = index == 0 ? readyAngle0 : readyAngle1;
         Vector3 slashEndAngle = index == 0 ? slashAngle0 : slashAngle1;
 
         // 빛 연출 Insert 위치를 계산한다. Sequence 시작 기준 각 구간의 시작 시간이다.
-        float slashStartTime = correctDuration;
-        float slashEndTime   = correctDuration + slashDuration;
+        float slashStartTime = preLiftDuration + attackStartDelay;
+        float slashEndTime = slashStartTime + slashDuration;
 
         _slashSequence = DOTween.Sequence()
-            // 현재 위치에서 준비 각도로 빠르게 이동한다.
-            // DOLocalRotateQuaternion을 사용해 오일러 정규화 문제 없이 순수 쿼터니언 보간으로 이동한다.
-            .Append(sw08Transform.DOLocalRotateQuaternion(Quaternion.Euler(readyAngle), correctDuration))
-            // 베기 시작 직전에 준비 각도로 정확히 스냅해 보간 오차를 제거한다.
-            // 이렇게 해야 이후 슬래시 트윈의 시작점이 기즈모 호의 시작점과 정확히 일치한다.
+            // 시작 시 중간 자세에 두었다가 준비 자세로 살짝 들어 올린다.
+            .AppendCallback(() => sw08Transform.localRotation = Quaternion.Euler(preLiftStartAngle))
+            .Append(sw08Transform.DOLocalRotateQuaternion(Quaternion.Euler(readyAngle), preLiftDuration)
+                .SetEase(Ease.OutSine))
+            .AppendInterval(attackStartDelay) // 살짝 멈춘 후 내려찍기
+                                              // 베기 시작 직전에 준비 각도로 정확히 스냅해 보간 오차를 제거한다.
+                                              // 이렇게 해야 이후 슬래시 트윈의 시작점이 기즈모 호의 시작점과 정확히 일치한다.
             .AppendCallback(() =>
             {
                 sw08Transform.localRotation = Quaternion.Euler(readyAngle);
                 swordHitbox?.EnableHitbox();
+
                 if (swordTrail != null) swordTrail.emitting = true;
                 if (swishClip != null)
                     AudioSource.PlayClipAtPoint(swishClip, sw08Transform.position);
                 // 베기 시작 순간 칼 위치에서 쉬잉 소리를 재생한다.
+
             })
             // 준비 자세에서 베기 완료 각도로 빠르게 휘두른다.
             // DOLocalRotateQuaternion으로 오일러 정규화 없이 순수 쿼터니언 경로로 이동해 기즈모 호와 일치시킨다.
@@ -197,9 +267,16 @@ public class SwordAttack : MonoBehaviour
             {
                 swordHitbox?.DisableHitbox();
                 if (swordTrail != null) swordTrail.emitting = false;
+                // 찌그러짐은 아래 InsertCallback에서 한 번만 실행
             })
-            // 베기 후 기본 대기 자세로 부드럽게 복귀한다.
-            .Append(sw08Transform.DOLocalRotate(restAngle, returnDuration))
+            // 압축+두 번 반동이 끝나기를 기다린 다음, 짧게 유지하고 '퍽' 하고 숨긴다.
+            .AppendInterval(squashDuration + 0.025f + bounceDuration + 0.11f + impactHoldDuration)
+            .AppendCallback(() =>
+            {
+                if (pillowMesh != null) pillowMesh.gameObject.SetActive(false);
+                // 베개를 숨긴 뒤에만 회전 피벗을 원래 자세로 옮긴다.
+                sw08Transform.localRotation = Quaternion.Euler(restAngle);
+            })
             .OnComplete(() => _isAttacking = false)
             // 콤보 캔슬 시에도 히트박스, 잔상, 빛을 반드시 정리한다.
             // OnKill은 자연 완료 시에도 호출되므로 모두 멱등성 있게 처리한다.
@@ -210,14 +287,72 @@ public class SwordAttack : MonoBehaviour
                 if (tipLight != null) tipLight.intensity = 0f;
             });
 
+        // 휘두르기가 끝나는 순간 말랑하게 눌렸다 복원됨 (실제 충돌 감지는 아님)
+        _slashSequence.InsertCallback(slashEndTime, PlayPillowSquash);
+        if (pillowMesh != null)
+        {
+            // 처음엔 낮게 등장해 위로 들리는 동안만 커지고, 내려찍을 때 원래 크기로 복귀.
+            _slashSequence.Insert(0f,
+                pillowMesh.DOLocalMove(_pillowBaseLocalPosition, preLiftDuration).SetEase(Ease.OutSine));
+            _slashSequence.Insert(0f,
+                pillowMesh.DOScale(_pillowBaseScale * Mathf.Max(0.01f, preLiftScaleMultiplier), preLiftDuration)
+                    .SetEase(Ease.OutSine));
+            _slashSequence.Insert(slashStartTime,
+                pillowMesh.DOScale(_pillowBaseScale, slashDuration).SetEase(Ease.InQuad));
+            _slashSequence.Insert(slashStartTime,
+                pillowMesh.DOLocalRotate(pillowImpactRotation, slashDuration).SetEase(Ease.InOutSine));
+        }
+
         // 빛 반짝임: Sequence에 Insert해 캔슬 시 자동으로 함께 정리되도록 한다.
         // 베기 시작 순간 최대 강도로 점등하고, 복귀 구간 동안 서서히 소멸한다.
         if (tipLight != null)
         {
             _slashSequence
                 .Insert(slashStartTime, tipLight.DOIntensity(lightMaxIntensity, 0.02f))
-                .Insert(slashEndTime,   tipLight.DOIntensity(0f, returnDuration));
+                .Insert(slashEndTime, tipLight.DOIntensity(0f, returnDuration));
         }
+    }
+    private void ResetPillowVisual()
+    {
+        if (pillowMesh == null) return;
+        CachePillowScale();
+        pillowMesh.gameObject.SetActive(true);
+        pillowMesh.localPosition = _pillowBaseLocalPosition;
+        pillowMesh.localScale = _pillowBaseScale;
+        pillowMesh.localRotation = Quaternion.Euler(pillowStartRotation);
+    }
+
+    private void PlayPillowSquash()
+    {
+        if (pillowMesh == null)
+        {
+            Debug.LogWarning("[SwordAttack] Pillow Mesh를 Inspector에 연결하세요.", this);
+            return;
+        }
+        CachePillowScale();
+        _pillowSequence?.Kill();
+        pillowMesh.localScale = _pillowBaseScale;
+        pillowMesh.localPosition = _pillowBaseLocalPosition;
+        pillowMesh.localRotation = Quaternion.Euler(pillowImpactRotation);
+
+        // 퍽! 납작해진 뒤 통통 두 번 반동. 찌그러짐+반동은
+        // 전체 impactHoldDuration 안에서 재생되며, 이후에 상승/소멸한다.
+        float bounceUp = bounceDuration * 0.40f;
+        float bounceDown = bounceDuration * 0.60f;
+        Vector3 compressed = Vector3.Scale(_pillowBaseScale, squashMultiplier);
+        Vector3 stretched = Vector3.Scale(_pillowBaseScale, bounceStretch);
+        Vector3 firstJump = _pillowBaseLocalPosition + Vector3.up * bounceHeight;
+        Vector3 secondJump = _pillowBaseLocalPosition + Vector3.up * bounceHeight * 0.28f;
+
+        _pillowSequence = DOTween.Sequence()
+            .Append(pillowMesh.DOScale(compressed, squashDuration).SetEase(Ease.OutQuad))
+            .AppendInterval(0.025f)
+            .Append(pillowMesh.DOScale(stretched, bounceUp).SetEase(Ease.OutQuad))
+            .Join(pillowMesh.DOLocalMove(firstJump, bounceUp).SetEase(Ease.OutQuad))
+            .Append(pillowMesh.DOScale(_pillowBaseScale, bounceDown).SetEase(Ease.OutBounce))
+            .Join(pillowMesh.DOLocalMove(_pillowBaseLocalPosition, bounceDown).SetEase(Ease.InQuad))
+            .Append(pillowMesh.DOLocalMove(secondJump, 0.05f).SetEase(Ease.OutQuad))
+            .Append(pillowMesh.DOLocalMove(_pillowBaseLocalPosition, 0.06f).SetEase(Ease.InQuad));
     }
 
     private IEnumerator ComboResetRoutine()
@@ -258,7 +393,7 @@ public class SwordAttack : MonoBehaviour
         Gizmos.color = color;
 
         Quaternion fromQ = Quaternion.Euler(fromEuler);
-        Quaternion toQ   = Quaternion.Euler(toEuler);
+        Quaternion toQ = Quaternion.Euler(toEuler);
 
         for (int i = 0; i <= steps; i++)
         {
@@ -272,13 +407,13 @@ public class SwordAttack : MonoBehaviour
 
         // 준비 자세와 베기 완료 자세의 칼끝을 구(sphere)로 강조한다.
         Vector3 startTip = GetTipWorldPos(fromEuler);
-        Vector3 endTip   = GetTipWorldPos(toEuler);
+        Vector3 endTip = GetTipWorldPos(toEuler);
         Gizmos.DrawSphere(startTip, 0.045f);
-        Gizmos.DrawSphere(endTip,   0.045f);
+        Gizmos.DrawSphere(endTip, 0.045f);
 
         UnityEditor.Handles.color = color;
         UnityEditor.Handles.Label(startTip + Vector3.up * 0.1f, $"{swingName} 준비");
-        UnityEditor.Handles.Label(endTip   + Vector3.up * 0.1f, $"{swingName} 완료");
+        UnityEditor.Handles.Label(endTip + Vector3.up * 0.1f, $"{swingName} 완료");
     }
 
     // SW08이 주어진 로컬 회전각일 때 칼끝의 월드 위치를 계산한다.
@@ -365,7 +500,7 @@ public static class SwordAttackSceneHandles
         var sw08 = (Transform)sw08Prop.objectReferenceValue;
 
         Vector3 tipPos = CalcTipWorldPos(sw08, prop.vector3Value);
-        float   size   = UnityEditor.HandleUtility.GetHandleSize(tipPos) * 0.12f;
+        float size = UnityEditor.HandleUtility.GetHandleSize(tipPos) * 0.12f;
 
         UnityEditor.Handles.color = color;
 
@@ -385,6 +520,8 @@ public static class SwordAttackSceneHandles
             : Quaternion.Euler(0f, 90f, 0f);
         return sw08.position + parent * Quaternion.Euler(euler) * GetTipLocalOffset(sw08);
     }
+
+
 
     private static Vector3 WorldPosToLocalEuler(Transform sw08, Vector3 newTipWorldPos)
     {
