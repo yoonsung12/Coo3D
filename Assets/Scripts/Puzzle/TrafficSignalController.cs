@@ -48,6 +48,16 @@ public class TrafficSignalController : MonoBehaviour
     [SerializeField, LabelText("조명 세기")]
     private float lightIntensity = 2f;
 
+    [Title("신호등 모델")]
+    [SerializeField, LabelText("평소 신호등 모델 (보행자 빨간불)")]
+    private GameObject offModel;
+    // 퍼즐을 풀기 전(차가 다니는 상태)에 보이는 신호등 모델이다. 차량 신호가 빨간불로 바뀌는 순간 꺼진다.
+
+    [SerializeField, LabelText("성공 후 신호등 모델 (보행자 초록불)")]
+    private GameObject onModel;
+    // 퍼즐을 풀어 차량 신호가 빨간불(차가 멈추는 상태)이 되는 순간 켜지는 신호등 모델이다.
+    // 두 모델은 같은 자리에 겹쳐 두고, 비워두면 위의 렌즈 방식만으로 동작한다.
+
     [Title("컷신")]
     [SerializeField, LabelText("컷신 카메라")]
     private Camera cutsceneCamera;
@@ -107,6 +117,7 @@ public class TrafficSignalController : MonoBehaviour
         // 평소에는 초록불(차가 다니는 상태)이다.
         SetLensImmediate(_greenMat, greenLight, greenColor, true);
         SetLensImmediate(_redMat, redLight, redColor, false);
+        SetModelRed(false);
 
         foreach (PressButton sw in switches)
             if (sw != null) sw.OnStateChanged += HandleSwitchChanged;
@@ -189,7 +200,16 @@ public class TrafficSignalController : MonoBehaviour
             .AppendInterval(beforeGreenOffDelay)
             .Append(TweenLens(_greenMat, greenLight, greenColor, false))
             .AppendInterval(beforeRedOnDelay)
+            .AppendCallback(() => SetModelRed(true))
+            // 렌즈가 켜지는 순간 신호등 모델도 켜진 버전으로 바꾼다.
             .Append(TweenLens(_redMat, redLight, redColor, true));
+    }
+
+    // 평소/성공 후 신호등 모델 중 하나만 보이게 한다. 모델이 연결되지 않았으면 아무것도 하지 않는다.
+    private void SetModelRed(bool red)
+    {
+        if (offModel != null) offModel.SetActive(!red);
+        if (onModel != null) onModel.SetActive(red);
     }
 
     // 렌즈 색/발광과 조명 세기를 함께 바꾸는 Tween이다.
