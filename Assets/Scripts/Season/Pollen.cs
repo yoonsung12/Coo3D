@@ -35,6 +35,17 @@ public class Pollen : BaseHazard, IBlowable
     [SerializeField, LabelText("최대 크기")]
     private float maxScale = 0.5f;
 
+    [Title("수명 설정")]
+    [SerializeField, LabelText("수명(초)"), Min(0f)]
+    private float lifetime = 10f;
+    // 생성된 뒤 이 시간이 지나면 작아지며 사라진다. 0이면 수명 없이 파괴 Y 좌표 아래로 떨어질 때까지 남는다.
+    // 꽃가루는 트리거라 바닥을 뚫고 계속 내려가므로, 땅속에서 개수 제한을 차지하지 않도록 수명을 둔다.
+    // 낙하 속도 × 수명만큼 떨어진 뒤 사라지므로, 스포너 높이에서 바닥 근처까지 내려오는 값으로 맞춘다.
+
+    [SerializeField, LabelText("수명 끝 사라지는 시간"), Min(0.01f)]
+    private float lifetimeFadeTime = 0.5f;
+    // 수명이 끝났을 때 작아지며 투명해지는 데 걸리는 시간이다.
+
     [Title("바람에 날림 연출")]
     [SerializeField, LabelText("날아간 뒤 소멸까지 걸리는 시간")]
     private float blownFadeTime = 1.5f;
@@ -79,10 +90,31 @@ public class Pollen : BaseHazard, IBlowable
         // 여러 꽃가루가 같은 주기로 흔들리지 않도록 개체마다 다른 위상을 준다.
     }
 
+    private void Start()
+    {
+        if (lifetime > 0f)
+            StartCoroutine(LifetimeRoutine());
+    }
+
     protected override void OnDestroy()
     {
         base.OnDestroy();
         _blowTween?.Kill();
+    }
+
+    // 수명이 끝나면 작아지며 사라진다. 선풍기에 날린 꽃가루는 날림 연출이 따로 소멸을 처리하므로 건너뛴다.
+    private IEnumerator LifetimeRoutine()
+    {
+        yield return new WaitForSeconds(lifetime);
+        if (_isBlown) yield break;
+
+        // 사라지는 동안 콜라이더를 꺼서, 거의 보이지 않는 꽃가루에 닿아 게이지가 오르거나
+        // 선풍기·우산에 다시 반응하는 일이 없게 한다.
+        GetComponent<Collider>().enabled = false;
+        StartFadeOut(lifetimeFadeTime);
+
+        yield return new WaitForSeconds(lifetimeFadeTime);
+        Destroy(gameObject);
     }
 
     private void FixedUpdate()
