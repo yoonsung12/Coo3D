@@ -14,8 +14,9 @@ public enum WeaponSlot
     Torch       // 동 (오른쪽) — 횃불
 }
 
-// Tab 키를 누르는 동안 시간을 정지하고 방사형 도구 선택 메뉴를 표시한다.
-// 마우스를 원하는 방향으로 이동해 슬롯을 선택하고, Tab을 떼면 해당 도구로 전환된다.
+// Z 키를 누르는 동안 시간을 정지하고 방사형 도구 선택 메뉴를 표시한다.
+// Z를 누른 채 화살표로 슬롯을 선택하고(↑ 공격, ← 선풍기, ↓ 우산, → 횃불), Z를 떼면 해당 도구로 전환된다.
+// 화살표를 뗀 뒤에도 마지막으로 고른 슬롯이 유지되므로, 화살표를 먼저 떼고 Z를 떼도 선택이 확정된다.
 public class WeaponWheelUI : MonoBehaviour
 {
     [Title("슬롯 UI 연결")]
@@ -49,10 +50,10 @@ public class WeaponWheelUI : MonoBehaviour
     // 전체 휠 UI를 감싸는 루트 패널이다. 이 오브젝트에 DOTween 열림/닫힘 연출을 적용한다.
 
     [Title("판정 설정")]
-    [SerializeField, LabelText("선택 최소 거리 (px)")]
-    private float selectionThreshold = 80f;
-    // 화면 중심에서 마우스가 이 거리(픽셀) 이상 벗어나야 슬롯이 선택된다.
-    // 값이 작을수록 중심 가까이에서도 슬롯이 선택된다.
+    [SerializeField, LabelText("방향 입력 판정 기준"), Range(0.1f, 1f)]
+    private float inputThreshold = 0.5f;
+    // 화살표(Move 입력)의 세기가 이 값 이상이어야 슬롯이 선택된다. 키보드 화살표는 항상 1이라 기본값이면 충분하다.
+    // 게임패드 스틱을 쓸 때 값이 작을수록 살짝만 기울여도 선택된다.
 
     [Title("연출 설정")]
     [SerializeField, LabelText("열림 시간")]
@@ -63,23 +64,23 @@ public class WeaponWheelUI : MonoBehaviour
 
     [SerializeField, LabelText("하이라이트 색상")]
     private Color highlightColor = Color.yellow;
-    // 마우스가 향하는 방향의 슬롯에 표시할 강조 색상이다.
+    // 화살표로 고른 슬롯에 표시할 강조 색상이다.
 
     [SerializeField, LabelText("기본 색상")]
     private Color normalColor = Color.white;
 
     [SerializeField, LabelText("잠김 색상")]
     private Color lockedColor = new Color(0.35f, 0.35f, 0.35f, 0.6f);
-    // 아직 얻지 못한 도구(가을 퍼즐② 전의 횃불) 슬롯에 표시할 색이다. 마우스를 올려도 강조되지 않는다.
+    // 아직 얻지 못한 도구(가을 퍼즐② 전의 횃불) 슬롯에 표시할 색이다. 화살표로 골라도 강조되지 않는다.
 
     [Title("사운드 설정")]
     [SerializeField, LabelText("호버 사운드")]
     private AudioClip hoverSound;
-    // 마우스가 다른 슬롯 위로 넘어갈 때 재생할 오디오 클립이다. Inspector에서 UIHoverSound를 연결한다.
+    // 화살표로 다른 슬롯을 고를 때 재생할 오디오 클립이다. Inspector에서 UIHoverSound를 연결한다.
 
     [SerializeField, LabelText("선택 확정 사운드")]
     private AudioClip selectSound;
-    // Tab을 떼서 도구 선택이 확정될 때 재생할 오디오 클립이다. Inspector에서 ToolSelectSound를 연결한다.
+    // Z를 떼서 도구 선택이 확정될 때 재생할 오디오 클립이다. Inspector에서 ToolSelectSound를 연결한다.
 
     [SerializeField, LabelText("오디오 소스")]
     private AudioSource audioSource;
@@ -96,12 +97,16 @@ public class WeaponWheelUI : MonoBehaviour
     public bool IsOpen => _isOpen;
 
     private InputAction _wheelAction;
+    private InputAction _moveAction;
+    // 휠이 열려 있는 동안 화살표 방향으로 슬롯을 고르기 위해 이동(Move) 액션을 함께 읽는다.
+    // PlayerController와 같은 InputActionAsset을 쓰므로 활성화는 PlayerController가 담당한다.
     private Tween _panelTween;
 
     private void Awake()
     {
         var playerMap = inputActionAsset.FindActionMap("Player", throwIfNotFound: true);
         _wheelAction = playerMap.FindAction("WeaponWheel", throwIfNotFound: true);
+        _moveAction = playerMap.FindAction("Move", throwIfNotFound: true);
 
         // 시작 시 휠 패널을 숨긴다.
         if (wheelPanel != null)
@@ -140,7 +145,7 @@ public class WeaponWheelUI : MonoBehaviour
         UpdateHighlight();
     }
 
-    // Tab 키를 눌렀을 때 휠을 열고 시간을 정지한다.
+    // Z 키를 눌렀을 때 휠을 열고 시간을 정지한다.
     private void OnWheelPerformed(InputAction.CallbackContext ctx)
     {
         // 파우즈 메뉴가 열려 있는 동안에는 휠을 열지 않는다.
@@ -150,7 +155,7 @@ public class WeaponWheelUI : MonoBehaviour
         OpenWheel();
     }
 
-    // Tab 키를 뗐을 때 선택된 슬롯으로 전환하고 시간을 재개한다.
+    // Z 키를 뗐을 때 선택된 슬롯으로 전환하고 시간을 재개한다.
     private void OnWheelCanceled(InputAction.CallbackContext ctx)
     {
         CloseWheel();
@@ -213,37 +218,21 @@ public class WeaponWheelUI : MonoBehaviour
         }
     }
 
-    // 마우스 방향을 계산해 해당하는 슬롯을 하이라이트한다.
+    // 화살표 입력 방향으로 해당하는 슬롯을 하이라이트한다.
     private void UpdateHighlight()
     {
-        if (Mouse.current == null) return;
+        Vector2 dir = _moveAction.ReadValue<Vector2>();
 
-        Vector2 mousePos = Mouse.current.position.ReadValue();
-        Vector2 center = new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
-        Vector2 dir = mousePos - center;
+        // 화살표를 누르지 않으면 선택을 바꾸지 않는다.
+        // 화살표를 먼저 떼고 Z를 떼도 마지막으로 고른 슬롯이 확정되게 하기 위해서다.
+        if (dir.magnitude < inputThreshold) return;
 
-        if (dir.magnitude < selectionThreshold)
-        {
-            // 마우스가 중심 가까이 있으면 아무 슬롯도 선택하지 않는다.
-            SetHighlight(WeaponSlot.None);
-            return;
-        }
-
-        // Atan2로 마우스 방향 각도를 구하고 0~360 범위로 정규화한다.
-        float angle = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
-        if (angle < 0f) angle += 360f;
-
-        // 각도를 4분할해 슬롯을 결정한다.
-        // 동(0°) 기준: 시계 반대 방향으로 북(90°), 서(180°), 남(270°)
+        // 가로/세로 중 더 크게 누른 축으로 슬롯을 정한다. 대각선(두 화살표 동시)이면 가로를 우선한다.
         WeaponSlot slot;
-        if (angle >= 315f || angle < 45f)
-            slot = WeaponSlot.Torch;      // 동 — 오른쪽
-        else if (angle >= 45f && angle < 135f)
-            slot = WeaponSlot.Attack;     // 북 — 위쪽
-        else if (angle >= 135f && angle < 225f)
-            slot = WeaponSlot.Fan;        // 서 — 왼쪽
+        if (Mathf.Abs(dir.x) >= Mathf.Abs(dir.y))
+            slot = dir.x > 0f ? WeaponSlot.Torch : WeaponSlot.Fan;        // → 횃불 / ← 선풍기
         else
-            slot = WeaponSlot.Umbrella;   // 남 — 아래쪽
+            slot = dir.y > 0f ? WeaponSlot.Attack : WeaponSlot.Umbrella;  // ↑ 공격 / ↓ 우산
 
         // 잠긴 도구 방향이면 아무것도 고르지 않은 것으로 본다. 휠을 닫아도 현재 도구가 유지된다.
         if (!IsUnlocked(slot))

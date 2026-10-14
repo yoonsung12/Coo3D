@@ -102,9 +102,20 @@ public class PlayerController : MonoBehaviour
     private bool _isReversed; // 가을 디버프: 좌우 입력 방향이 반전된다.
     private bool _isFrozen;   // 겨울 디버프: 이동과 점프를 모두 막는다.
 
+    // 베개 공격 중 이동 정지 상태다. SwordAttack이 공격 시작 시 켜고 연출이 끝나면 끈다.
+    // 땅에 서 있을 때만 이동을 막고, 공중에서는 좌우 이동을 그대로 허용한다.
+    private bool _isAttackLocked;
+
     private InputAction _moveAction;
     private InputAction _jumpAction;
     private Vector2 _moveInput;
+
+    // 화살표 입력이 이 값보다 커야 조준 방향으로 인정한다. 게임패드 스틱이 살짝 흔들리는 정도는 무시하기 위한 값이다.
+    private const float AimInputThreshold = 0.1f;
+
+    // 사이드뷰에서 마지막으로 바라본 좌우 방향이다. +1이면 진행 축 앞(기본 +X), -1이면 뒤(-X)를 본다.
+    // 좌우 화살표를 떼도 이 방향을 유지해야 선풍기/횃불이 계속 같은 쪽으로 나간다.
+    private float _sideFacingSign = 1f;
 
     // 공중 상승 점프를 착지 전까지 한 번만 쓸 수 있게 막는 플래그다. 착지하면 자동으로 풀린다.
     private bool _airJumpUsed;
@@ -126,6 +137,10 @@ public class PlayerController : MonoBehaviour
         // 사이드뷰에서는 항상 이 Z 라인으로 되돌아가므로, 씬에 배치된 위치를 첫 라인으로 삼는다.
         // (초기값 0으로 두면 시작하자마자 Z 0으로 끌려간다. 이후 순간이동은 Respawn()이 라인을 갱신한다.)
         _laneZ = transform.position.z;
+
+        // 씬에 배치된 캐릭터가 바라보는 좌우 방향을 처음 조준 방향으로 삼는다.
+        // 기본값(+1)으로 두면 왼쪽을 보고 시작하는 씬에서 첫 프레임에 몸이 오른쪽으로 홱 돌아간다.
+        _sideFacingSign = Vector3.Dot(transform.forward, SideViewAxis) >= 0f ? 1f : -1f;
 
         // 쿼터뷰 3D에서는 계단 자동 오르기가 필요 없으므로 stepOffset을 0으로 설정한다.
         // 이 값이 0이 아니면 평지 BoxCollider 가장자리에서 캐릭터가 공중에 떠오르는 문제가 생긴다.
@@ -173,6 +188,12 @@ public class PlayerController : MonoBehaviour
     private void Update()
     {
         _moveInput = _moveAction.ReadValue<Vector2>();
+
+        // 도구 휠(Z)이나 일시정지 메뉴가 열려 시간이 멈춘 동안에는 화살표 입력을 무시한다.
+        // 휠에서는 화살표로 슬롯을 고르는데, 이 입력이 캐릭터 회전/조준까지 바꾸지 않게 하기 위해서다.
+        if (Time.timeScale == 0f)
+            _moveInput = Vector2.zero;
+
         IsGrounded = _cc.isGrounded;
 
         // 접지 중이고 내려가는 중이면 작은 아래 힘을 유지해 경사면 미끄러짐을 방지한다.
@@ -185,8 +206,8 @@ public class PlayerController : MonoBehaviour
 
         HandleMove();
         HandleFacing();
-        // 선풍기/횃불이 사용하는 FacingDirection을 매 프레임 마우스 방향으로 갱신한다.
-        // 이동 방향 기반 회전(HandleMove) 이후에 호출해 마우스 조준 방향이 몸통 회전에 최종 반영되게 한다.
+        // 선풍기/횃불이 사용하는 FacingDirection을 매 프레임 화살표 입력으로 갱신한다.
+        // 이동 방향 기반 회전(HandleMove) 이후에 호출해 조준 방향이 몸통 회전에 최종 반영되게 한다.
         ApplyGravity();
         ApplyFallSpeedLimit();
         ApplyWindVertical();
@@ -242,7 +263,8 @@ public class PlayerController : MonoBehaviour
 
     private void HandleMove()
     {
-        if (_isBound || _isFrozen)
+        // 공격 중 이동 정지는 접지 중일 때만 적용해, 공중 공격 중에는 좌우 이동이 끊기지 않게 한다.
+        if (_isBound || _isFrozen || (_isAttackLocked && IsGrounded))
         {
             // 얼음 위라면 즉시 멈추지 않고 미끄러지다 멈춘다.
             ApplyMoveVelocity(Vector3.zero, false);
@@ -306,60 +328,59 @@ public class PlayerController : MonoBehaviour
 
     private void HandleFacing()
     {
-        // Mouse.current가 없으면 (게임패드 전용 환경 등) 처리를 건너뛴다.
-        if (Mouse.current == null) return;
-
-        // 카메라에서 마우스 스크린 좌표로 광선을 발사한다.
-        Ray ray = Camera.main.ScreenPointToRay(Mouse.current.position.ReadValue());
-
         if (CurrentViewMode == ViewMode.TopDown)
         {
-            HandleTopDownFacing(ray);
+            HandleTopDownFacing();
             return;
         }
 
-        // 사이드뷰: 카메라가 깊이 방향(기본은 Z축)을 따라 바라보므로, 플레이어 위치를 지나는 측면 평면과
-        // 광선의 교점을 구해 마우스가 가리키는 월드 좌표를 얻는다.
-        // 쿼터뷰의 지면 수평 평면 대신, 깊이 방향에 수직인 측면 평면을 사용한다.
-        Vector3 depthAxis = SideViewDepthAxis;
-        Plane sidePlane = new Plane(depthAxis, transform.position);
-        if (sidePlane.Raycast(ray, out float distance))
+        // 사이드뷰: 좌우 화살표로 몸 방향(진행 축의 앞/뒤)을 정하고, 위/아래 화살표로 위아래 조준을 더한다.
+        // 가을 디버프(방향 반전) 중에는 이동 방향(HandleMove)과 똑같이 좌우를 뒤집어, 움직이는 쪽을 바라보게 한다.
+        float xInput = _isReversed ? -_moveInput.x : _moveInput.x;
+        float yInput = _moveInput.y;
+
+        // 좌우를 누르지 않을 때도 마지막으로 바라본 방향을 유지해야 하므로 부호만 기억해 둔다.
+        if (Mathf.Abs(xInput) > AimInputThreshold)
+            _sideFacingSign = Mathf.Sign(xInput);
+
+        Vector3 bodyDir = SideViewAxis * _sideFacingSign;
+
+        // 위/아래를 누르면 조준에 Y 성분을 넣는다.
+        // 좌우도 함께 누르면 45도 대각선, 위/아래만 누르면 바로 위/아래를 조준한다.
+        Vector3 aimDir = bodyDir;
+        if (Mathf.Abs(yInput) > AimInputThreshold)
         {
-            Vector3 worldPoint = ray.GetPoint(distance);
-            Vector3 dir = worldPoint - transform.position;
-            dir -= depthAxis * Vector3.Dot(dir, depthAxis);
-            // 깊이 성분을 제거해 진행 축 + 위아래 평면 방향만 남긴다. (기본 축이면 dir.z = 0과 같다)
-
-            if (dir.sqrMagnitude > 0.01f)
-            {
-                FacingDirection = dir.normalized;
-                // FacingDirection에 Y 성분이 포함되어 선풍기/횃불이 위아래 각도로도 작동한다.
-
-                // 캐릭터 몸통은 진행 축의 앞/뒤 방향만 전환한다.
-                // 기본 축이면 마우스가 오른쪽일 때 +X(90°), 왼쪽일 때 -X(-90°)로 Y축만 회전한다.
-                // 카메라 쪽(깊이 방향)을 바라보게 하면 등/정면이 뒤바뀌어 Z축 회전처럼 보이는 문제가 생긴다.
-                Vector3 bodyDir = Vector3.Dot(dir, SideViewAxis) >= 0f ? SideViewAxis : -SideViewAxis;
-                transform.rotation = Quaternion.LookRotation(bodyDir, Vector3.up);
-            }
+            Vector3 vertical = Vector3.up * Mathf.Sign(yInput);
+            aimDir = Mathf.Abs(xInput) > AimInputThreshold ? (bodyDir + vertical).normalized : vertical;
         }
+
+        FacingDirection = aimDir;
+        // FacingDirection에 Y 성분이 포함되어 선풍기/횃불이 위아래 각도로도 작동한다.
+
+        // 캐릭터 몸통은 진행 축의 앞/뒤 방향만 전환한다. 위아래를 조준해도 몸은 기울이지 않는다.
+        // 카메라 쪽(깊이 방향)을 바라보게 하면 등/정면이 뒤바뀌어 Z축 회전처럼 보이는 문제가 생긴다.
+        transform.rotation = Quaternion.LookRotation(bodyDir, Vector3.up);
     }
 
-    private void HandleTopDownFacing(Ray ray)
+    private void HandleTopDownFacing()
     {
-        // 탑다운: 플레이어 높이를 지나는 수평 평면(바닥과 평행)과 마우스 광선의 교점을 구해
-        // 마우스가 가리키는 바닥 위치를 얻는다. 점프 중에도 플레이어 높이 기준이라 조준이 흔들리지 않는다.
-        Plane groundPlane = new Plane(Vector3.up, transform.position);
-        if (!groundPlane.Raycast(ray, out float distance)) return;
+        // 탑다운: 화살표로 이동하는 방향(8방향)을 바라본다. 입력이 없으면 마지막 방향을 유지한다.
+        // HandleMove와 같은 규칙으로 가을 디버프(방향 반전) 중에는 앞뒤/좌우를 모두 뒤집는다.
+        float xInput = _isReversed ? -_moveInput.x : _moveInput.x;
+        float zInput = _isReversed ? -_moveInput.y : _moveInput.y;
+        Vector3 dir = new Vector3(xInput, 0f, zInput);
+        // Y 성분은 0으로 두어 바닥과 평행한 XZ 방향만 쓴다. 탑다운에선 위아래 조준을 쓰지 않는다.
 
-        Vector3 dir = ray.GetPoint(distance) - transform.position;
-        dir.y = 0f;
-        // Y 성분을 제거해 바닥과 평행한 XZ 방향만 남긴다. 탑다운에선 위아래 조준을 쓰지 않는다.
-
-        if (dir.sqrMagnitude > 0.01f)
+        if (dir.sqrMagnitude > AimInputThreshold * AimInputThreshold)
         {
             FacingDirection = dir.normalized;
-            // 사이드뷰와 달리 몸통을 마우스 방향으로 360도 자유롭게 돌린다.
+            // 사이드뷰와 달리 몸통을 조준 방향으로 360도 자유롭게 돌린다.
             transform.rotation = Quaternion.LookRotation(FacingDirection, Vector3.up);
+
+            // 사이드뷰로 돌아갔을 때 탑다운에서 마지막으로 바라보던 좌우 방향을 이어받는다.
+            float side = Vector3.Dot(FacingDirection, SideViewAxis);
+            if (Mathf.Abs(side) > 0.01f)
+                _sideFacingSign = Mathf.Sign(side);
         }
     }
 
@@ -532,6 +553,12 @@ public class PlayerController : MonoBehaviour
     public void SetBound(bool bound)
     {
         _isBound = bound;
+    }
+
+    // 베개 공격 중 이동을 막는다. SwordAttack이 공격 시작/종료 시 호출한다.
+    public void SetAttackLock(bool locked)
+    {
+        _isAttackLocked = locked;
     }
 
     // 가을 디버프(방향 반전)에 의해 좌우 입력을 뒤집는다. DebuffController가 호출한다.

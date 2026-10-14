@@ -62,9 +62,20 @@ public class SwordAttack : MonoBehaviour
     private Transform _cachedPillowMesh;
     private Sequence _pillowSequence;
 
+    private PlayerController _playerController;
+    // 공격하는 동안 이동을 멈추기 위해 같은 Player 오브젝트의 PlayerController를 가져와 둔다.
+    // 같은 오브젝트에 붙어 있으므로 Inspector 연결 없이 GetComponent로 찾는다.
+
     private void Awake()
     {
         CachePillowScale();
+        _playerController = GetComponent<PlayerController>();
+    }
+
+    private void OnDisable()
+    {
+        // 공격 도중 오브젝트가 꺼져도 이동 정지 상태가 남지 않도록 풀어준다.
+        _playerController?.SetAttackLock(false);
     }
 
     private void CachePillowScale()
@@ -221,6 +232,10 @@ public class SwordAttack : MonoBehaviour
 
         _isAttacking = true;
 
+        // 공격 연출이 끝날 때(Sequence OnKill)까지 땅 위 이동을 멈춘다.
+        // 이전 Sequence의 Kill이 끝난 뒤에 호출되므로, 이전 공격의 해제가 이 잠금을 덮어쓰지 않는다.
+        _playerController?.SetAttackLock(true);
+
         // 이전 연출이 남아 있을 경우를 대비해 빛을 꺼진 상태로 초기화한다.
         if (tipLight != null) tipLight.intensity = 0f;
 
@@ -282,6 +297,8 @@ public class SwordAttack : MonoBehaviour
             // OnKill은 자연 완료 시에도 호출되므로 모두 멱등성 있게 처리한다.
             .OnKill(() =>
             {
+                // 공격이 끝나거나 끊기면 이동 정지를 푼다. 다음 공격은 이 Kill 이후에 다시 잠근다.
+                _playerController?.SetAttackLock(false);
                 swordHitbox?.DisableHitbox();
                 if (swordTrail != null) swordTrail.emitting = false;
                 if (tipLight != null) tipLight.intensity = 0f;
