@@ -186,6 +186,9 @@ public class SwordAttack : MonoBehaviour
     private Sequence _slashSequence;
     private Coroutine _comboResetCoroutine;
 
+    private static readonly int AttackStateHash = Animator.StringToHash("Player_Attack");
+    // Animator의 공격 상태 이름이다. 상태 이름을 바꾸면 여기도 같이 바꿔야 한다.
+
     private void OnDestroy()
     {
         _slashSequence?.Kill();
@@ -206,7 +209,11 @@ public class SwordAttack : MonoBehaviour
 
         if (playerAnimator != null)
         {
-            playerAnimator.SetTrigger("Attack");
+            // 트리거(Any State 전환)는 걷기 시작/멈춤/착지 블렌드(0.25초) 도중에는 끼어들지 못해,
+            // 베개 연출보다 몸 모션이 늦게 시작되는 문제가 있었다.
+            // CrossFadeInFixedTime은 진행 중인 블렌드가 있어도 즉시 공격 모션으로 넘어가므로 베개와 같은 프레임에 시작된다.
+            // 0.05초는 기존 Any State → Player_Attack 전환 시간과 같은 값이다.
+            playerAnimator.CrossFadeInFixedTime(AttackStateHash, 0.05f);
         }
 
         // 이전 공격이 진행 중이면 즉시 중단한다.
