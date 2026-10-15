@@ -28,6 +28,17 @@ public class EntrancePortal : MonoBehaviour
     private InputActionAsset inputActionAsset;
     // PlayerController와 같은 InputSystem_Actions 에셋을 연결한다. Move 액션의 위쪽(W/↑)으로 입장한다.
 
+    [Title("입장 방식")]
+    [SerializeField, LabelText("도착하면 자동 입장")]
+    private bool autoEnter;
+    // 켜면 ↑ 키나 안내문 없이, 플레이어가 트리거 안에 들어선 순간 바로 입장 연출을 시작한다.
+    // 미로 출구 에스컬레이터처럼 "도착하면 자연스럽게 다음 장소로 넘어가는" 곳에 쓴다. 이때는 안내문·Input Action 연결이 필요 없다.
+
+    [SerializeField, LabelText("들어갈 때 내려가는 속도"), ShowIf(nameof(autoEnter))]
+    private float enterDescendSpeed;
+    // 0보다 크면 들어가며 걷는 동안 중력 대신 이 속도(초당)로 일정하게 내려가, 에스컬레이터를 타고 내려가는 모습이 된다.
+    // 경사에 맞추려면 "걷는 속도 × (계단 높이 ÷ 계단 가로 길이)"를 넣는다. 0이면 기존처럼 바닥을 따라 걷는다.
+
     [Title("입장 연출")]
     [SerializeField, LabelText("들어갈 방향")]
     private Vector3 enterDirection = Vector3.forward;
@@ -134,7 +145,18 @@ public class EntrancePortal : MonoBehaviour
 
     private void Update()
     {
-        if (_moveAction == null || _isEntering) return;
+        if (_isEntering) return;
+
+        // 자동 입장은 키 입력과 안내문 없이, 몸통 중심이 트리거 안에 들어온 순간 바로 연출을 시작한다.
+        // 순간이동 뒤에는 트리거 밖이므로 다시 시작되지 않는다.
+        if (autoEnter)
+        {
+            if (_player != null && IsPlayerInsideTrigger())
+                StartCoroutine(EnterRoutine());
+            return;
+        }
+
+        if (_moveAction == null) return;
 
         // 범위 안인지는 트리거 이벤트가 아니라 매 프레임 실제 위치로 판정한다.
         // - CharacterController를 끈 채 순간이동하면(입장, 리스폰, 낙사 복귀) OnTriggerExit가 오지 않는다.
@@ -182,7 +204,7 @@ public class EntrancePortal : MonoBehaviour
 
         if (ScreenFader.Instance != null)
             ScreenFader.Instance.FadeOut(null, fadeOutDuration);
-        yield return WalkFor(enterDir, Mathf.Max(enterWalkDuration, fadeOutDuration));
+        yield return WalkFor(enterDir, Mathf.Max(enterWalkDuration, fadeOutDuration), enterDescendSpeed);
         // 화면이 완전히 어두워지기 전에 순간이동하면 이동이 보이므로, 걷는 시간이 짧아도 페이드 아웃이 끝날 때까지 걷는다.
 
         // 순간이동은 반드시 Respawn()을 거쳐야 CharacterController 처리와 사이드뷰/라인 Z 갱신이 함께 된다.
@@ -242,15 +264,19 @@ public class EntrancePortal : MonoBehaviour
     }
 
     // 정해진 시간 동안 한 방향으로 걷는다. 벽에 막히면 CharacterController가 알아서 멈춰 준다.
-    private IEnumerator WalkFor(Vector3 direction, float duration)
+    // descendSpeed가 0보다 크면 중력 대신 그 속도로 일정하게 내려간다(에스컬레이터 내려가기 연출).
+    private IEnumerator WalkFor(Vector3 direction, float duration, float descendSpeed = 0f)
     {
         float verticalVelocity = 0f;
         float elapsed = 0f;
 
         while (elapsed < duration)
         {
-            // 바닥에 닿아 있으면 살짝 눌러 붙이고, 공중이면 중력을 누적해 떨어지게 한다.
-            verticalVelocity = _cc.isGrounded ? -2f : verticalVelocity + Gravity * Time.deltaTime;
+            if (descendSpeed > 0f)
+                verticalVelocity = -descendSpeed;
+            else
+                // 바닥에 닿아 있으면 살짝 눌러 붙이고, 공중이면 중력을 누적해 떨어지게 한다.
+                verticalVelocity = _cc.isGrounded ? -2f : verticalVelocity + Gravity * Time.deltaTime;
 
             Vector3 velocity = direction * walkSpeed + Vector3.up * verticalVelocity;
             _cc.Move(velocity * Time.deltaTime);

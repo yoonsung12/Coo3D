@@ -20,20 +20,41 @@ public class PlayerController : MonoBehaviour
     private float moveSpeed = 5f;
     // 값이 커질수록 플레이어가 더 빠르게 이동한다.
 
-    [SerializeField, LabelText("점프 힘")]
-    private float jumpForce = 8f;
-    // 값이 커질수록 더 높이 점프한다.
-
     [SerializeField, LabelText("중력 가속도")]
     private float gravity = -20f;
     // CharacterController는 물리 엔진 중력을 받지 않으므로 수동으로 적용한다.
     // 음수 값이며 클수록 더 빠르게 떨어진다.
 
-    [Title("공중 상승 점프 설정")]
-    [SerializeField, LabelText("상승 점프 힘")]
-    private float airJumpForce = 10f;
-    // 공중에서 점프 버튼을 한 번 더 누르면 적용되는 수직 속도다.
-    // jumpForce와 합쳐 도달 가능한 최대 높이가 정해지므로, 발판 배치를 바꿀 땐 이 값도 함께 고려해야 한다.
+    [Title("점프 설정 (누르는 길이로 높이 조절)")]
+    [InfoBox("점프 버튼을 누르고 있는 동안 '상승 속도'로 일정하게 올라가고, 떼는 순간 상승이 끊긴다.\n" +
+             "끝까지 누르면 '최대 높이', 톡 누르면 '최소 높이'만큼 뛴다. 유지 시간은 이 값들로 자동 계산된다.")]
+    [SerializeField, LabelText("최대 높이")]
+    private float jumpMaxHeight = 4.1f;
+    // 버튼을 끝까지 누르고 있을 때 도달하는 높이(m)다. 발판 배치는 이 높이를 기준으로 한다.
+    // 기본값 4.1은 예전 "점프(힘 8) + 공중 2단 점프(힘 10)"를 중력 -20에서 합친 최대 높이와 같다.
+
+    [SerializeField, LabelText("최소 높이")]
+    private float jumpMinHeight = 0.4f;
+    // 버튼을 아주 짧게 눌렀을 때도 최소한 오르는 높이(m)다. 너무 작으면 점프한 느낌이 거의 없다.
+
+    [SerializeField, LabelText("상승 속도")]
+    private float jumpRiseSpeed = 8f;
+    // 누르고 있는 동안 올라가는 초당 속도다. 값이 작을수록 누르는 길이에 따른 높이 차이를 조절하기 쉽고,
+    // 너무 크면(속도²/(2×중력)이 최대 높이를 넘으면) 누르는 길이와 상관없이 항상 최대 높이를 넘게 된다.
+
+    [SerializeField, LabelText("뗐을 때 남는 상승 속도")]
+    private float jumpReleaseVelocity = 0f;
+    // 버튼을 뗀 순간 남겨둘 상승 속도다. 0이면 즉시 꺾여 떨어지고, 조금 주면 정점이 부드럽게 둥글어진다.
+
+    // 누르고 있으면 중력 없이 상승을 유지하는 최대 시간이다.
+    // 이후 상승 속도에서 중력으로 감속하며 오르는 높이(속도²/(2×중력))를 빼서, 합계가 정확히 최대 높이가 되게 한다.
+    [ShowInInspector, ReadOnly, LabelText("최대 유지 시간(자동)")]
+    private float JumpHoldMaxTime =>
+        Mathf.Max(0f, (jumpMaxHeight - jumpRiseSpeed * jumpRiseSpeed / (2f * -gravity)) / jumpRiseSpeed);
+
+    // 톡 눌러도 이 시간 동안은 상승을 유지해 최소 높이를 보장한다.
+    [ShowInInspector, ReadOnly, LabelText("최소 유지 시간(자동)")]
+    private float JumpHoldMinTime => Mathf.Min(jumpMinHeight / jumpRiseSpeed, JumpHoldMaxTime);
 
     [Title("반동 감속 설정")]
     [SerializeField, LabelText("일반 반동 감속률")]
@@ -77,6 +98,10 @@ public class PlayerController : MonoBehaviour
     [ReadOnly, ShowInInspector, LabelText("접지 여부")]
     public bool IsGrounded { get; private set; } = true;
 
+    [ReadOnly, ShowInInspector, LabelText("점프 버튼 유지 상승 중")]
+    private bool _isJumpHolding;
+    // true인 동안은 중력 대신 상승 속도를 유지한다.
+
     [ReadOnly, ShowInInspector, LabelText("얼음 미끄러짐 중")]
     public bool IsSlipping => _slipIce != null;
 
@@ -117,8 +142,11 @@ public class PlayerController : MonoBehaviour
     // 좌우 화살표를 떼도 이 방향을 유지해야 선풍기/횃불이 계속 같은 쪽으로 나간다.
     private float _sideFacingSign = 1f;
 
-    // 공중 상승 점프를 착지 전까지 한 번만 쓸 수 있게 막는 플래그다. 착지하면 자동으로 풀린다.
-    private bool _airJumpUsed;
+    // 플레이어가 직접 한 점프로 올라가는 중인지다. 버튼을 떼서 상승을 끊는 처리는 이 점프에만 적용해,
+    // 선풍기 블라스트·바람·뜨는 상자로 솟구치는 중에 버튼을 떼도 영향이 없게 한다.
+    private bool _isPlayerJumpRising;
+    private float _jumpHoldTimer;
+    // 이번 점프에서 버튼을 누르고 상승을 유지한 시간이다.
 
     // 사이드뷰에서 플레이어가 유지할 라인(깊이 좌표)이다. 사이드뷰 동안은 항상 이 라인으로 되돌아간다.
     // 기본 축(+X)에서는 Z 좌표 그대로이고, -Z 통로처럼 축이 바뀌면 깊이 방향(X) 좌표가 된다.
@@ -171,18 +199,66 @@ public class PlayerController : MonoBehaviour
         // 빙결 디버프 중에는 점프도 막는다.
         if (_isFrozen) return;
 
-        if (IsGrounded)
+        // 땅에 있을 때만 점프한다. (공중 점프는 쓰지 않는다)
+        if (!IsGrounded) return;
+
+        // 누르는 순간 상승을 시작하고, 버튼을 떼거나 최대 유지 시간이 지날 때까지 UpdateJumpHold()가 이어간다.
+        _verticalVelocity = jumpRiseSpeed;
+        _isJumpHolding = true;
+        _isPlayerJumpRising = true;
+        _jumpHoldTimer = 0f;
+    }
+
+    // 점프 버튼을 누르고 있는 동안 상승 속도를 유지하고, 떼면 상승을 끊어 낮게 뛰게 한다.
+    // 버튼 상태는 performed 이벤트가 아니라 매 프레임 IsPressed()로 확인해, 떼는 순간을 놓치지 않게 한다.
+    private void UpdateJumpHold()
+    {
+        if (!_isPlayerJumpRising) return;
+
+        bool isHeld = _jumpAction.IsPressed();
+
+        if (_isJumpHolding)
         {
-            _verticalVelocity = jumpForce;
+            _jumpHoldTimer += Time.deltaTime;
+
+            // 최소 유지 시간 전에 뗐다면 최소 높이까지는 올라간 뒤에 끊는다.
+            if (!isHeld && _jumpHoldTimer >= JumpHoldMinTime)
+            {
+                CutJump();
+                return;
+            }
+
+            if (_jumpHoldTimer >= JumpHoldMaxTime)
+                _isJumpHolding = false;
+            // 최대 유지 시간이 지나면 중력을 다시 받아, 정점까지 자연스럽게 감속하며 올라간다.
+            else
+                _verticalVelocity = jumpRiseSpeed;
+        }
+        else if (!isHeld)
+        {
+            // 감속하며 올라가는 중에 떼도 바로 꺾이게 한다.
+            CutJump();
             return;
         }
 
-        // 공중 상승 점프: 공중에서 점프 버튼을 한 번 더 누르면, 착지 전까지 딱 한 번만 추가로 더 높이 뛴다.
-        if (!_airJumpUsed)
-        {
-            _verticalVelocity = airJumpForce;
-            _airJumpUsed = true;
-        }
+        // 정점을 지나 내려가기 시작하면 이번 점프 처리는 끝난다.
+        if (_verticalVelocity <= 0f)
+            EndPlayerJump();
+    }
+
+    // 버튼을 떼서 남은 상승 속도를 끊는다.
+    private void CutJump()
+    {
+        _verticalVelocity = Mathf.Min(_verticalVelocity, jumpReleaseVelocity);
+        EndPlayerJump();
+    }
+
+    // 플레이어 점프 상태를 끝낸다. 외부 힘(블라스트·바람·발판)이 수직 속도를 덮어쓸 때도 호출해,
+    // 이후에 버튼을 떼도 그 힘으로 솟구치는 움직임을 끊지 않게 한다.
+    private void EndPlayerJump()
+    {
+        _isJumpHolding = false;
+        _isPlayerJumpRising = false;
     }
 
     private void Update()
@@ -200,14 +276,11 @@ public class PlayerController : MonoBehaviour
         if (IsGrounded && _verticalVelocity < 0f)
             _verticalVelocity = -2f;
 
-        // 착지하면 공중 상승 점프를 다시 쓸 수 있게 풀어준다.
-        if (IsGrounded)
-            _airJumpUsed = false;
-
         HandleMove();
         HandleFacing();
         // 선풍기/횃불이 사용하는 FacingDirection을 매 프레임 화살표 입력으로 갱신한다.
         // 이동 방향 기반 회전(HandleMove) 이후에 호출해 조준 방향이 몸통 회전에 최종 반영되게 한다.
+        UpdateJumpHold();
         ApplyGravity();
         ApplyFallSpeedLimit();
         ApplyWindVertical();
@@ -233,6 +306,14 @@ public class PlayerController : MonoBehaviour
 
         // Move() 호출 이후 접지 상태를 갱신해 같은 프레임 내 다른 스크립트에 최신 값을 제공한다.
         IsGrounded = _cc.isGrounded;
+
+        // 점프 중 천장에 머리가 닿으면 상승을 끊는다. 누르는 동안 상승 속도를 유지하므로,
+        // 이 처리가 없으면 버튼을 떼거나 유지 시간이 끝날 때까지 천장에 붙어 있게 된다.
+        if (_isPlayerJumpRising && (_cc.collisionFlags & CollisionFlags.Above) != 0)
+        {
+            _verticalVelocity = 0f;
+            EndPlayerJump();
+        }
 
         // 착지해 있으면 발밑이 얼음인지로 미끄러짐 여부를 정한다. (일반 바닥에 닿으면 null이 되어 즉시 조작감 복귀)
         // 공중이면 갱신하지 않아, 얼음에서 점프했을 때 착지 전까지 관성이 유지된다.
@@ -492,7 +573,8 @@ public class PlayerController : MonoBehaviour
     private void ApplyGravity()
     {
         // 공중에 있을 때만 중력을 누산한다. 접지 시에는 HandleMove에서 -2f로 고정된다.
-        if (!IsGrounded)
+        // 점프 버튼을 누르고 상승을 유지하는 동안은 중력을 받지 않는다.
+        if (!IsGrounded && !_isJumpHolding)
             _verticalVelocity += gravity * Time.deltaTime;
     }
 
@@ -516,7 +598,10 @@ public class PlayerController : MonoBehaviour
         _blastVelocity = new Vector3(velocity.x, 0f, velocity.z);
         // 위로 솟구치는 블라스트일 경우 수직 속도도 함께 적용한다.
         if (velocity.y > 0f)
+        {
             _verticalVelocity = velocity.y;
+            EndPlayerJump();
+        }
     }
 
     // WindZone 진입 시 지속적인 바람 속도를 설정한다.
@@ -571,6 +656,8 @@ public class PlayerController : MonoBehaviour
     public void SetFrozen(bool frozen)
     {
         _isFrozen = frozen;
+        // 빙결되면 누르고 있던 점프 상승도 멈추고 중력으로 떨어지게 한다.
+        if (frozen) _isJumpHolding = false;
     }
 
     // 우산 글라이드 중 최대 낙하 속도를 제한한다.
@@ -602,7 +689,10 @@ public class PlayerController : MonoBehaviour
         // _windVelocity는 horizontal 합산에도 쓰이지만(X/Z), Y 성분은 그쪽에서 버려지므로
         // 여기서 별도로 _verticalVelocity에 덮어써야 "위로 부는 바람"이 실제로 작동한다.
         if (_windVelocity.y != 0f)
+        {
             _verticalVelocity = _windVelocity.y;
+            EndPlayerJump();
+        }
     }
 
     private void ApplyPlatformVertical()
@@ -610,6 +700,9 @@ public class PlayerController : MonoBehaviour
         // 뜨는 상자 위에 있는 동안은 상자의 상승/하강 속도를 그대로 수직 속도에 반영해
         // 플레이어가 상자와 함께 오르내리게 한다.
         if (_platformVelocity.y != 0f)
+        {
             _verticalVelocity = _platformVelocity.y;
+            EndPlayerJump();
+        }
     }
 }
