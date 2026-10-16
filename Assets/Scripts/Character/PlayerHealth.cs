@@ -77,6 +77,8 @@ public class PlayerHealth : CharacterBase
     private CharacterController _characterController;
     // 체크포인트 리스폰/세이브 로드 시 위치를 안전하게 옮기기 위해 참조해 둔다.
 
+    private PlayerAnimatorController _playerAnimator;
+
     private Tween _flashTween;
     private Tween _punchTween;
 
@@ -94,6 +96,7 @@ public class PlayerHealth : CharacterBase
 
         _playerController = GetComponent<PlayerController>();
         _characterController = GetComponent<CharacterController>();
+        _playerAnimator = GetComponent<PlayerAnimatorController>();
         _currentHealth = maxHealth;
         _initialLocalPosition = transform.localPosition;
         // '체력 전체 초기화' 테스트 버튼에서 시작 위치로 되돌리기 위해 기억한다.
@@ -145,6 +148,9 @@ public class PlayerHealth : CharacterBase
             Die();
             return;
         }
+
+        // 살아 있을 때만 피격 애니메이션 실행
+        _playerAnimator?.PlayHit();
 
         StartInvincibility();
     }
@@ -210,6 +216,7 @@ public class PlayerHealth : CharacterBase
     private void Die()
     {
         _isDead = true;
+        _isDead = true;
 
         _flashTween?.Kill();
         _punchTween?.Kill();
@@ -267,6 +274,8 @@ public class PlayerHealth : CharacterBase
 
         if (_playerController != null)
             _playerController.enabled = true;
+
+        _playerAnimator?.ResetAnimator();
 
         OnHealthChanged?.Invoke(_currentHealth, maxHealth);
     }

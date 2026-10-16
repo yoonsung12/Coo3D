@@ -136,6 +136,7 @@ public class FanTool : BaseTool
 
     private float _chargeTime;
     private PlayerController _player;
+    private PlayerAnimatorController _playerAnimator;
     private int _lastChargeLevel;
     private Tween _blowFadeTween;
     // 바람 소리 페이드아웃이 중복 실행되지 않도록 현재 Tween을 저장한다.
@@ -148,6 +149,8 @@ public class FanTool : BaseTool
         _player = GetComponentInParent<PlayerController>();
         if (_player == null)
             _player = FindFirstObjectByType<PlayerController>();
+        if (_player != null)
+            _playerAnimator = _player.GetComponent<PlayerAnimatorController>();
         Debug.Log($"[FanTool] Start() 호출됨. _player={_player}");
     }
 
@@ -166,6 +169,9 @@ public class FanTool : BaseTool
         if (_state == FanState.Idle)
         {
             _state = FanState.Blowing;
+
+            _playerAnimator?.SetFanCharge(true);
+
             windEffect?.Play();
             PlayBlowSound();
         }
@@ -181,6 +187,8 @@ public class FanTool : BaseTool
             StopBlowSound();
             // 일반 바람을 쏘다가 차징으로 넘어가면 반복 바람 소리는 서서히 끄고 차징 소리로 넘어간다.
             _player?.SetSpeedMultiplier(chargeSlowMultiplier);
+            // 충전 1/2/3단계 모두 같은 자세를 사용한다.
+            _playerAnimator?.SetFanCharge(true);
         }
 
         _chargeTime += Time.deltaTime;
@@ -215,9 +223,14 @@ public class FanTool : BaseTool
         _chargeTime = 0f;
         _chargeRatio = 0f;
         _lastChargeLevel = 0;
+
         _player?.SetSpeedMultiplier(1f);
+
         windEffect?.Stop();
         StopBlowSound();
+
+        // 선풍기 사용 애니메이션 종료
+        _playerAnimator?.SetFanCharge(false);
     }
 
     private void OnDisable()
@@ -284,6 +297,7 @@ public class FanTool : BaseTool
         // 플레이어는 바라보는 방향의 반대로 강하게 튕겨난다. 바람 방향(windDir)은 마우스 조준이라
         // 위아래 성분이 섞여 있어 그대로 쓰면 조준 높이에 따라 밀리는 거리가 줄어들므로, 수평 방향만 사용한다.
         _player.SetBlast(-GetRecoilDirection() * recoilAmount);
+        _playerAnimator?.PlayFanBlast();
 
         PlaySound(level == 1 ? blastSound1 : level == 2 ? blastSound2 : blastSound3, blastSoundVolume);
 

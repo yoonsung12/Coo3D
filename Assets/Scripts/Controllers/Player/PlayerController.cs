@@ -114,6 +114,8 @@ public class PlayerController : MonoBehaviour
     private Vector3 _moveVelocity;
     private Vector3 _recoilVelocity;
     private Vector3 _blastVelocity;
+    // 블라스트로 뒤로 밀리는 수평 속도. 애니메이션 유지/해제 판정에 사용.
+    public float BlastRecoilSpeed => new Vector2(_blastVelocity.x, _blastVelocity.z).magnitude;
     private Vector3 _windVelocity;
     private Vector3 _platformVelocity;
     // FloatingBox 위에 올라탔을 때 그 발판의 상승/하강 속도를 담는다 (Y 성분만 사용).

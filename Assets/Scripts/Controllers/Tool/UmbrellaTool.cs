@@ -20,6 +20,7 @@ public class UmbrellaTool : BaseTool
     public bool IsOpen => _isOpen;
 
     private PlayerController _player;
+    private PlayerAnimatorController _playerAnimator;
 
     private void Start()
     {
@@ -27,20 +28,23 @@ public class UmbrellaTool : BaseTool
         _player = GetComponentInParent<PlayerController>();
         if (_player == null)
             _player = FindFirstObjectByType<PlayerController>();
+        if (_player != null)
+            _playerAnimator = _player.GetComponent<PlayerAnimatorController>();
     }
 
     // 사용 버튼을 누르는 동안 매 프레임 호출된다.
     public override void OnUseFrame()
     {
-        if (!_isOpen)
-            _isOpen = true;
+        _isOpen = true;
 
-        // 공중에 있을 때만 낙하 속도를 제한한다.
-        // 땅에서는 수직 속도를 건드리지 않아 점프/이동에 영향을 주지 않는다.
-        if (_player != null && !_player.IsGrounded)
+        bool isGliding = _player != null && !_player.IsGrounded;
+
+        if (isGliding)
             _player.SetMaxFallSpeed(glideMaxFallSpeed);
         else
             _player?.ClearMaxFallSpeed();
+
+        _playerAnimator?.SetUmbrella(true, isGliding);
     }
 
     // 사용 버튼을 뗐을 때 호출된다.
@@ -54,6 +58,8 @@ public class UmbrellaTool : BaseTool
     {
         _isOpen = false;
         _player?.ClearMaxFallSpeed();
+
+        _playerAnimator?.SetUmbrella(false, false);
     }
 
     public override void OnUnequip()
