@@ -360,17 +360,14 @@ public class FanTool : BaseTool
     }
 
     // 차징/블라스트 반동에 쓸 "바라보는 수평 방향"이다. 반동은 이 방향의 반대로 적용한다.
-    // 사이드뷰: 기존처럼 좌우(±X)만 사용한다.
-    // 탑다운: 마우스 조준 방향(FacingDirection)의 XZ 성분을 사용해 360도 어느 쪽으로든 반대로 밀려나게 한다.
+    // 사이드뷰/탑다운 모두 조준 방향(FacingDirection)의 XZ 성분을 사용해 360도 어느 쪽으로든 반대로 밀려나게 한다.
+    // (사이드뷰에서도 몸이 8방향으로 돌게 되어, 좌우만 쓰면 앞뒤를 보고 쐈을 때 엉뚱한 쪽으로 밀린다.)
     private Vector3 GetRecoilDirection()
     {
-        if (_player.CurrentViewMode == ViewMode.TopDown)
-        {
-            Vector3 dir = _player.FacingDirection;
-            dir.y = 0f;
-            if (dir.sqrMagnitude > 0.0001f)
-                return dir.normalized;
-        }
+        Vector3 dir = _player.FacingDirection;
+        dir.y = 0f;
+        if (dir.sqrMagnitude > 0.0001f)
+            return dir.normalized;
 
         // 진행 축이 기본(+X)이 아닌 통로(SideViewAxisZone)에서는 몸통이 바라보는 진행 축 방향(앞/뒤)을 쓴다.
         Vector3 axis = _player.SideViewAxis;

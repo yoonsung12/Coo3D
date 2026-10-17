@@ -71,11 +71,6 @@ public class PlayerController : MonoBehaviour
     // Inspector에서 Assets/InputSystem_Actions 에셋을 연결한다.
 
     [Title("시점 모드 설정")]
-    [SerializeField, LabelText("사이드뷰 Z 복귀 속도")]
-    private float laneReturnSpeed = 10f;
-    // 탑다운 구역에서 나와 사이드뷰로 돌아올 때, 사이드뷰 라인(Z)으로 되돌아가는 초당 최대 속도다.
-    // 값이 클수록 빨리 복귀하고, 너무 작으면 사이드뷰에서 한동안 앞뒤로 어긋나 보인다.
-
     [ReadOnly, ShowInInspector, LabelText("현재 시점 모드")]
     public ViewMode CurrentViewMode { get; private set; } = ViewMode.SideView;
 
@@ -140,19 +135,11 @@ public class PlayerController : MonoBehaviour
     // 화살표 입력이 이 값보다 커야 조준 방향으로 인정한다. 게임패드 스틱이 살짝 흔들리는 정도는 무시하기 위한 값이다.
     private const float AimInputThreshold = 0.1f;
 
-    // 사이드뷰에서 마지막으로 바라본 좌우 방향이다. +1이면 진행 축 앞(기본 +X), -1이면 뒤(-X)를 본다.
-    // 좌우 화살표를 떼도 이 방향을 유지해야 선풍기/횃불이 계속 같은 쪽으로 나간다.
-    private float _sideFacingSign = 1f;
-
     // 플레이어가 직접 한 점프로 올라가는 중인지다. 버튼을 떼서 상승을 끊는 처리는 이 점프에만 적용해,
     // 선풍기 블라스트·바람·뜨는 상자로 솟구치는 중에 버튼을 떼도 영향이 없게 한다.
     private bool _isPlayerJumpRising;
     private float _jumpHoldTimer;
     // 이번 점프에서 버튼을 누르고 상승을 유지한 시간이다.
-
-    // 사이드뷰에서 플레이어가 유지할 라인(깊이 좌표)이다. 사이드뷰 동안은 항상 이 라인으로 되돌아간다.
-    // 기본 축(+X)에서는 Z 좌표 그대로이고, -Z 통로처럼 축이 바뀌면 깊이 방향(X) 좌표가 된다.
-    private float _laneZ;
 
     // 미끄러짐을 적용할 얼음 발판이다. null이면 일반 바닥처럼 즉시 반응하는 이동을 한다.
     // 착지 중에는 발밑 얼음으로 갱신되고, 공중에서는 마지막 값을 유지해 점프 중에도 관성이 이어진다.
@@ -164,13 +151,11 @@ public class PlayerController : MonoBehaviour
     {
         _cc = GetComponent<CharacterController>();
 
-        // 사이드뷰에서는 항상 이 Z 라인으로 되돌아가므로, 씬에 배치된 위치를 첫 라인으로 삼는다.
-        // (초기값 0으로 두면 시작하자마자 Z 0으로 끌려간다. 이후 순간이동은 Respawn()이 라인을 갱신한다.)
-        _laneZ = transform.position.z;
-
-        // 씬에 배치된 캐릭터가 바라보는 좌우 방향을 처음 조준 방향으로 삼는다.
-        // 기본값(+1)으로 두면 왼쪽을 보고 시작하는 씬에서 첫 프레임에 몸이 오른쪽으로 홱 돌아간다.
-        _sideFacingSign = Vector3.Dot(transform.forward, SideViewAxis) >= 0f ? 1f : -1f;
+        // 씬에 배치된 캐릭터가 바라보는 수평 방향을 처음 조준 방향으로 삼는다.
+        // 기본값(+Z)으로 두면 화살표를 누르기 전에 쓴 선풍기/횃불이 몸과 다른 쪽(화면 안쪽)으로 나간다.
+        Vector3 startFacing = new Vector3(transform.forward.x, 0f, transform.forward.z);
+        if (startFacing.sqrMagnitude > 0.0001f)
+            FacingDirection = startFacing.normalized;
 
         // 쿼터뷰 3D에서는 계단 자동 오르기가 필요 없으므로 stepOffset을 0으로 설정한다.
         // 이 값이 0이 아니면 평지 BoxCollider 가장자리에서 캐릭터가 공중에 떠오르는 문제가 생긴다.
@@ -290,17 +275,8 @@ public class PlayerController : MonoBehaviour
         DecayRecoil();
 
         // 수평 속도 성분을 합산하고 수직 속도를 Y에 적용해 최종 이동한다.
+        // 사이드뷰에서도 ↑/↓로 앞뒤(깊이) 이동을 하므로 깊이 방향 속도를 지우지 않는다.
         Vector3 horizontal = _moveVelocity + _recoilVelocity + _blastVelocity + _windVelocity;
-
-        // 사이드뷰에서는 반동/바람 등 어떤 원인이든 깊이 방향 이동을 버려 캐릭터가 앞뒤로 벗어나지 않게 한다.
-        // 대신 사이드뷰 라인으로 돌아가는 속도만 허용한다(탑다운에서 나온 직후, 비스듬한 벽에 미끄러져 라인에서 밀린 경우).
-        // 기본 축(+X)이면 깊이 방향이 +Z라서 "horizontal.z = 복귀 속도"와 같은 계산이다.
-        if (CurrentViewMode == ViewMode.SideView)
-        {
-            Vector3 depthAxis = SideViewDepthAxis;
-            horizontal -= depthAxis * Vector3.Dot(horizontal, depthAxis);
-            horizontal += depthAxis * GetLaneReturnVelocityZ();
-        }
 
         Vector3 finalVelocity = new Vector3(horizontal.x, _verticalVelocity, horizontal.z);
         _groundIceThisMove = null;
@@ -356,21 +332,19 @@ public class PlayerController : MonoBehaviour
 
         float xInput = _isReversed ? -_moveInput.x : _moveInput.x;
 
-        // 사이드뷰는 좌우(X)만 사용하므로 W/S 입력을 무시한다.
-        // 탑다운은 카메라를 Y축으로 돌리지 않으므로 W가 항상 월드 +Z(화면 위쪽)가 되어 입력을 그대로 쓴다.
-        // 가을 디버프(방향 반전)는 탑다운에서 앞뒤 입력까지 함께 뒤집는다.
-        float zInput = 0f;
-        if (CurrentViewMode == ViewMode.TopDown)
-            zInput = _isReversed ? -_moveInput.y : _moveInput.y;
+        // ↑/↓는 두 모드 모두 앞뒤 이동에 쓴다.
+        // 탑다운은 카메라를 Y축으로 돌리지 않으므로 ↑가 항상 월드 +Z(화면 위쪽)가 되어 입력을 그대로 쓴다.
+        // 가을 디버프(방향 반전)는 앞뒤 입력까지 함께 뒤집는다.
+        float zInput = _isReversed ? -_moveInput.y : _moveInput.y;
 
         // X = 좌우
         // Z = 앞뒤
         Vector3 moveDir = new Vector3(xInput, 0f, zInput);
 
-        // 사이드뷰에서는 좌우 입력을 진행 축 방향으로 쓴다. 기본 축(+X)이면 위와 같은 값이고,
-        // -Z 통로에서는 D키가 통로 안쪽(-Z)으로 나아가게 된다.
+        // 사이드뷰에서는 좌우 입력을 진행 축 방향으로, ↑/↓ 입력을 깊이 방향(카메라가 바라보는 쪽 = 화면 안쪽)으로 쓴다.
+        // 기본 축(+X)이면 깊이 방향이 +Z라서 위와 같은 값이고, -Z 통로에서는 통로 기준 좌우/앞뒤로 바뀐다.
         if (CurrentViewMode == ViewMode.SideView)
-            moveDir = SideViewAxis * xInput;
+            moveDir = SideViewAxis * xInput + SideViewDepthAxis * zInput;
 
         // 대각선 이동이 더 빨라지는 것 방지
         if (moveDir.sqrMagnitude > 1f)
@@ -409,88 +383,37 @@ public class PlayerController : MonoBehaviour
         _moveVelocity = Vector3.MoveTowards(_moveVelocity, targetVelocity, rate * Time.deltaTime);
     }
 
+    // 사이드뷰/탑다운 모두 화살표로 이동하는 방향(8방향)을 바라본다. 입력이 없으면 마지막 방향을 유지한다.
+    // 몸통을 360도 돌리고, 선풍기/횃불도 이 방향(FacingDirection)으로 나간다.
     private void HandleFacing()
     {
-        if (CurrentViewMode == ViewMode.TopDown)
-        {
-            HandleTopDownFacing();
-            return;
-        }
-
-        // 사이드뷰: 좌우 화살표로 몸 방향(진행 축의 앞/뒤)을 정하고, 위/아래 화살표로 위아래 조준을 더한다.
-        // 가을 디버프(방향 반전) 중에는 이동 방향(HandleMove)과 똑같이 좌우를 뒤집어, 움직이는 쪽을 바라보게 한다.
-        float xInput = _isReversed ? -_moveInput.x : _moveInput.x;
-        float yInput = _moveInput.y;
-
-        // 좌우를 누르지 않을 때도 마지막으로 바라본 방향을 유지해야 하므로 부호만 기억해 둔다.
-        if (Mathf.Abs(xInput) > AimInputThreshold)
-            _sideFacingSign = Mathf.Sign(xInput);
-
-        Vector3 bodyDir = SideViewAxis * _sideFacingSign;
-
-        // 위/아래를 누르면 조준에 Y 성분을 넣는다.
-        // 좌우도 함께 누르면 45도 대각선, 위/아래만 누르면 바로 위/아래를 조준한다.
-        Vector3 aimDir = bodyDir;
-        if (Mathf.Abs(yInput) > AimInputThreshold)
-        {
-            Vector3 vertical = Vector3.up * Mathf.Sign(yInput);
-            aimDir = Mathf.Abs(xInput) > AimInputThreshold ? (bodyDir + vertical).normalized : vertical;
-        }
-
-        FacingDirection = aimDir;
-        // FacingDirection에 Y 성분이 포함되어 선풍기/횃불이 위아래 각도로도 작동한다.
-
-        // 캐릭터 몸통은 진행 축의 앞/뒤 방향만 전환한다. 위아래를 조준해도 몸은 기울이지 않는다.
-        // 카메라 쪽(깊이 방향)을 바라보게 하면 등/정면이 뒤바뀌어 Z축 회전처럼 보이는 문제가 생긴다.
-        transform.rotation = Quaternion.LookRotation(bodyDir, Vector3.up);
-    }
-
-    private void HandleTopDownFacing()
-    {
-        // 탑다운: 화살표로 이동하는 방향(8방향)을 바라본다. 입력이 없으면 마지막 방향을 유지한다.
         // HandleMove와 같은 규칙으로 가을 디버프(방향 반전) 중에는 앞뒤/좌우를 모두 뒤집는다.
         float xInput = _isReversed ? -_moveInput.x : _moveInput.x;
         float zInput = _isReversed ? -_moveInput.y : _moveInput.y;
-        Vector3 dir = new Vector3(xInput, 0f, zInput);
-        // Y 성분은 0으로 두어 바닥과 평행한 XZ 방향만 쓴다. 탑다운에선 위아래 조준을 쓰지 않는다.
+
+        // 탑다운은 카메라가 Y축으로 돌지 않으므로 화살표를 월드 X/Z에 그대로 대응한다.
+        // 사이드뷰는 HandleMove와 똑같이 좌우=진행 축, ↑/↓=깊이 방향(화면 안쪽/바깥쪽)으로 바꿔서,
+        // -Z 통로처럼 카메라가 돌아간 구간에서도 누른 화살표 쪽(화면 기준)을 바라보게 한다.
+        Vector3 dir = CurrentViewMode == ViewMode.SideView
+            ? SideViewAxis * xInput + SideViewDepthAxis * zInput
+            : new Vector3(xInput, 0f, zInput);
+        // Y 성분은 0으로 두어 바닥과 평행한 방향만 쓴다. 위아래 조준은 쓰지 않는다.
 
         if (dir.sqrMagnitude > AimInputThreshold * AimInputThreshold)
         {
             FacingDirection = dir.normalized;
-            // 사이드뷰와 달리 몸통을 조준 방향으로 360도 자유롭게 돌린다.
             transform.rotation = Quaternion.LookRotation(FacingDirection, Vector3.up);
-
-            // 사이드뷰로 돌아갔을 때 탑다운에서 마지막으로 바라보던 좌우 방향을 이어받는다.
-            float side = Vector3.Dot(FacingDirection, SideViewAxis);
-            if (Mathf.Abs(side) > 0.01f)
-                _sideFacingSign = Mathf.Sign(side);
         }
     }
 
-    // 사이드뷰 동안 항상 호출되어 Z 라인을 유지한다.
-    // 탑다운에서 막 나왔을 때뿐 아니라, 비스듬한 콜라이더(부서진 나무 등)에 비비다가
-    // CharacterController의 미끄러짐 처리로 Z가 밀려난 경우에도 다음 이동에서 라인으로 되돌린다.
-    private float GetLaneReturnVelocityZ()
-    {
-        // 깊이 방향으로 라인까지 남은 거리다. 기본 축이면 깊이 방향이 +Z라서 "라인Z - 현재Z"와 같다.
-        float deltaZ = _laneZ - Vector3.Dot(transform.position, SideViewDepthAxis);
-        if (Mathf.Abs(deltaZ) < 0.01f) return 0f;
-
-        // 남은 거리를 이번 프레임 안에 채우는 속도를 구하되, laneReturnSpeed를 넘지 않게 제한한다.
-        // Time.deltaTime으로 나누는 이유: 최종 속도에 다시 deltaTime이 곱해지므로 도착 지점을 지나치지 않게 하기 위해서다.
-        return Mathf.Clamp(deltaZ / Time.deltaTime, -laneReturnSpeed, laneReturnSpeed);
-    }
-
     // ViewModeZone이 구역 진입/이탈 시 호출한다.
-    // laneZ: 사이드뷰로 돌아갈 때 복귀할 Z 위치다. 탑다운으로 전환할 때는 사용하지 않는다.
+    // laneZ: 예전에 사이드뷰 Z 라인 복귀에 쓰던 값이다. 사이드뷰에서도 앞뒤로 자유롭게 움직이게 되면서 지금은 쓰지 않지만,
+    // 여러 구역/퍼즐 스크립트가 이 형태로 호출하므로 매개변수는 그대로 둔다.
     public void SetViewMode(ViewMode mode, float laneZ)
     {
         if (CurrentViewMode == mode) return;
 
         CurrentViewMode = mode;
-        _laneZ = laneZ;
-        // 사이드뷰로 돌아오면 Update의 GetLaneReturnVelocityZ()가 이 라인으로 복귀시킨다. transform.position을 직접 바꾸지 않고
-        // CharacterController.Move()로 이동시키므로 벽을 뚫고 순간이동하지 않는다.
 
         // 이전 모드에서 받은 선풍기 반동이 새 모드에서 엉뚱한 방향으로 이어지지 않게 초기화한다.
         _recoilVelocity = Vector3.zero;
@@ -500,12 +423,9 @@ public class PlayerController : MonoBehaviour
     }
 
     // SideViewAxisZone이 구역 안에서 매 물리 프레임 호출하고, 구역을 나가면 기본 축(+X)으로 되돌릴 때도 호출한다.
-    // axis: 사이드뷰에서 D키로 나아갈 수평 방향. laneDepth: 깊이 방향으로 고정할 라인 좌표.
+    // axis: 사이드뷰에서 →키로 나아갈 수평 방향. laneDepth: 예전 라인 고정용 값으로 지금은 쓰지 않는다(호출 형태 유지용).
     public void SetSideViewAxis(Vector3 axis, float laneDepth)
     {
-        _laneZ = laneDepth;
-        // 라인은 매번 갱신해, 다른 구역(ViewModeZone 등)이 같은 프레임에 덮어쓴 라인도 바로잡는다.
-
         if (SideViewAxis == axis) return;
 
         SideViewAxis = axis;
@@ -554,9 +474,6 @@ public class PlayerController : MonoBehaviour
 
         float laneDepth = Vector3.Dot(transform.position, SideViewDepthAxis);
         SetViewMode(ViewMode.SideView, axisZone != null ? axisZone.LaneDepth : laneDepth);
-        // 구역 밖으로 리스폰했다면 그 위치가 곧 사이드뷰 라인이므로, 이전 라인으로 끌려가지 않게 라인을 갱신한다.
-        // (이미 사이드뷰였다면 SetViewMode가 무시되므로 여기서 직접 정리한다.)
-        _laneZ = axisZone != null ? axisZone.LaneDepth : laneDepth;
     }
 
     // 테스트 버튼으로 탑다운에 들어간 순간의 Z를 기억해, 사이드뷰 테스트 버튼으로 같은 라인에 돌아오게 한다.

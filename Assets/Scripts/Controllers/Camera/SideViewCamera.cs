@@ -3,7 +3,8 @@ using Sirenix.OdinInspector;
 using UnityEngine;
 
 // 사이드뷰 시점에서 플레이어의 X축/Y축 이동을 따라가는 카메라 추적 스크립트다.
-// Z는 고정 offset을 유지하고 X/Y는 플레이어 위치 기준 상대 offset을 부드럽게 추적한다.
+// X/Y는 플레이어 위치 기준 상대 offset을 부드럽게 추적하고, Z는 "플레이어 Z 따라가기"에 따라 고정 또는 추적한다.
+// 사이드뷰에서도 플레이어가 앞뒤로 움직이므로 모든 씬에서 "플레이어 Z 따라가기"를 켜서 쓴다.
 public class SideViewCamera : MonoBehaviour
 {
     [Title("추적 대상")]
@@ -38,6 +39,11 @@ public class SideViewCamera : MonoBehaviour
     private float sideDistanceZ = -10f;
     // 플레이어 Z에 더해지는 값이다. 음수이며 절댓값이 클수록 카메라가 플레이어로부터 더 멀어진다.
     // SideViewAxisZone으로 진행 축이 바뀐 통로에서는 이 설정과 상관없이 이 값을 통로 옆 거리로 사용한다.
+
+    [SerializeField, LabelText("사이드뷰 내려다보는 각도"), Range(0f, 60f)]
+    private float sidePitch = 31f;
+    // 사이드뷰에서 카메라가 아래로 기울어진 각도다. 0이면 수평으로 옆에서 보고,
+    // 클수록 위에서 내려다봐서 앞뒤(Z) 이동이 화면에서 잘 보인다. Y 오프셋/Z 거리와 함께 맞춰야 플레이어가 화면 안에 들어온다.
 
     [SerializeField, LabelText("추적 속도")]
     private float followSpeed = 8f;
@@ -105,8 +111,11 @@ public class SideViewCamera : MonoBehaviour
 
     private void Start()
     {
-        _sideRotation = transform.rotation;
+        // 씬에 배치된 방향(Y 회전)은 유지하고, 기울기만 sidePitch로 정한다.
+        // 씬마다 카메라 회전을 손으로 맞추지 않아도 모든 씬이 같은 내려다보는 각도를 쓰게 하기 위해서다.
+        _sideRotation = Quaternion.Euler(sidePitch, transform.eulerAngles.y, 0f);
         _currentSideRotation = _sideRotation;
+        transform.rotation = _sideRotation;
 
         // 시점 모드는 PlayerController가 관리하고, 카메라는 이벤트를 받아 따라 바뀐다.
         // 이렇게 하면 구역 트리거는 플레이어에게만 알리면 되고 카메라를 따로 연결할 필요가 없다.

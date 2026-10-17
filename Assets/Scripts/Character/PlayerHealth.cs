@@ -60,7 +60,13 @@ public class PlayerHealth : CharacterBase
 
     [SerializeField, LabelText("깜빡임 간격")]
     private float blinkInterval = 0.1f;
-    // 무적 시간 동안 이 간격으로 visualBody를 껐다 켜서 점멸시킨다.
+    // 무적 시간 동안 이 간격으로 visualBody와 깜빡일 렌더러들을 껐다 켜서 점멸시킨다.
+    // 값이 작을수록 빠르게 깜빡인다.
+
+    [SerializeField, LabelText("깜빡일 렌더러 목록")]
+    private Renderer[] blinkRenderers;
+    // 무적 시간 동안 깜빡일 실제 캐릭터 모델의 렌더러를 연결한다(예: Player_Idle/char1의 SkinnedMeshRenderer).
+    // visualBody(예전 임시 캡슐)는 지금 꺼져 있어서, 이 목록이 비어 있으면 깜빡임이 화면에 보이지 않는다.
 
     // 체력이 바뀔 때마다 발행된다. UI(PlayerHealthUI)가 이 이벤트를 구독해 체력바를 갱신한다.
     public event Action<float, float> OnHealthChanged;
@@ -174,15 +180,37 @@ public class PlayerHealth : CharacterBase
             if (visualBody != null)
                 visualBody.enabled = !visualBody.enabled;
 
+            _blinkVisible = !_blinkVisible;
+            SetBlinkRenderersVisible(_blinkVisible);
+
             yield return new WaitForSeconds(blinkInterval);
             elapsed += blinkInterval;
         }
 
         if (visualBody != null)
             visualBody.enabled = true;
+        SetBlinkRenderersVisible(true);
 
         _isInvincible = false;
         _invincibleRoutine = null;
+    }
+
+    private bool _blinkVisible = true;
+    // 깜빡일 렌더러들이 지금 보이는 상태인지다. 렌더러마다 따로 뒤집지 않고 이 값 하나로 맞춰,
+    // 목록 안의 렌더러가 서로 엇갈려 깜빡이지 않게 한다.
+
+    // 깜빡일 렌더러 목록을 한꺼번에 켜거나 끈다. 무적이 끝나거나 사망/리스폰으로 깜빡임이 끊길 때는
+    // 반드시 true로 호출해 캐릭터가 꺼진 채로 남지 않게 한다.
+    private void SetBlinkRenderersVisible(bool visible)
+    {
+        _blinkVisible = visible;
+        if (blinkRenderers == null) return;
+
+        foreach (Renderer r in blinkRenderers)
+        {
+            if (r != null)
+                r.enabled = visible;
+        }
     }
 
     private void PlayHitEffect()
@@ -234,6 +262,7 @@ public class PlayerHealth : CharacterBase
         _isInvincible = false;
         if (visualBody != null)
             visualBody.enabled = true;
+        SetBlinkRenderersVisible(true);
 
         // PlayerController를 비활성화해 더 이상 이동/점프 입력을 받지 않게 한다.
         if (_playerController != null)
@@ -271,6 +300,7 @@ public class PlayerHealth : CharacterBase
             visualBody.enabled = true;
             visualBody.material.SetColor("_BaseColor", _originalColor);
         }
+        SetBlinkRenderersVisible(true);
 
         if (_playerController != null)
             _playerController.enabled = true;
@@ -350,6 +380,7 @@ public class PlayerHealth : CharacterBase
             visualBody.enabled = true;
             visualBody.material.SetColor("_BaseColor", _originalColor);
         }
+        SetBlinkRenderersVisible(true);
 
         if (_playerController != null)
             _playerController.enabled = true;
