@@ -109,6 +109,17 @@ public class SideViewCamera : MonoBehaviour
 
     private Tween _shakeTween;
 
+    [ReadOnly, ShowInInspector, LabelText("탑다운 카메라 방향 (Y 회전)")]
+    private float _topDownYaw;
+    // 탑다운에서 카메라가 바라보는 방향이다. PlayerController.TopDownYaw를 DOTween으로 부드럽게 따라간다.
+    // 기본 0이면 기존처럼 +Z를 바라보며 플레이어 뒤(-Z)쪽 위에서 내려다본다.
+
+    private Tween _yawTween;
+    // TopDownYawZone을 드나들 때 탑다운 카메라가 도는 연출이다. 다시 바뀌면 끊고 새로 시작한다.
+
+    // 탑다운 시점의 카메라 회전이다. 내려다보는 각도(topDownPitch)에 방향(_topDownYaw)을 더한다.
+    private Quaternion TopDownRotation => Quaternion.Euler(topDownPitch, _topDownYaw, 0f);
+
     private void Start()
     {
         // 씬에 배치된 방향(Y 회전)은 유지하고, 기울기만 sidePitch로 정한다.
@@ -125,7 +136,28 @@ public class SideViewCamera : MonoBehaviour
         {
             _player.OnViewModeChanged += HandleViewModeChanged;
             _player.OnSideViewAxisChanged += HandleSideViewAxisChanged;
+            _player.OnTopDownYawChanged += HandleTopDownYawChanged;
+            _topDownYaw = _player.TopDownYaw;
         }
+    }
+
+    // 탑다운 카메라 방향이 바뀌면 현재 각도에서 새 각도까지 가까운 쪽으로 돌린다.
+    // 사이드뷰 중(_topDownBlend가 0)에는 값만 바꿔 두고, 회전은 탑다운으로 전환될 때 반영된다.
+    private void HandleTopDownYawChanged(float yaw)
+    {
+        _yawTween?.Kill();
+        // 구역 경계를 오가며 방향이 연달아 바뀌어도 현재 각도에서 새 목표로 자연스럽게 이어지게 이전 Tween을 끊는다.
+
+        // DeltaAngle로 최단 회전량을 구해, 예를 들어 350도 → 10도를 340도 거꾸로 돌지 않고 20도만 돌게 한다.
+        float targetYaw = _topDownYaw + Mathf.DeltaAngle(_topDownYaw, yaw);
+
+        _yawTween = DOTween.To(() => _topDownYaw, v =>
+            {
+                _topDownYaw = v;
+                if (_topDownBlend > 0f)
+                    transform.rotation = Quaternion.Slerp(_currentSideRotation, TopDownRotation, _topDownBlend);
+            }, targetYaw, transitionDuration)
+            .SetEase(transitionEase);
     }
 
     // 진행 축이 바뀌면, 원래 사이드뷰 회전을 Y축으로 돌려 새 깊이 방향(진행 축 × 위쪽)을 바라보게 한다.
@@ -136,7 +168,6 @@ public class SideViewCamera : MonoBehaviour
         float yaw = Vector3.SignedAngle(Vector3.forward, depthAxis, Vector3.up);
         Quaternion from = _currentSideRotation;
         Quaternion to = Quaternion.AngleAxis(yaw, Vector3.up) * _sideRotation;
-        Quaternion topRotation = Quaternion.Euler(topDownPitch, 0f, 0f);
 
         _axisTween?.Kill();
         // 통로 입구를 오가며 축이 연달아 바뀌어도 현재 각도에서 새 목표로 자연스럽게 이어지게 이전 Tween을 끊는다.
@@ -145,7 +176,7 @@ public class SideViewCamera : MonoBehaviour
             {
                 _currentSideRotation = Quaternion.Slerp(from, to, v);
                 // 탑다운 전환이 섞여 있는 중이면 그 비율도 함께 반영해 두 연출이 서로 덮어쓰지 않게 한다.
-                transform.rotation = Quaternion.Slerp(_currentSideRotation, topRotation, _topDownBlend);
+                transform.rotation = Quaternion.Slerp(_currentSideRotation, TopDownRotation, _topDownBlend);
             }, 1f, transitionDuration)
             .SetEase(transitionEase);
     }
@@ -153,7 +184,6 @@ public class SideViewCamera : MonoBehaviour
     private void HandleViewModeChanged(ViewMode mode)
     {
         float targetBlend = mode == ViewMode.TopDown ? 1f : 0f;
-        Quaternion topRotation = Quaternion.Euler(topDownPitch, 0f, 0f);
 
         _blendTween?.Kill();
         // 전환 도중 다시 구역을 드나들어도 현재 값에서 새 목표로 자연스럽게 이어지게 이전 Tween을 끊는다.
@@ -163,7 +193,8 @@ public class SideViewCamera : MonoBehaviour
                 _topDownBlend = v;
                 // 회전은 플레이어 위치와 무관하므로 Tween이 진행되는 동안에만 갱신한다.
                 // 전환이 끝난 뒤에는 회전을 건드리지 않아 기존 사이드뷰 동작과 똑같이 유지된다.
-                transform.rotation = Quaternion.Slerp(_currentSideRotation, topRotation, v);
+                transform.rotation = Quaternion.Slerp(_currentSideRotation, TopDownRotation, v);
+                // TopDownRotation을 매번 새로 읽어, 방향(_topDownYaw) 전환 Tween이 동시에 돌아도 서로 덮어쓰지 않게 한다.
             }, targetBlend, transitionDuration)
             .SetEase(transitionEase);
     }
@@ -211,11 +242,13 @@ public class SideViewCamera : MonoBehaviour
         if (_topDownBlend > 0f)
         {
             float pitchRad = topDownPitch * Mathf.Deg2Rad;
-            Vector3 topDownPosition = followPosition + new Vector3(
+            Vector3 topDownOffset = new Vector3(
                 0f,
                 Mathf.Sin(pitchRad) * topDownDistance,
                 -Mathf.Cos(pitchRad) * topDownDistance
             );
+            // 기본 방향(+Z를 바라봄) 기준 오프셋을 _topDownYaw만큼 Y축으로 돌려, 바라보는 방향의 반대편 위에 카메라를 둔다.
+            Vector3 topDownPosition = followPosition + Quaternion.Euler(0f, _topDownYaw, 0f) * topDownOffset;
             targetPosition = Vector3.Lerp(targetPosition, topDownPosition, _topDownBlend);
         }
 
@@ -235,6 +268,7 @@ public class SideViewCamera : MonoBehaviour
         _shakeTween?.Kill();
         _blendTween?.Kill();
         _axisTween?.Kill();
+        _yawTween?.Kill();
         _focusSequence?.Kill();
         // 씬 전환 등으로 카메라가 파괴될 때 남은 전환 Tween이 파괴된 transform에 접근하지 않게 정리한다.
 
@@ -242,6 +276,7 @@ public class SideViewCamera : MonoBehaviour
         {
             _player.OnViewModeChanged -= HandleViewModeChanged;
             _player.OnSideViewAxisChanged -= HandleSideViewAxisChanged;
+            _player.OnTopDownYawChanged -= HandleTopDownYawChanged;
         }
     }
 

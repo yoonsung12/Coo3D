@@ -4,7 +4,7 @@ using UnityEngine.UI;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-// 고드름 아래 바닥에 정해진 불꽃놀이 설치 자리다. 범위 안에서 Interact(E)를 누르면
+// 고드름 아래 바닥에 정해진 불꽃놀이 설치 자리다. 범위 안에서 Interact(Space 꾹)를 누르면
 // 가방의 불꽃놀이를 하나 써서 발사대(Firework)를 보이게 한다. 한 번 설치하면 더 이상 반응하지 않는다.
 // VendingMachine과 같은 방식(Trigger 범위 + Player 맵의 Interact 액션 + 월드 프롬프트)을 따른다.
 [RequireComponent(typeof(Collider))]
@@ -30,7 +30,7 @@ public class FireworkLaunchSpot : MonoBehaviour
 
     [SerializeField, LabelText("프롬프트 텍스트")]
     private Text promptText;
-    // "E: 불꽃놀이 설치 (보유 N)" 또는 "불꽃놀이가 필요하다"를 보여준다.
+    // "Space(꾹): 불꽃놀이 설치 (보유 N)" 또는 "불꽃놀이가 필요하다"를 보여준다. Interact 액션은 Space 꾹 누르기(Hold)다.
     // 프로젝트의 다른 프롬프트(EntrancePortal 등)와 같은 UI Text를 쓴다. TMP 기본 폰트에는 한글이 없기 때문이다.
 
     [SerializeField, LabelText("프롬프트 페이드 시간")]
@@ -125,7 +125,7 @@ public class FireworkLaunchSpot : MonoBehaviour
         if (promptText == null) return;
 
         int count = FireworkBag.Instance != null ? FireworkBag.Instance.Count : 0;
-        promptText.text = count > 0 ? $"E: 불꽃놀이 설치 (보유 {count})" : "불꽃놀이가 필요하다";
+        promptText.text = count > 0 ? $"Space(꾹): 불꽃놀이 설치 (보유 {count})" : "불꽃놀이가 필요하다";
     }
 
     private void SetPromptVisible(bool visible)

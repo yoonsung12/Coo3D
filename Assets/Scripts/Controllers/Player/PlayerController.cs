@@ -89,6 +89,14 @@ public class PlayerController : MonoBehaviour
     // 기본 축(+X)이면 +Z가 되어, 기존처럼 Z 좌표를 라인으로 고정하는 것과 똑같이 동작한다.
     private Vector3 SideViewDepthAxis => Vector3.Cross(SideViewAxis, Vector3.up);
 
+    // 탑다운 카메라가 바라보는 방향(Y 회전 각도)이다. 기본은 0(+Z)이고, 박스 퍼즐처럼 다른 방향에서
+    // 내려다보는 구간에서는 TopDownYawZone이 바꾼다. 탑다운 화살표 입력도 이 각도만큼 돌려서 화면 기준으로 움직이게 한다.
+    [ReadOnly, ShowInInspector, LabelText("탑다운 카메라 방향 (Y 회전)")]
+    public float TopDownYaw { get; private set; }
+
+    // 탑다운 카메라 방향이 바뀔 때 알린다. SideViewCamera가 구독해 탑다운 카메라를 함께 돌린다.
+    public event System.Action<float> OnTopDownYawChanged;
+
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("접지 여부")]
     public bool IsGrounded { get; private set; } = true;
@@ -115,6 +123,11 @@ public class PlayerController : MonoBehaviour
     private Vector3 _platformVelocity;
     // FloatingBox 위에 올라탔을 때 그 발판의 상승/하강 속도를 담는다 (Y 성분만 사용).
     private float _verticalVelocity;
+
+    private Vector3 _groundNormal = Vector3.up;
+    // 마지막으로 서 있던 바닥의 법선이다. 경사를 내려갈 때 발이 뜨지 않도록 누르는 힘을 계산하는 데 쓴다.
+    private Vector3 _groundNormalThisMove;
+    // 이번 Move() 도중 닿은 바닥의 법선이다. Move()가 끝난 뒤 접지 중이면 _groundNormal에 반영한다.
 
     // 선풍기 차징 중 이동속도를 줄이기 위한 배율 (기본 1.0, 차징 시 0.3)
     private float _speedMultiplier = 1f;
@@ -278,12 +291,21 @@ public class PlayerController : MonoBehaviour
         // 사이드뷰에서도 ↑/↓로 앞뒤(깊이) 이동을 하므로 깊이 방향 속도를 지우지 않는다.
         Vector3 horizontal = _moveVelocity + _recoilVelocity + _blastVelocity + _windVelocity;
 
+        // 경사를 내려가는 중이면 내려가는 속도만큼 더 눌러 발이 뜨지 않게 한다.
+        // 고정값(-2)만으로는 계단/에스컬레이터 경사(23~33도)를 이동속도 5로 내려갈 때 매 프레임 살짝 떠서,
+        // 접지 판정이 깜빡이며 낙하 애니메이션이 반복 재생됐다. 평평한 바닥에서는 기존과 똑같이 -2를 유지한다.
+        if (IsGrounded && _verticalVelocity < 0f)
+            _verticalVelocity = Mathf.Min(_verticalVelocity, -GetGroundStickSpeed(horizontal));
+
         Vector3 finalVelocity = new Vector3(horizontal.x, _verticalVelocity, horizontal.z);
         _groundIceThisMove = null;
+        _groundNormalThisMove = Vector3.up;
         _cc.Move(finalVelocity * Time.deltaTime);
 
         // Move() 호출 이후 접지 상태를 갱신해 같은 프레임 내 다른 스크립트에 최신 값을 제공한다.
         IsGrounded = _cc.isGrounded;
+        if (IsGrounded)
+            _groundNormal = _groundNormalThisMove;
 
         // 점프 중 천장에 머리가 닿으면 상승을 끊는다. 누르는 동안 상승 속도를 유지하므로,
         // 이 처리가 없으면 버튼을 떼거나 유지 시간이 끝날 때까지 천장에 붙어 있게 된다.
@@ -306,6 +328,10 @@ public class PlayerController : MonoBehaviour
         // 법선이 위를 향하면(0.5 이상 ≒ 60도 이하 경사) 바닥, 아니면 벽/천장으로 본다.
         if (hit.normal.y > 0.5f)
         {
+            // 한 번의 Move()에서 바닥에 여러 번 닿으면 가장 가파른 면을 기억해, 경사 접지 힘이 모자라지 않게 한다.
+            if (hit.normal.y < _groundNormalThisMove.y)
+                _groundNormalThisMove = hit.normal;
+
             if (hit.collider.TryGetComponent(out IcePlatform ice) && ice.IsSlippery)
                 _groundIceThisMove = ice;
             return;
@@ -318,6 +344,20 @@ public class PlayerController : MonoBehaviour
         float intoWall = Vector3.Dot(_moveVelocity, wallNormal);
         if (intoWall < 0f)
             _moveVelocity -= wallNormal * intoWall;
+    }
+
+    // 접지 중 아래로 누를 속도(양수)를 구한다. 평평한 바닥이면 기본 2, 경사를 내려가는 중이면
+    // "내리막 방향 수평 속도 × tan(경사각)"만큼 더해 경사를 따라 내려가는 높이 변화를 따라잡는다.
+    private float GetGroundStickSpeed(Vector3 horizontal)
+    {
+        const float baseStick = 2f;
+        if (_groundNormal.y >= 0.999f) return baseStick;
+
+        // 법선의 수평 성분은 내리막 쪽을 가리킨다. 수평 속도와 내적하면 내리막 성분(× sin)이 되고,
+        // 법선 y(= cos)로 나누면 수평 속도 × tan이 되어 초당 내려가야 하는 높이가 된다. 오르막이면 0 이하라 더하지 않는다.
+        Vector3 downhill = new Vector3(_groundNormal.x, 0f, _groundNormal.z);
+        float drop = Vector3.Dot(horizontal, downhill) / _groundNormal.y;
+        return baseStick + Mathf.Max(0f, drop);
     }
 
     private void HandleMove()
@@ -333,13 +373,13 @@ public class PlayerController : MonoBehaviour
         float xInput = _isReversed ? -_moveInput.x : _moveInput.x;
 
         // ↑/↓는 두 모드 모두 앞뒤 이동에 쓴다.
-        // 탑다운은 카메라를 Y축으로 돌리지 않으므로 ↑가 항상 월드 +Z(화면 위쪽)가 되어 입력을 그대로 쓴다.
         // 가을 디버프(방향 반전)는 앞뒤 입력까지 함께 뒤집는다.
         float zInput = _isReversed ? -_moveInput.y : _moveInput.y;
 
         // X = 좌우
         // Z = 앞뒤
-        Vector3 moveDir = new Vector3(xInput, 0f, zInput);
+        // 탑다운은 카메라 방향(TopDownYaw)만큼 입력을 돌려 ↑가 항상 화면 위쪽이 되게 한다. 기본 0도면 월드 X/Z 그대로다.
+        Vector3 moveDir = Quaternion.Euler(0f, TopDownYaw, 0f) * new Vector3(xInput, 0f, zInput);
 
         // 사이드뷰에서는 좌우 입력을 진행 축 방향으로, ↑/↓ 입력을 깊이 방향(카메라가 바라보는 쪽 = 화면 안쪽)으로 쓴다.
         // 기본 축(+X)이면 깊이 방향이 +Z라서 위와 같은 값이고, -Z 통로에서는 통로 기준 좌우/앞뒤로 바뀐다.
@@ -391,12 +431,12 @@ public class PlayerController : MonoBehaviour
         float xInput = _isReversed ? -_moveInput.x : _moveInput.x;
         float zInput = _isReversed ? -_moveInput.y : _moveInput.y;
 
-        // 탑다운은 카메라가 Y축으로 돌지 않으므로 화살표를 월드 X/Z에 그대로 대응한다.
+        // 탑다운은 HandleMove와 똑같이 카메라 방향(TopDownYaw)만큼 돌린 화살표 방향을 바라본다.
         // 사이드뷰는 HandleMove와 똑같이 좌우=진행 축, ↑/↓=깊이 방향(화면 안쪽/바깥쪽)으로 바꿔서,
         // -Z 통로처럼 카메라가 돌아간 구간에서도 누른 화살표 쪽(화면 기준)을 바라보게 한다.
         Vector3 dir = CurrentViewMode == ViewMode.SideView
             ? SideViewAxis * xInput + SideViewDepthAxis * zInput
-            : new Vector3(xInput, 0f, zInput);
+            : Quaternion.Euler(0f, TopDownYaw, 0f) * new Vector3(xInput, 0f, zInput);
         // Y 성분은 0으로 두어 바닥과 평행한 방향만 쓴다. 위아래 조준은 쓰지 않는다.
 
         if (dir.sqrMagnitude > AimInputThreshold * AimInputThreshold)
@@ -437,6 +477,15 @@ public class PlayerController : MonoBehaviour
         OnSideViewAxisChanged?.Invoke(axis);
     }
 
+    // TopDownYawZone이 구역 안에서 매 물리 프레임 호출하고, 구역을 나가면 기본 방향(0도)으로 되돌릴 때도 호출한다.
+    public void SetTopDownYaw(float yaw)
+    {
+        if (Mathf.Approximately(TopDownYaw, yaw)) return;
+
+        TopDownYaw = yaw;
+        OnTopDownYawChanged?.Invoke(yaw);
+    }
+
     // PlayerHealth.Respawn()이 순간이동 직후 호출한다.
     // CharacterController를 끈 채 옮기면 트리거 이탈 이벤트가 오지 않으므로, 현재 위치가 ViewModeZone 안인지 직접 검사한다.
     public void SyncViewModeToPosition()
@@ -450,6 +499,20 @@ public class PlayerController : MonoBehaviour
         // QueryTriggerInteraction.Collide: ViewModeZone은 트리거 콜라이더라 이 옵션이 있어야 검사에 잡힌다.
         Vector3 center = transform.TransformPoint(_cc.center);
         Collider[] hits = Physics.OverlapSphere(center, 0.1f, ~0, QueryTriggerInteraction.Collide);
+
+        // 리스폰 위치가 TopDownYawZone 안이면 그 방향을, 아니면 기본 방향(0도)을 쓴다.
+        // 트리거 이벤트가 오지 않으므로 시점 모드보다 먼저 여기서 맞춘다.
+        float yaw = 0f;
+        foreach (Collider hit in hits)
+        {
+            TopDownYawZone yawZone = hit.GetComponent<TopDownYawZone>();
+            if (yawZone != null)
+            {
+                yaw = yawZone.Yaw;
+                break;
+            }
+        }
+        SetTopDownYaw(yaw);
 
         SideViewAxisZone axisZone = null;
         foreach (Collider hit in hits)

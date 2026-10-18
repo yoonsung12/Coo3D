@@ -4,7 +4,7 @@ using UnityEngine.InputSystem;
 using Sirenix.OdinInspector;
 
 // 플레이어의 도구 전환과 사용을 관리한다.
-// WeaponWheel(Tab키)로 도구를 선택하고, 마우스 좌클릭으로 사용한다.
+// WeaponWheel(Z키)로 도구를 선택하고, X키로 사용한다. 선풍기는 Shift를 누른 채 X를 꾹 누르면 충전한다.
 // 도구가 없을 때 좌클릭은 공격으로 라우팅된다.
 public class ToolManager : MonoBehaviour
 {

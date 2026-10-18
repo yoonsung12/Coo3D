@@ -62,7 +62,7 @@ Sprite/Tilemap 관련 코드나 에셋은 기본적으로 3D Mesh/Prefab 기준�
 | 조준 | 화살표, XY 평면 (←/→ 몸 방향 + ↑/↓ 위아래·대각선, 몸통은 ±90°만 회전) | 화살표, 이동 방향(XZ 8방향)을 바라봄 (몸통 360° 회전) |
 | 카메라 | `SideViewCamera` 사이드뷰 추적 | 같은 `SideViewCamera`의 탑다운 모드 (DOTween 전환) |
 
-* 키보드 조작: 화살표 이동/조준, C 점프, X 공격·도구 사용, Z 누른 채 화살표로 도구 선택(↑ 공격 ← 선풍기 ↓ 우산 → 횃불), A 깃털, Space(꾹) 상호작용, Esc 일시정지. 마우스와 선풍기 충전(Shift)은 쓰지 않는다.
+* 키보드 조작: 화살표 이동/조준, C 점프, X 공격·도구 사용, Z 누른 채 화살표로 도구 선택(↑ 공격 ← 선풍기 ↓ 우산 → 횃불), A 깃털, Space(꾹) 상호작용, Esc 일시정지, Shift 누른 채 X 꾹 선풍기 충전(떼면 블라스트). 마우스는 쓰지 않는다.
 * 현재 모드는 `PlayerController.CurrentViewMode`로 판단하고, 모드 변경은 `PlayerController.SetViewMode()`를 통해서만 한다. 카메라는 `OnViewModeChanged` 이벤트로 자동으로 따라간다.
 * 플레이어 순간이동은 반드시 `PlayerHealth.Respawn()`을 거친다. 이 메서드가 이동 후 `SyncViewModeToPosition()`으로 시점을 맞춘다. CharacterController를 끈 채 옮기면 `OnTriggerExit`가 오지 않기 때문이다.
 * `SideViewCamera`는 보스/퍼즐에서 `Shake()`를 직접 참조하므로 클래스 이름을 바꾸거나 탑다운용 카메라 클래스를 따로 만들지 않는다.
