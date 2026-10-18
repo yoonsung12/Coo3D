@@ -81,7 +81,10 @@ public class CombatStatsTracker : MonoBehaviour
 
         if (!justStarted || playerTransform == null) return;
 
-        float dist = Mathf.Abs(transform.position.x - playerTransform.position.x);
+        Vector3 offset = playerTransform.position - transform.position;
+        offset.y = 0f;
+        float dist = offset.magnitude;
+        // 사이드뷰에서도 앞뒤(Z) 이동이 생겨 NFBTEnemyAI와 같은 바닥 평면(XZ) 거리로 판정한다.
         if (dist <= _vision.ViewDistance)
             _attackCount++;
     }
@@ -93,7 +96,10 @@ public class CombatStatsTracker : MonoBehaviour
     {
         if (playerTransform == null) return;
 
-        float dist = Mathf.Abs(transform.position.x - playerTransform.position.x);
+        Vector3 offset = playerTransform.position - transform.position;
+        offset.y = 0f;
+        float dist = offset.magnitude;
+        // 사이드뷰에서도 앞뒤(Z) 이동이 생겨 NFBTEnemyAI와 같은 바닥 평면(XZ) 거리로 판정한다.
         if (dist <= _combat.AttackRange * 1.5f)
             _totalDamage += damage;
     }

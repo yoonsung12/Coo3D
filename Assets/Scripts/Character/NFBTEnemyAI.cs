@@ -186,8 +186,8 @@ public class NFBTEnemyAI : MonoBehaviour
     private float _rangedStartTime;
     private float _rangedAimStartTime = -1f;
     // 백스텝 후 착지해서 조준을 시작한 시간이다. -1이면 아직 백스텝 중(공중)이라는 뜻이다.
-    private float _rangedDir;
-    // 원거리 공격을 시작할 때의 Player 방향(+1/-1)이다. 백스텝은 이 반대로 뛴다.
+    private Vector3 _rangedDir;
+    // 원거리 공격을 시작할 때의 Player 쪽 수평(XZ) 방향이다. 백스텝은 이 반대로 뛴다.
     private float _lastRangedFireTime = -999f;
 
     private EnemyVision _vision;
@@ -196,9 +196,14 @@ public class NFBTEnemyAI : MonoBehaviour
     private Enemy _enemy;
     private CombatStatsTracker _combatStats;
     private NPCFuzzyRL _fuzzyRL;
+    private PlayerController _player;
+    // Player가 탑다운 구역(ViewModeZone)에 들어갔는지 확인하기 위해 playerTransform에서 가져온다.
 
     private void Awake()
     {
+        if (playerTransform != null)
+            _player = playerTransform.GetComponent<PlayerController>();
+
         _vision = GetComponent<EnemyVision>();
         _movement = GetComponent<EnemyMovement>();
         _combat = GetComponent<EnemyCombat>();
@@ -238,6 +243,17 @@ public class NFBTEnemyAI : MonoBehaviour
     private void Update()
     {
         if (_enemy.IsDead || playerTransform == null) return;
+
+        // Player가 탑다운 구역에 들어가면 추적을 포기하고 순찰로 돌아간다(CLAUDE.md: 탑다운 구역에는 적을 두지 않는다).
+        // 도약/원거리 공격은 공중에 떠 있는 중일 수 있어 끝까지 마치게 두고, 그 뒤 프레임부터 순찰한다.
+        if (IsPlayerInTopDown() && !_isLeaping && !_isRangedAttacking)
+        {
+            _isChasing = false;
+            _isCornered = false;
+            _isCountering = false;
+            Patrol();
+            return;
+        }
 
         if (_isCornered)
         {
@@ -295,6 +311,11 @@ public class NFBTEnemyAI : MonoBehaviour
         }
     }
 
+    private bool IsPlayerInTopDown()
+    {
+        return _player != null && _player.CurrentViewMode == ViewMode.TopDown;
+    }
+
     // tacticsUpdateInterval마다 최근 전투 통계를 학습기에 반영하고 전술(ActiveBranch)을 다시 계산한다.
     private void UpdateTactics()
     {
@@ -319,8 +340,10 @@ public class NFBTEnemyAI : MonoBehaviour
         if (ShouldReversePatrol())
             _patrolDir = -_patrolDir;
 
-        _movement.Move(_patrolDir);
-        _vision.SetFacingDirection(_patrolDir);
+        // 순찰은 X축 왕복만 하지만, 몸이 부드럽게 돌도록 360도 버전 API에 ±X 방향을 넘긴다.
+        Vector3 patrolVector = new Vector3(_patrolDir, 0f, 0f);
+        _movement.Move(patrolVector);
+        _vision.SetFacingDirection(patrolVector);
     }
 
     private bool ShouldReversePatrol()
@@ -334,21 +357,31 @@ public class NFBTEnemyAI : MonoBehaviour
         return false;
     }
 
-    // 사이드뷰(X-Y 평면)라 좌우 거리(X)만으로 추적/공격 판정을 한다.
+    // 사이드뷰에서도 플레이어가 앞뒤(Z)로 움직이므로 바닥 평면(XZ) 거리로 추적/공격 판정을 한다.
+    // 높이(Y)는 빼서, 플레이어가 점프 중이어도 거리가 갑자기 멀어진 것처럼 판정되지 않게 한다.
     private float HorizontalDistance()
     {
-        return Mathf.Abs(playerTransform.position.x - transform.position.x);
+        Vector3 offset = playerTransform.position - transform.position;
+        offset.y = 0f;
+        return offset.magnitude;
+    }
+
+    // Player 쪽 수평(XZ) 방향 단위 벡터다. 같은 자리에 겹쳐 있으면 지금 바라보는 방향을 그대로 쓴다.
+    private Vector3 DirectionToPlayer()
+    {
+        Vector3 offset = playerTransform.position - transform.position;
+        offset.y = 0f;
+        return offset.sqrMagnitude > 0.0001f ? offset.normalized : _movement.FacingVector;
     }
 
     private void ChaseAndAttack()
     {
-        float dx = playerTransform.position.x - transform.position.x;
-        float dir = Mathf.Sign(dx);
+        Vector3 dir = DirectionToPlayer();
 
-        if (Mathf.Abs(dx) <= _combat.AttackRange)
+        if (HorizontalDistance() <= _combat.AttackRange)
         {
             // 사거리 안이면 멈추고 Player 쪽을 바라보며 공격을 시도한다.
-            _movement.Move(0f);
+            _movement.Move(Vector3.zero);
             _movement.FaceDirection(dir);
             _vision.SetFacingDirection(dir);
 
@@ -366,13 +399,12 @@ public class NFBTEnemyAI : MonoBehaviour
     // 최소 후퇴 시간이 지난 뒤 벽/낭떠러지에 막히면 궁지몰림 발악에 들어간다.
     private void Evade()
     {
-        float dx = playerTransform.position.x - transform.position.x;
-        float awayDir = -Mathf.Sign(dx);
+        Vector3 awayDir = -DirectionToPlayer();
 
-        if (Mathf.Abs(dx) >= safeDistance)
+        if (HorizontalDistance() >= safeDistance)
         {
             // 안전 거리를 확보했으면 멈춰서 기다린다. 다음 전술 재계산 때까지 이 상태를 유지한다.
-            _movement.Move(0f);
+            _movement.Move(Vector3.zero);
             _retreatTimer = 0f;
             return;
         }
@@ -392,9 +424,8 @@ public class NFBTEnemyAI : MonoBehaviour
     // 도약 거리 안에 들어오면 앞으로 뛰어들고, 너무 가깝거나 쿨다운 중이면 일반 추적/공격을 한다.
     private void LeapAttack()
     {
-        float dx = playerTransform.position.x - transform.position.x;
-        float dir = Mathf.Sign(dx);
-        float distance = Mathf.Abs(dx);
+        Vector3 dir = DirectionToPlayer();
+        float distance = HorizontalDistance();
 
         bool leapReady = Time.time - _lastLeapLandTime >= leapCooldown;
         if (distance < leapMinRange || !leapReady)
@@ -414,7 +445,7 @@ public class NFBTEnemyAI : MonoBehaviour
         StartLeap(dir);
     }
 
-    private void StartLeap(float dir)
+    private void StartLeap(Vector3 dir)
     {
         // 바닥에 서 있을 때만 뛴다. 공중이면 JumpMove가 false를 돌려주고 아무 일도 하지 않는다.
         if (!_movement.JumpMove(dir, leapHorizontalSpeed, leapUpForce)) return;
@@ -428,8 +459,7 @@ public class NFBTEnemyAI : MonoBehaviour
     // 뛰어든 몸이 부딪히는 타이밍에 히트박스가 켜지게 한다(뛰는 순간 공격하면 닿기 전에 판정이 끝나 버린다).
     private void UpdateLeap()
     {
-        float dx = playerTransform.position.x - transform.position.x;
-        if (Mathf.Abs(dx) <= _combat.AttackRange && _combat.CanAttack)
+        if (HorizontalDistance() <= _combat.AttackRange && _combat.CanAttack)
             _combat.StartAttack();
 
         float airTime = Time.time - _leapStartTime;
@@ -447,15 +477,14 @@ public class NFBTEnemyAI : MonoBehaviour
     {
         // Play Mode에서 Player 쪽으로 즉시 도약시켜 거리/높이/공격 타이밍을 확인한다.
         if (!Application.isPlaying || playerTransform == null) return;
-        StartLeap(Mathf.Sign(playerTransform.position.x - transform.position.x));
+        StartLeap(DirectionToPlayer());
     }
 
     // Counter 전술 대신 쓰는 원거리 공격이다(replaceCounterWithRanged가 켜진 경우).
     // 쿨다운 중이면 일반 추적/공격, 너무 멀면 걸어서 다가가고, 사거리 안이면 백스텝 후 발사한다.
     private void RangedAttack()
     {
-        float dx = playerTransform.position.x - transform.position.x;
-        float dir = Mathf.Sign(dx);
+        Vector3 dir = DirectionToPlayer();
 
         bool rangedReady = Time.time - _lastRangedFireTime >= rangedCooldown;
         if (!rangedReady)
@@ -464,7 +493,7 @@ public class NFBTEnemyAI : MonoBehaviour
             return;
         }
 
-        if (Mathf.Abs(dx) > rangedMaxRange)
+        if (HorizontalDistance() > rangedMaxRange)
         {
             _movement.Move(dir);
             _vision.SetFacingDirection(dir);
@@ -474,7 +503,7 @@ public class NFBTEnemyAI : MonoBehaviour
         StartRangedAttack(dir);
     }
 
-    private void StartRangedAttack(float dir)
+    private void StartRangedAttack(Vector3 dir)
     {
         if (!_movement.IsGrounded) return;
 
@@ -506,13 +535,13 @@ public class NFBTEnemyAI : MonoBehaviour
             bool landed = elapsed >= LeapMinAirTime && _movement.IsGrounded;
             if (!landed && elapsed < LeapMaxDuration) return;
 
-            _movement.Move(0f);
+            _movement.Move(Vector3.zero);
             _rangedAimStartTime = Time.time;
         }
 
-        // 조준 중에는 제자리에 서서 Player 쪽을 계속 바라본다. 조준 도중 Player가 반대편으로 넘어가도 그쪽으로 쏜다.
-        float dir = Mathf.Sign(playerTransform.position.x - transform.position.x);
-        _movement.Move(0f);
+        // 조준 중에는 제자리에 서서 Player 쪽을 계속 바라본다. 조준 도중 Player가 움직여도 그쪽으로 쏜다.
+        Vector3 dir = DirectionToPlayer();
+        _movement.Move(Vector3.zero);
         _movement.FaceDirection(dir);
         _vision.SetFacingDirection(dir);
         _rangedDir = dir;
@@ -524,16 +553,21 @@ public class NFBTEnemyAI : MonoBehaviour
         _isRangedAttacking = false;
     }
 
-    // 사이드뷰라 X축 방향(±1)으로만 수평 발사한다. Player가 점프하면 피할 수 있다.
-    private void FireRangedProjectile(float dir)
+    // Player 쪽 수평(XZ) 방향으로 발사한다. 높이는 유지하므로 Player가 점프하면 피할 수 있다.
+    private void FireRangedProjectile(Vector3 dir)
     {
         if (rangedProjectilePrefab == null) return;
 
-        // 적 오브젝트는 Y축으로 ±90도 회전해 있으므로, 회전된 로컬 좌표 대신 월드 X 기준으로 직접 계산한다.
-        Vector3 spawnPos = transform.position + new Vector3(Mathf.Abs(rangedSpawnOffset.x) * dir, rangedSpawnOffset.y, rangedSpawnOffset.z);
+        // 발사 위치 오프셋의 X는 "바라보는 쪽 앞" 거리, Z는 옆 방향 거리로 보고 dir 기준으로 다시 계산한다.
+        // (몸이 360도로 도는 중이라 로컬 좌표를 쓰면 회전이 덜 끝난 방향으로 나갈 수 있어 dir로 직접 계산한다.)
+        Vector3 side = Vector3.Cross(dir, Vector3.up);
+        Vector3 spawnPos = transform.position
+            + dir * Mathf.Abs(rangedSpawnOffset.x)
+            + Vector3.up * rangedSpawnOffset.y
+            + side * rangedSpawnOffset.z;
 
         BossProjectile projectile = Instantiate(rangedProjectilePrefab, spawnPos, Quaternion.identity);
-        projectile.Launch(new Vector3(dir, 0f, 0f), rangedProjectileSpeed, rangedProjectileDamage);
+        projectile.Launch(dir, rangedProjectileSpeed, rangedProjectileDamage);
     }
 
     [Button("원거리 공격 테스트")]
@@ -541,7 +575,7 @@ public class NFBTEnemyAI : MonoBehaviour
     {
         // Play Mode에서 쿨다운과 무관하게 즉시 백스텝 → 조준 → 발사를 실행해 거리/타이밍을 확인한다.
         if (!Application.isPlaying || playerTransform == null || _isRangedAttacking) return;
-        StartRangedAttack(Mathf.Sign(playerTransform.position.x - transform.position.x));
+        StartRangedAttack(DirectionToPlayer());
     }
 
     private void SetCornered()
@@ -562,8 +596,7 @@ public class NFBTEnemyAI : MonoBehaviour
             return;
         }
 
-        float dx = playerTransform.position.x - transform.position.x;
-        float dir = Mathf.Sign(dx);
+        Vector3 dir = DirectionToPlayer();
 
         _vision.SetFacingDirection(dir);
 
@@ -584,10 +617,9 @@ public class NFBTEnemyAI : MonoBehaviour
     {
         if (!_isCountering)
         {
-            float dx = playerTransform.position.x - transform.position.x;
-            float dir = Mathf.Sign(dx);
+            Vector3 dir = DirectionToPlayer();
 
-            _movement.Move(0f);
+            _movement.Move(Vector3.zero);
             _movement.FaceDirection(dir);
             _vision.SetFacingDirection(dir);
 
@@ -619,12 +651,11 @@ public class NFBTEnemyAI : MonoBehaviour
             return;
         }
 
-        float dx = playerTransform.position.x - transform.position.x;
-        float dir = Mathf.Sign(dx);
+        Vector3 dir = DirectionToPlayer();
 
-        if (Mathf.Abs(dx) <= _combat.AttackRange)
+        if (HorizontalDistance() <= _combat.AttackRange)
         {
-            _movement.Move(0f);
+            _movement.Move(Vector3.zero);
             _movement.FaceDirection(dir);
             _vision.SetFacingDirection(dir);
 

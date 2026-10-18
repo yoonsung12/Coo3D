@@ -1,9 +1,8 @@
 using Sirenix.OdinInspector;
 using UnityEngine;
 
-// 적의 시야를 담당한다. 이 프로젝트는 쿼터뷰처럼 보이지만 실제 이동/연출은
-// 사이드뷰(X-Y 평면, Z 고정) 기준으로 짜여 있어서(PlayerController, Season 낙하물과 동일),
-// 시야도 X-Y 평면 각도 + Physics.Raycast로 판정한다.
+// 적의 시야를 담당한다. 사이드뷰에서도 플레이어가 앞뒤(Z)로 움직이게 되어
+// 바라보는 수평 방향(XZ) 기준 3D 각도 + Physics.Raycast로 판정한다.
 public class EnemyVision : MonoBehaviour
 {
     [Title("시야 설정")]
@@ -38,11 +37,26 @@ public class EnemyVision : MonoBehaviour
 
     public float FacingDir => _facingDir;
 
+    [ReadOnly, ShowInInspector, LabelText("바라보는 방향 (XZ 벡터)")]
+    private Vector3 _facingVector = Vector3.right;
+    // 시야 판정에 실제로 쓰는 수평 방향이다. float 버전으로 설정하면 (±1, 0, 0)이 된다.
+
     // NFBTEnemyAI/EnemyMovement가 이동 방향에 맞춰 매 프레임 호출해 시야 방향을 갱신한다.
     public void SetFacingDirection(float dir)
     {
         if (dir == 0f) return;
         _facingDir = Mathf.Sign(dir);
+        _facingVector = new Vector3(_facingDir, 0f, 0f);
+    }
+
+    // 360도 이동하는 잡몹용. XZ 평면의 어느 방향이든 시야 방향으로 쓴다.
+    public void SetFacingDirection(Vector3 dir)
+    {
+        dir.y = 0f;
+        if (dir.sqrMagnitude < 0.0001f) return;
+        _facingVector = dir.normalized;
+        if (Mathf.Abs(_facingVector.x) > 0.01f)
+            _facingDir = Mathf.Sign(_facingVector.x);
     }
 
     // Player가 시야 거리/각도 안에 있고, 장애물에 가려지지 않았는지 판정한다.
@@ -53,15 +67,12 @@ public class EnemyVision : MonoBehaviour
         Vector3 origin = transform.position + visionOffset;
         Vector3 targetPoint = player.position + new Vector3(0f, targetHeightOffset, 0f);
         Vector3 toPlayer = targetPoint - origin;
-
-        // 사이드뷰라 Z 성분은 시야 판정에서 제외한다.
-        toPlayer.z = 0f;
+        // 사이드뷰에서도 플레이어가 앞뒤(Z)로 움직이므로 Z 성분까지 포함한 실제 3D 거리/각도로 판정한다.
 
         float distance = toPlayer.magnitude;
         if (distance > viewDistance) return false;
 
-        Vector3 facing = new Vector3(_facingDir, 0f, 0f);
-        float angle = Vector3.Angle(facing, toPlayer);
+        float angle = Vector3.Angle(_facingVector, toPlayer);
         if (angle > viewAngle * 0.5f) return false;
 
         // 장애물에 가려져 있으면 감지하지 못한다.
@@ -81,12 +92,12 @@ public class EnemyVision : MonoBehaviour
     {
         // 씬 뷰에서 시야 범위를 부채꼴로 시각화한다.
         Vector3 origin = transform.position + visionOffset;
-        Vector3 facing = new Vector3(_facingDir, 0f, 0f);
+        Vector3 facing = _facingVector;
 
         Gizmos.color = Color.yellow;
-        // 사이드뷰(X-Y 평면) 안에서 부채꼴을 그리려면 Z축 기준 회전을 써야 한다.
-        Quaternion leftRot = Quaternion.Euler(0f, 0f, viewAngle * 0.5f);
-        Quaternion rightRot = Quaternion.Euler(0f, 0f, -viewAngle * 0.5f);
+        // 360도 이동 기준이라 바닥(XZ 평면)에 부채꼴을 그리도록 Y축 기준으로 회전한다.
+        Quaternion leftRot = Quaternion.Euler(0f, -viewAngle * 0.5f, 0f);
+        Quaternion rightRot = Quaternion.Euler(0f, viewAngle * 0.5f, 0f);
         Gizmos.DrawLine(origin, origin + (leftRot * facing) * viewDistance);
         Gizmos.DrawLine(origin, origin + (rightRot * facing) * viewDistance);
         Gizmos.DrawLine(origin, origin + facing * viewDistance);
