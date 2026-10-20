@@ -43,6 +43,13 @@ public class CrosswalkCarHazard : MonoBehaviour
     [SerializeField, LabelText("플레이어를 지나쳐 가는 거리")]
     private float rushOvershoot = 20f;
 
+    [SerializeField, LabelText("플레이어로부터 출발 거리")]
+    private float rushStartDistance = 50f;
+    // 차는 플레이어보다 이 거리만큼 동쪽(+X)에서 출발한다. 단, "차 대기 위치"보다 더 동쪽으로는 가지 않는다.
+    // 도로가 길어서 대기 위치에서만 출발하면, 서쪽 끝의 플레이어에게는 같은 돌진 시간 동안 너무 먼 거리를 달리게 되어
+    // 한 프레임에 차 길이보다 많이 움직여 플레이어를 건너뛰는(치지 못하는) 일이 생긴다.
+    // 화면 밖에서 출발해야 하므로 카메라에 보이는 범위보다 커야 한다.
+
     [SerializeField, LabelText("데미지")]
     private float damage = 20f;
 
@@ -133,13 +140,17 @@ public class CrosswalkCarHazard : MonoBehaviour
 
         // 플레이어와 가장 가까운 차선으로 서쪽을 향해 내달린다.
         // 정지선에 서 있던 차가 같은 차선이고 아직 플레이어 동쪽에 있으면 그 자리에서 그대로 출발하고,
-        // 그 외에는 화면 밖 대기 위치에서 출발한다(차를 다른 차선으로 눈앞에서 순간이동시키지 않기 위해서).
+        // 그 외에는 플레이어 동쪽 화면 밖에서 출발한다(차를 다른 차선으로 눈앞에서 순간이동시키지 않기 위해서).
         float laneZ = GetNearestLaneZ(player.transform.position.z);
         bool sameLane = Mathf.Abs(car.position.z - laneZ) < 0.1f;
         bool aheadOfPlayer = car.position.x > player.transform.position.x;
-        if (!(sameLane && aheadOfPlayer))
+        bool closeEnough = car.position.x - player.transform.position.x <= rushStartDistance;
+        // 정지선의 차라도 출발 거리보다 멀리 있으면(플레이어가 도로 서쪽 끝에 있을 때) 화면 밖이므로 위치를 옮겨도 티가 나지 않는다.
+        if (!(sameLane && aheadOfPlayer && closeEnough))
         {
             Vector3 from = carStartPoint.position;
+            // 플레이어가 도로 어디에 있든 출발 거리를 일정하게 맞춰, 횡단보도 근처와 같은 속도로 달려오게 한다.
+            from.x = Mathf.Min(carStartPoint.position.x, player.transform.position.x + rushStartDistance);
             from.z = laneZ;
             car.position = from;
         }
