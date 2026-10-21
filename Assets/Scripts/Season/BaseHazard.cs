@@ -21,6 +21,12 @@ public abstract class BaseHazard : MonoBehaviour
     protected float spawnHalfWidth = 5f;
     // 스폰 범위의 절반 너비다. 이 오브젝트 위치를 중심으로 ±spawnHalfWidth 범위 안에서 생성된다.
 
+    [SerializeField, LabelText("스폰 범위 절반 깊이")]
+    protected float spawnHalfDepth = 0f;
+    // 스폰 범위의 절반 깊이(Z, 앞뒤)다. 이 오브젝트 위치를 중심으로 ±spawnHalfDepth 범위 안에서 생성된다.
+    // 사이드뷰에서도 ↑/↓로 앞뒤 이동을 하므로, 바닥 폭에 맞춰 넣으면 한 줄이 아니라 네모 범위에 떨어진다.
+    // 0이면 예전처럼 스포너의 Z 한 줄에서만 생성된다.
+
     [SerializeField, LabelText("파괴 Y 좌표")]
     protected float destroyBelowY = -20f;
     // 이 Y 좌표 아래로 내려가면 자동으로 파괴된다.
@@ -44,14 +50,17 @@ public abstract class BaseHazard : MonoBehaviour
         _blockTween?.Kill();
     }
 
-    // 이 오브젝트의 위치를 중심으로 ±spawnHalfWidth 범위 내 랜덤 위치를 반환한다.
-    // Y와 Z는 자신의 위치를 그대로 사용한다 — 사이드뷰라 Z는 고정 평면, Y는 원하는 스폰 높이가 된다.
+    // 이 오브젝트의 위치를 중심으로 X ±spawnHalfWidth, Z ±spawnHalfDepth 네모 범위 내 랜덤 위치를 반환한다.
+    // Y는 자신의 위치를 그대로 사용해 원하는 스폰 높이가 된다.
     protected Vector3 GetSpawnPosition()
     {
         float randomX = Random.Range(
             transform.position.x - spawnHalfWidth,
             transform.position.x + spawnHalfWidth);
-        return new Vector3(randomX, transform.position.y, transform.position.z);
+        float randomZ = Random.Range(
+            transform.position.z - spawnHalfDepth,
+            transform.position.z + spawnHalfDepth);
+        return new Vector3(randomX, transform.position.y, randomZ);
     }
 
     // SeasonGaugeManager에 gaugeSlots 칸만큼 게이지를 추가한다.
@@ -83,8 +92,14 @@ public abstract class BaseHazard : MonoBehaviour
 #if UNITY_EDITOR
     private void OnDrawGizmos()
     {
-        // 씬 뷰에서 스폰 범위를 선으로 시각화한다.
+        // 씬 뷰에서 스폰 범위를 시각화한다. 깊이가 있으면 네모, 없으면 선으로 그린다.
         Gizmos.color = Color.cyan;
+        if (spawnHalfDepth > 0f)
+        {
+            Gizmos.DrawWireCube(transform.position, new Vector3(spawnHalfWidth * 2f, 0f, spawnHalfDepth * 2f));
+            return;
+        }
+
         Vector3 left  = transform.position + Vector3.left  * spawnHalfWidth;
         Vector3 right = transform.position + Vector3.right * spawnHalfWidth;
         Gizmos.DrawLine(left, right);

@@ -70,6 +70,10 @@ public class SwordAttack : MonoBehaviour
     {
         CachePillowScale();
         _playerController = GetComponent<PlayerController>();
+
+        if (pillowMesh != null) pillowMesh.gameObject.SetActive(false);
+        // 배게는 공격할 때만 보여야 하므로 시작 시 숨긴다. 씬에서 켜진 채 저장돼도 처음부터 보이지 않게 한다.
+        // 공격 시작 시 ResetPillowVisual()이 다시 켠다.
     }
 
     private void OnDisable()

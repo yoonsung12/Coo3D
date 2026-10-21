@@ -144,6 +144,9 @@ public class ToolManager : MonoBehaviour
 
         if (_activeTool != null)
         {
+            _activeTool.ShowVisual();
+            // 도구는 사용하는 동안에만 손에 보이도록, 누르는 순간 비주얼을 꺼낸다.
+
             // 도구 장착 모드: 선풍기 외 도구는 누름 시 1회 발동한다.
             // 선풍기는 HandleActiveTool에서 매 프레임 처리한다.
             if (_activeTool is not FanTool)
@@ -165,6 +168,9 @@ public class ToolManager : MonoBehaviour
             fan.OnBlowRelease();
         else
             _activeTool?.OnUseRelease();
+
+        _activeTool?.HideVisual();
+        // 손을 떼면 비주얼을 다시 넣는다. 횃불은 불이 켜져 있는 동안 TorchTool이 숨김을 막는다.
     }
 
     // 누르는 동안 매 프레임 호출된다. 선풍기 바람 지속, 우산 글라이드 유지 등에 사용한다.

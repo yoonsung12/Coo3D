@@ -127,6 +127,14 @@ public class TorchTool : BaseTool
         // base.OnUnequip()에서 비주얼 사라짐 연출을 처리한다.
     }
 
+    // 횃불은 점화 미니게임 중이거나 불이 붙어 있는 동안 계속 손에 보여야 한다.
+    // 버튼을 떼도 이때는 숨기지 않고, 불이 꺼질 때(ExtinguishTorch) 숨긴다.
+    public override void HideVisual()
+    {
+        if (_state != TorchState.Off) return;
+        base.HideVisual();
+    }
+
     // 사용 버튼을 처음 눌렀을 때 한 번 호출된다. 현재 상태에 따라 다르게 반응한다.
     public override void OnUsePerformed()
     {
@@ -216,6 +224,9 @@ public class TorchTool : BaseTool
         _burnTimeRemaining = 0f;
         IsTorchLit = false;
         SetLight(false);
+
+        HideVisual();
+        // 불이 꺼지면 횃불도 손에서 넣는다. 이 시점엔 상태가 Off라 숨김이 막히지 않는다.
     }
 
     // 라이트를 DOTween으로 서서히 켜거나 끈다.

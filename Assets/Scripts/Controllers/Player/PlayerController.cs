@@ -199,6 +199,9 @@ public class PlayerController : MonoBehaviour
         // 빙결 디버프 중에는 점프도 막는다.
         if (_isFrozen) return;
 
+        // 도구 휠/일시정지로 시간이 멈춘 동안 누른 점프가 재개 순간 튀어나가지 않게 막는다.
+        if (Time.timeScale == 0f) return;
+
         // 땅에 있을 때만 점프한다. (공중 점프는 쓰지 않는다)
         if (!IsGrounded) return;
 
@@ -263,12 +266,16 @@ public class PlayerController : MonoBehaviour
 
     private void Update()
     {
-        _moveInput = _moveAction.ReadValue<Vector2>();
+        // 이번 프레임에 흐른 시간이 없으면(도구 휠·일시정지로 시간이 멈춘 동안) 이동 처리를 통째로 건너뛴다.
+        // 이때 Move()를 0만큼 호출하면 바닥에 닿지 않아 CharacterController.isGrounded가 false가 되고,
+        // 애니메이터가 이를 점프로 보고 점프 자세를 재생한다.
+        // timeScale이 아니라 deltaTime으로 검사하는 이유: 휠이 닫히는 프레임에 DOTween이 timeScale을 1로 되돌려도
+        // 그 프레임의 deltaTime은 프레임 시작 때 이미 0으로 정해져 있어서, timeScale 검사로는 이 한 프레임이 새어 나간다.
+        // 휠에서 화살표로 슬롯을 고르는 입력이 캐릭터 회전/조준을 바꾸지 않게 하는 효과도 함께 있다.
+        if (Time.deltaTime <= 0f)
+            return;
 
-        // 도구 휠(Z)이나 일시정지 메뉴가 열려 시간이 멈춘 동안에는 화살표 입력을 무시한다.
-        // 휠에서는 화살표로 슬롯을 고르는데, 이 입력이 캐릭터 회전/조준까지 바꾸지 않게 하기 위해서다.
-        if (Time.timeScale == 0f)
-            _moveInput = Vector2.zero;
+        _moveInput = _moveAction.ReadValue<Vector2>();
 
         IsGrounded = _cc.isGrounded;
 
