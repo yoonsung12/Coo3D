@@ -79,6 +79,11 @@ public class PlayerFootstep : MonoBehaviour
         if (_playerController == null || !_playerController.IsGrounded)
             return;
 
+        if (!_playerController.enabled)
+            return;
+        // 컷신·포털 연출은 PlayerController를 꺼서 조작을 잠근다. 이때 _cc.velocity는 마지막 Move() 값이
+        // 그대로 남아 있어서, 이 검사가 없으면 멈춰 있는데도 발소리가 계속 난다.
+
         if (_playerController.BlastRecoilSpeed > blastIgnoreSpeed)
             return;
 

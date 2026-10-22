@@ -3,8 +3,9 @@ using Sirenix.OdinInspector;
 using UnityEngine;
 
 // 가을 구역 "공중 낙엽 점화" 퍼즐의 바닥 낙엽더미 자리다. 위에서 떨어지는 낙엽(LeafMound, 낙하 모드)이
-// 닿으면 흡수되어 한 단계씩 차오르고, 가득 찼을 때 성냥으로 점화하면 그 자리에서 불덩이(LeafMound)를
-// 만들어낸 뒤 빈 자리가 된다. 불 안 붙은 더미에 선풍기를 쏘면 한 번에 흩어져 빈 자리가 된다.
+// 닿으면 흡수되어 한 단계씩 차오르고, 가득 찼을 때 성냥으로 점화하면 제자리에서 타며 서서히 줄어든다.
+// 타는 동안 선풍기를 맞으면 그때 불덩이(LeafMound)가 생성되어 바람 방향으로 날아가고, 안 날리면 다 타서 빈 자리가 된다.
+// 불 안 붙은 더미에 선풍기를 쏘면 한 번에 흩어져 빈 자리가 된다.
 // 더미 자체는 사라지지 않는 "다시 채워지는 연료 자리"라서, 실패해도 낙엽이 쌓이면 다시 도전할 수 있다.
 [RequireComponent(typeof(Collider))]
 public class LeafPile : MonoBehaviour, IIgnitable, IBlowable
@@ -26,7 +27,8 @@ public class LeafPile : MonoBehaviour, IIgnitable, IBlowable
 
     [SerializeField, LabelText("불덩이 프리팹")]
     private LeafMound burningLeafPrefab;
-    // 점화했을 때 이 자리에서 생성할 LeafMound 프리팹(FallingLeaf.prefab)을 연결한다.
+    // 타는 중인 더미가 선풍기를 맞았을 때 생성해서 날려 보낼 LeafMound 프리팹(FallingLeaf.prefab)을 연결한다.
+    // 점화 순간에는 생성되지 않는다.
 
     [SerializeField, LabelText("불덩이 생성 높이")]
     private float spawnHeight = 0.5f;
@@ -35,6 +37,20 @@ public class LeafPile : MonoBehaviour, IIgnitable, IBlowable
     [SerializeField, LabelText("흩어짐 파티클")]
     private ParticleSystem scatterParticle;
     // 선풍기로 흩어질 때 한 번 터지는 낙엽 파티클이다. 비워두면 크기 연출만 나온다.
+
+    [Title("연소 설정")]
+    [SerializeField, LabelText("다 타는 시간")]
+    private float burnDuration = 4f;
+    // 점화 후 더미가 완전히 타 없어지는 데 걸리는 시간(초)이다. 플레이어가 성냥에서 선풍기로
+    // 도구를 바꿀 시간을 고려한 값이라, 너무 짧으면 불덩이를 날리기 전에 꺼져 버린다.
+
+    [SerializeField, LabelText("연소 Ease")]
+    private Ease burnEase = Ease.Linear;
+    // 타면서 줄어드는 속도 곡선이다. Linear면 일정한 속도로 줄어든다.
+
+    [SerializeField, LabelText("타는 불꽃 파티클")]
+    private ParticleSystem burningParticle;
+    // 타는 동안 더미 위에서 재생할 불꽃 파티클이다. 비워두면 크기 연출만 나온다.
 
     [Title("DOTween 연출 설정")]
     [SerializeField, LabelText("가득 찼을 때 크기")]
@@ -54,6 +70,9 @@ public class LeafPile : MonoBehaviour, IIgnitable, IBlowable
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("현재 단계")]
     private int _level;
+
+    [ReadOnly, ShowInInspector, LabelText("타는 중")]
+    private bool _isBurning;
 
     private bool IsFull => _level >= maxLevel;
 
@@ -79,6 +98,9 @@ public class LeafPile : MonoBehaviour, IIgnitable, IBlowable
     // 떨어지는 낙엽(LeafMound)이 더미에 닿았을 때 호출된다. 불붙은 낙엽이 쌓여 더미가 가득 차면 불이 옮겨붙는다.
     public void AbsorbLeaf(bool wasBurning)
     {
+        if (_isBurning) return;
+        // 타는 더미에는 낙엽이 더 쌓이지 않는다.
+
         if (IsFull)
         {
             // 이미 가득 찼으면 더 쌓이지 않는다. 다만 불씨 낙엽이면 가득 찬 더미에 불이 옮겨붙는다.
@@ -97,14 +119,21 @@ public class LeafPile : MonoBehaviour, IIgnitable, IBlowable
     // TorchTool의 SphereCast에 감지되면 호출된다. 가득 찬 더미만 불이 붙는다.
     public void OnIgnited()
     {
-        if (!IsFull) return;
+        if (!IsFull || _isBurning) return;
         Ignite();
     }
 
     // FanTool의 바람 판정에 감지되면 호출된다(바람을 쏘는 동안 매 물리 프레임 호출됨).
-    // 불 안 붙은 더미는 한 번에 전부 흩어져 빈 자리가 된다. 이미 비어 있으면 아무 일도 없다.
+    // 타는 중이면 불덩이를 만들어 바람 방향으로 날린다. 불 안 붙은 더미는 한 번에 전부 흩어져 빈 자리가 된다.
+    // 이미 비어 있으면 아무 일도 없다.
     public void OnBlown(Vector3 direction, float force, bool impulse = false)
     {
+        if (_isBurning)
+        {
+            LaunchFireball(direction, force, impulse);
+            return;
+        }
+
         if (_level <= 0) return;
 
         _level = 0;
@@ -115,18 +144,57 @@ public class LeafPile : MonoBehaviour, IIgnitable, IBlowable
         PlayScaleTween(withPunch: false);
     }
 
-    // 더미를 불덩이로 바꾼다. 불덩이는 생성 즉시 타기 시작하고, 이 자리는 빈 상태로 돌아가 다시 채워지길 기다린다.
+    // 더미가 제자리에서 타기 시작한다. 크기가 서서히 0으로 줄고, 다 줄어들면 꺼진다(BurnOut).
     private void Ignite()
     {
+        if (_isBurning) return;
+
+        _isBurning = true;
+        if (burningParticle != null)
+            burningParticle.Play();
+
+        _visualSequence?.Kill();
+        _visualSequence = DOTween.Sequence();
+        if (visual != null)
+            _visualSequence.Append(visual.DOScale(Vector3.zero, burnDuration).SetEase(burnEase));
+        else
+            _visualSequence.AppendInterval(burnDuration);
+        // 비주얼이 없어도 같은 시간만큼 타도록 대기 구간으로 대신한다.
+        _visualSequence.OnComplete(BurnOut);
+    }
+
+    // 다 타서 꺼졌을 때 호출된다. 빈 자리로 돌아가 다시 낙엽이 쌓이길 기다린다.
+    private void BurnOut()
+    {
+        _isBurning = false;
+        if (burningParticle != null)
+            burningParticle.Stop();
+
+        _level = 0;
+        if (visual != null)
+            visual.localScale = GetScaleForLevel(0);
+    }
+
+    // 타는 중 선풍기를 맞았을 때 불덩이를 만들어 바람 방향으로 날린다.
+    // 이후 _isBurning=false, _level=0이 되므로 매 물리 프레임 들어오는 OnBlown은 자연히 무시된다.
+    private void LaunchFireball(Vector3 direction, float force, bool impulse)
+    {
+        _visualSequence?.Kill();
+        _isBurning = false;
+        if (burningParticle != null)
+            burningParticle.Stop();
+
         if (burningLeafPrefab != null)
         {
             Vector3 spawnPos = transform.position + Vector3.up * spawnHeight;
             LeafMound fire = Instantiate(burningLeafPrefab, spawnPos, Quaternion.identity);
             fire.IgniteAsLaunched();
+            fire.OnBlown(direction, force, impulse);
         }
 
         _level = 0;
         PlayScaleTween(withPunch: false);
+        // 남은 더미가 자연스럽게 사라지도록 현재 크기에서 0으로 줄인다.
     }
 
     // 현재 단계에 맞는 크기로 부드럽게 바뀌는 연출이다. 낙엽이 쌓일 때는 끝에 살짝 들썩이는 펀치를 붙인다.
@@ -152,7 +220,7 @@ public class LeafPile : MonoBehaviour, IIgnitable, IBlowable
     [Button("낙엽 +1 채우기 테스트")]
     private void TestAddLeaf() => AbsorbLeaf(false);
 
-    [Button("흩날리기 테스트")]
+    [Button("흩날리기 테스트 (타는 중이면 불덩이 발사)")]
     private void TestScatter() => OnBlown(Vector3.right, 8f);
 
     [Button("점화 테스트")]
