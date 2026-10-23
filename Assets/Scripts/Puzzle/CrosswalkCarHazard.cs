@@ -74,6 +74,30 @@ public class CrosswalkCarHazard : MonoBehaviour
     private SideViewCamera sideViewCamera;
     // 치였을 때 화면을 흔들 카메라다. 비워두면 흔들지 않는다.
 
+    [Title("돌진 사운드")]
+    [SerializeField, LabelText("AudioSource")]
+    private AudioSource audioSource;
+    // 차 통과음을 재생할 AudioSource다. 이 오브젝트에 붙인 것(2D, Play On Awake 끔)을 연결한다. 비워두면 소리 없이 동작한다.
+
+    [SerializeField, LabelText("통과 사운드")]
+    private AudioClip passSound;
+
+    [SerializeField, LabelText("볼륨"), Range(0f, 1f)]
+    private float passVolume = 0.8f;
+
+    [SerializeField, LabelText("사운드 지연")]
+    private float passSoundDelay = 0.3f;
+    // 돌진 시작 후 소리를 늦게 트는 시간(초)이다. 차는 가속하며 달려와 약 0.5초쯤 플레이어 옆을 지나가는데,
+    // 통과음은 시작 0.1~0.2초에 가장 크므로 이만큼 늦춰야 "쐐액" 하는 순간이 차가 지나가는 순간과 맞는다.
+    // 값이 크면 소리가 차보다 늦게 들리고, 작으면 차가 오기 전에 먼저 들린다.
+
+    [SerializeField, LabelText("브레이크 사운드")]
+    private AudioClip brakeSound;
+    // 빨간불에 차가 정지선으로 다가와 멈출 때 재생할 소리다. 차가 감속을 시작하는 순간 바로 튼다.
+
+    [SerializeField, LabelText("브레이크 볼륨"), Range(0f, 1f)]
+    private float brakeVolume = 0.8f;
+
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("현재 상태")]
     private CarState _state = CarState.Waiting;
@@ -161,6 +185,20 @@ public class CrosswalkCarHazard : MonoBehaviour
             .SetEase(Ease.InQuad)
             .OnUpdate(CheckHit)
             .OnComplete(ResetCar);
+
+        PlayPassSound();
+    }
+
+    // 돌진할 때마다 통과음을 한 번 재생한다.
+    // 차는 0.6초마다 다시 돌진할 수 있는데 통과음은 그보다 길다. PlayOneShot은 앞 소리를 끊지 않고 겹쳐 재생하므로
+    // 연속 돌진에도 소리가 씹히지 않는다. PlayOneShot에는 지연 기능이 없어서 DOTween DelayedCall로 늦춰 튼다.
+    // 겹쳐 재생해야 하므로 이전 호출을 Kill하지 않고, SetLink로 오브젝트가 파괴되면 남은 호출이 자동으로 정리되게 한다.
+    private void PlayPassSound()
+    {
+        if (audioSource == null || passSound == null) return;
+
+        DOVirtual.DelayedCall(passSoundDelay, () => audioSource.PlayOneShot(passSound, passVolume))
+            .SetLink(gameObject);
     }
 
     // 돌진하는 매 프레임 차와 플레이어가 겹쳤는지 검사한다.
@@ -204,6 +242,10 @@ public class CrosswalkCarHazard : MonoBehaviour
         _carTween = car.DOMove(stopPoint.position, approachDuration)
             .SetEase(approachEase)
             .OnComplete(() => _state = CarState.Stopped);
+
+        // 정지선까지 감속(OutCubic)하는 동안 브레이크 소리를 낸다. 지연 없이 바로 틀어야 차가 거의 멈추는 시점에 소리도 끝난다.
+        if (audioSource != null && brakeSound != null)
+            audioSource.PlayOneShot(brakeSound, brakeVolume);
     }
 
     // 돌진이 끝난 차를 화면 밖 대기 위치로 되돌린다.
