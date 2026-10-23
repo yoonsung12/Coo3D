@@ -42,8 +42,9 @@ public class SaveSlotSelectController : MonoBehaviour
 
     [Title("설정")]
     [SerializeField, LabelText("게임플레이 씬 이름")]
-    private string gameplaySceneName = "SampleScene";
+    private string gameplaySceneName = "Spring";
     // 씬 이름이 바뀌거나 스테이지가 늘어날 상황을 대비해 하드코딩하지 않고 Inspector에서 조절 가능하게 한다.
+    // 새 게임은 봄 씬에서 시작하고, 이후는 각 씬의 ScenePortal이 여름 → 가을 → 겨울로 이어 준다.
 
     [SerializeField, LabelText("패널 페이드 시간")]
     private float fadeDuration = 0.2f;
