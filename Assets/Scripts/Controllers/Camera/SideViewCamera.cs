@@ -117,6 +117,19 @@ public class SideViewCamera : MonoBehaviour
     private Tween _yawTween;
     // TopDownYawZone을 드나들 때 탑다운 카메라가 도는 연출이다. 다시 바뀌면 끊고 새로 시작한다.
 
+    [ReadOnly, ShowInInspector, LabelText("카메라 최대 높이 제한 중")]
+    private bool _hasMaxHeight;
+    // 천장이 낮은 구역(CameraCeilingZone)에 있는 동안 켜져서, 카메라가 천장 위로 올라가 플레이어를 가리지 않게 한다.
+
+    [ReadOnly, ShowInInspector, LabelText("카메라 최대 높이 (월드 Y)"), ShowIf(nameof(_hasMaxHeight))]
+    private float _maxHeight;
+
+    private Object _maxHeightOwner;
+    // 높이 제한을 건 구역이다. 구역끼리 붙어 있을 때 먼저 나간 구역이 새 구역의 제한을 풀어버리지 않도록 기억한다.
+
+    // 지금 카메라 높이 제한이 걸려 있는지 외부(CameraCeilingZone)에서 확인할 때 쓴다.
+    public bool HasMaxHeight => _hasMaxHeight;
+
     // 탑다운 시점의 카메라 회전이다. 내려다보는 각도(topDownPitch)에 방향(_topDownYaw)을 더한다.
     private Quaternion TopDownRotation => Quaternion.Euler(topDownPitch, _topDownYaw, 0f);
 
@@ -252,7 +265,33 @@ public class SideViewCamera : MonoBehaviour
             targetPosition = Vector3.Lerp(targetPosition, topDownPosition, _topDownBlend);
         }
 
+        // 천장이 낮은 구역에서는 카메라가 정해진 높이 위로 못 올라가게 한다.
+        // 플레이어가 높이 점프해도 카메라가 천장 판 위로 올라가 플레이어를 가리는 일을 막는다.
+        // 목표 위치만 제한하므로 LateUpdate의 Lerp로 부드럽게 따라간다.
+        // 단, 주목 연출(StartFocus/PlayFocusPan)로 다른 곳을 비추는 동안에는 _focusBlend만큼 제한을 풀어 준다.
+        // 예: 지하 터빈을 켜면 지상 얼음벽이 녹는 장면을 비춰야 하는데, 제한이 남아 있으면 카메라가 지하에 묶인다.
+        if (_hasMaxHeight && targetPosition.y > _maxHeight)
+            targetPosition.y = Mathf.Lerp(_maxHeight, targetPosition.y, _focusBlend);
+
         return targetPosition;
+    }
+
+    // 천장이 낮은 구역에 들어왔을 때 CameraCeilingZone이 호출한다. owner에는 호출한 구역 자신을 넘긴다.
+    public void SetMaxHeight(float maxY, Object owner)
+    {
+        _hasMaxHeight = true;
+        _maxHeight = maxY;
+        _maxHeightOwner = owner;
+    }
+
+    // 구역을 나갔을 때 CameraCeilingZone이 호출한다. 제한을 건 구역이 맞을 때만 풀어서,
+    // 붙어 있는 다른 구역으로 넘어간 경우 새 구역의 제한이 유지되게 한다.
+    public void ClearMaxHeight(Object owner)
+    {
+        if (_maxHeightOwner != owner) return;
+
+        _hasMaxHeight = false;
+        _maxHeightOwner = null;
     }
 
     // 같은 씬 안에서 플레이어를 멀리 순간이동시킨 직후(예: EntrancePortal) 호출한다.

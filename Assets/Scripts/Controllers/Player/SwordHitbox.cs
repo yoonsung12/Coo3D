@@ -47,9 +47,29 @@ public class SwordHitbox : MonoBehaviour
     private float depth = 1.5f;
     // 바라보는 방향에 수직인 수평 폭이다. 사이드뷰에서는 화면 안쪽(Z) 두께, 탑다운에서는 좌우 폭이 된다.
 
+    [Title("타격 사운드")]
+    [SerializeField, LabelText("타격음 클립")]
+    private AudioClip hitClip;
+    // 베개가 대상(적, 고드름 등)을 실제로 맞힌 순간 재생할 "퍽" 소리다. 허공을 휘두를 때는 재생되지 않는다.
+    // 비워두면 타격음 없이 판정만 동작한다.
+
+    [SerializeField, LabelText("타격음 AudioSource")]
+    private AudioSource hitAudioSource;
+    // Player의 공격 전용 AudioSource를 연결한다(SwordAttack과 같이 써도 된다). 비워두면 맞은 위치에서 PlayClipAtPoint로 재생한다.
+
+    [SerializeField, LabelText("타격음 음량"), Range(0f, 1f)]
+    private float hitVolume = 0.9f;
+
+    [SerializeField, LabelText("타격음 음높이 범위"), MinMaxSlider(0.5f, 1.5f, true)]
+    private Vector2 hitPitchRange = new Vector2(0.9f, 1.1f);
+    // 매번 이 범위 안에서 pitch를 골라 같은 타격음도 조금씩 다르게 들리게 한다.
+
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("히트박스 활성 중")]
     private bool _isActive;
+
+    private bool _hitSoundPlayed;
+    // 한 번의 공격에서 타격음을 이미 냈는지 기록한다. 여러 대상을 한 번에 맞혀도 소리가 겹쳐 커지지 않게 한 번만 낸다.
 
     private Collider _collider;
     // 예전 칼날 판정용 콜라이더다. 이제 판정에 쓰지 않으므로 항상 꺼 둔다.
@@ -82,6 +102,7 @@ public class SwordHitbox : MonoBehaviour
         // 새 공격이 시작될 때 이전 공격의 히트 기록을 초기화해 다시 타격 가능하게 한다.
         _hitTargets.Clear();
         _hitHittables.Clear();
+        _hitSoundPlayed = false;
         _isActive = true;
     }
 
@@ -124,12 +145,33 @@ public class SwordHitbox : MonoBehaviour
 
             float multiplier = pillowDurability != null ? pillowDurability.GetDamageMultiplier() : 1f;
             target.TakeDamage(damage * multiplier);
+            PlayHitSound(other.transform.position);
             return;
         }
 
         // 체력이 없는 환경 오브젝트(고드름 등)는 IHittable로 처리한다.
         if (other.TryGetComponent<IHittable>(out var hittable) && _hitHittables.Add(hittable))
+        {
             hittable.OnHit();
+            PlayHitSound(other.transform.position);
+        }
+    }
+
+    // 실제로 무언가를 맞혔을 때 베개 타격음을 공격 1회당 한 번만 재생한다.
+    private void PlayHitSound(Vector3 hitPosition)
+    {
+        if (hitClip == null || _hitSoundPlayed) return;
+        _hitSoundPlayed = true;
+
+        if (hitAudioSource != null)
+        {
+            hitAudioSource.pitch = Random.Range(hitPitchRange.x, hitPitchRange.y);
+            hitAudioSource.PlayOneShot(hitClip, hitVolume);
+        }
+        else
+        {
+            AudioSource.PlayClipAtPoint(hitClip, hitPosition, hitVolume);
+        }
     }
 
     // 판정 상자의 중심, 절반 크기, 회전을 계산한다. Gizmo 표시와 실제 판정이 같은 값을 쓴다.
@@ -169,6 +211,14 @@ public class SwordHitbox : MonoBehaviour
 
     [Button("히트박스 비활성 테스트")]
     private void TestDisable() => DisableHitbox();
+
+    [Button("타격음 미리듣기 (Play Mode)")]
+    private void TestHitSound()
+    {
+        if (!Application.isPlaying) { Debug.LogWarning("[SwordHitbox] Play Mode에서만 테스트할 수 있습니다."); return; }
+        _hitSoundPlayed = false;
+        PlayHitSound(transform.position);
+    }
 
     [Button("전방 타격 테스트 (1회)")]
     private void TestFrontHit()

@@ -148,6 +148,18 @@ public class SwordAttack : MonoBehaviour
     // 칼을 휘두를 때 재생할 사운드 클립이다. Inspector에서 연결한다.
     // 비워두면 소리 없이 연출만 동작한다.
 
+    [SerializeField, LabelText("공격 전용 AudioSource")]
+    private AudioSource attackAudioSource;
+    // 휘두르기 소리를 재생할 AudioSource다. 재생할 때마다 pitch를 바꾸므로 선풍기 등 다른 소리와 같이 쓰지 않는다.
+    // 비워두면 예전처럼 PlayClipAtPoint로 재생한다(음높이 변화 없음).
+
+    [SerializeField, LabelText("휘두르기 음량"), Range(0f, 1f)]
+    private float swishVolume = 0.8f;
+
+    [SerializeField, LabelText("휘두르기 음높이 범위"), MinMaxSlider(0.5f, 1.5f, true)]
+    private Vector2 swishPitchRange = new Vector2(0.92f, 1.08f);
+    // 매번 이 범위 안에서 pitch를 골라, 연타해도 같은 소리가 기계적으로 반복되지 않게 한다.
+
     [Title("타격 판정")]
     [SerializeField, LabelText("칼날 히트박스")]
     private SwordHitbox swordHitbox;
@@ -279,9 +291,8 @@ public class SwordAttack : MonoBehaviour
                 swordHitbox?.EnableHitbox();
 
                 if (swordTrail != null) swordTrail.emitting = true;
-                if (swishClip != null)
-                    AudioSource.PlayClipAtPoint(swishClip, sw08Transform.position);
-                // 베기 시작 순간 칼 위치에서 쉬잉 소리를 재생한다.
+                PlaySwishSound();
+                // 베기 시작 순간 휘두르는 소리를 재생한다.
 
             })
             // 준비 자세에서 베기 완료 각도로 빠르게 휘두른다.
@@ -340,6 +351,24 @@ public class SwordAttack : MonoBehaviour
                 .Insert(slashEndTime, tipLight.DOIntensity(0f, returnDuration));
         }
     }
+    // 휘두르는 소리를 재생한다. 전용 AudioSource가 있으면 음높이를 조금씩 바꿔 재생하고,
+    // 없으면 예전 방식(칼 위치에서 PlayClipAtPoint)으로 재생한다.
+    private void PlaySwishSound()
+    {
+        if (swishClip == null) return;
+
+        if (attackAudioSource != null)
+        {
+            attackAudioSource.pitch = UnityEngine.Random.Range(swishPitchRange.x, swishPitchRange.y);
+            attackAudioSource.PlayOneShot(swishClip, swishVolume);
+            // PlayOneShot은 이전 소리를 끊지 않고 겹쳐 재생하므로, 연타해도 앞 소리가 뚝 끊기지 않는다.
+        }
+        else
+        {
+            AudioSource.PlayClipAtPoint(swishClip, sw08Transform.position);
+        }
+    }
+
     private void ResetPillowVisual()
     {
         if (pillowMesh == null) return;

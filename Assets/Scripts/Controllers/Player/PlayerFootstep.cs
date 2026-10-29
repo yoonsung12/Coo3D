@@ -18,6 +18,23 @@ public class PlayerFootstep : MonoBehaviour
     [SerializeField, LabelText("발소리 클립 목록")]
     private AudioClip[] footstepClips;
     // 여러 개를 넣으면 매번 무작위로 골라 반복감이 줄어든다. 직전에 재생한 클립은 연속으로 고르지 않는다.
+    // 바닥 종류가 기본(벽돌, 보도블록 등)이거나 아래 설정이 비어 있을 때 쓰는 기본 발소리다.
+
+    [Title("바닥별 발소리")]
+    [SerializeField, LabelText("바닥별 발소리 설정")]
+    private FootstepSoundSet soundSet;
+    // Assets의 FootstepSoundSet 에셋을 연결한다. 비워두면 바닥과 상관없이 위의 기본 발소리만 난다.
+
+    [SerializeField, LabelText("바닥 검사 레이어")]
+    private LayerMask groundMask = ~0;
+    // 발밑 바닥을 찾을 때 검사할 레이어다. 기본값은 전체다.
+
+    [SerializeField, LabelText("바닥 검사 거리")]
+    private float groundProbeDistance = 0.6f;
+    // 발 위치에서 아래로 이 거리 안에 있는 바닥을 밟은 바닥으로 본다. 경사로에서 놓치면 조금 늘린다.
+
+    [ReadOnly, ShowInInspector, LabelText("마지막으로 밟은 바닥")]
+    private FootstepSurfaceType _currentSurface;
 
     [Title("재생 설정")]
     [SerializeField, LabelText("걷기 판정 최소 속도")]
@@ -49,6 +66,8 @@ public class PlayerFootstep : MonoBehaviour
     private PlayerController _playerController;
     private bool _wasGrounded = true;
     private int _lastClipIndex = -1;
+    private AudioClip[] _lastClips;
+    // 직전에 쓴 클립 목록이다. 바닥이 바뀌어 목록이 달라지면 "직전 클립 피하기" 기록을 초기화한다.
 
     private void Awake()
     {
@@ -98,15 +117,31 @@ public class PlayerFootstep : MonoBehaviour
     // 클립 목록에서 직전과 다른 클립을 골라 음량/음높이를 살짝 흔들어 재생한다.
     private void PlayFootstep()
     {
-        if (footstepAudioSource == null || footstepClips == null || footstepClips.Length == 0)
+        _currentSurface = DetectSurface();
+        PlayFootstep(_currentSurface);
+    }
+
+    // 바닥 종류에 맞는 클립 목록에서 하나를 골라 재생한다. 그 종류의 클립이 없으면 기본 발소리를 쓴다.
+    private void PlayFootstep(FootstepSurfaceType surface)
+    {
+        AudioClip[] clips = soundSet != null ? soundSet.GetClips(surface) : null;
+        if (clips == null) clips = footstepClips;
+
+        if (footstepAudioSource == null || clips == null || clips.Length == 0)
             return;
 
-        int index = Random.Range(0, footstepClips.Length);
-        if (footstepClips.Length > 1 && index == _lastClipIndex)
-            index = (index + 1) % footstepClips.Length;
+        if (clips != _lastClips)
+        {
+            _lastClips = clips;
+            _lastClipIndex = -1;
+        }
+
+        int index = Random.Range(0, clips.Length);
+        if (clips.Length > 1 && index == _lastClipIndex)
+            index = (index + 1) % clips.Length;
         _lastClipIndex = index;
 
-        AudioClip clip = footstepClips[index];
+        AudioClip clip = clips[index];
         if (clip == null)
             return;
 
@@ -116,9 +151,55 @@ public class PlayerFootstep : MonoBehaviour
         footstepAudioSource.PlayOneShot(clip, finalVolume);
     }
 
+    // 발밑 바닥을 짧게 레이캐스트해 바닥 종류를 정한다.
+    // 순서: 영역 판정 바닥(눈 덮개 등) → FootstepSurface 직접 지정 → IcePlatform(얼음) → 재질(눈/풀 목록) → 기본.
+    // 발소리를 낼 때만 한 번 검사하므로 매 프레임 비용이 들지 않는다.
+    private FootstepSurfaceType DetectSurface()
+    {
+        // 콜라이더 없이 바닥 위에 얹힌 장식(눈 덮개)은 레이캐스트에 잡히지 않으므로 발 위치로 먼저 확인한다.
+        if (FootstepSurface.TryGetAreaSurface(transform.position, out FootstepSurfaceType areaType))
+            return areaType;
+
+        // 발(피벗)보다 조금 위에서 쏴서, 경사로에 발이 살짝 묻혀 있어도 바닥을 놓치지 않게 한다.
+        // 시작점이 플레이어 CharacterController 안이라 자기 자신은 맞지 않는다.
+        Vector3 origin = transform.position + Vector3.up * 0.3f;
+        if (!Physics.Raycast(origin, Vector3.down, out RaycastHit hit, 0.3f + groundProbeDistance, groundMask, QueryTriggerInteraction.Ignore))
+            return FootstepSurfaceType.Default;
+
+        Collider ground = hit.collider;
+
+        FootstepSurface marker = ground.GetComponentInParent<FootstepSurface>();
+        if (marker != null) return marker.SurfaceType;
+
+        // 횃불로 녹아 미끄럽지 않은 상태여도 얼음 위이므로 얼음 소리를 낸다.
+        if (ground.GetComponentInParent<IcePlatform>() != null) return FootstepSurfaceType.Ice;
+
+        if (soundSet == null) return FootstepSurfaceType.Default;
+
+        // 콜라이더와 렌더러가 다른 오브젝트에 있는 모델(FBX 프리팹 등)도 있으므로 자신 → 부모 → 자식 순서로 찾는다.
+        Renderer renderer = ground.GetComponent<Renderer>();
+        if (renderer == null) renderer = ground.GetComponentInParent<Renderer>();
+        if (renderer == null) renderer = ground.GetComponentInChildren<Renderer>();
+        if (renderer == null) return FootstepSurfaceType.Default;
+
+        foreach (Material material in renderer.sharedMaterials)
+        {
+            FootstepSurfaceType type = soundSet.GetTypeFromMaterial(material);
+            if (type != FootstepSurfaceType.Default) return type;
+        }
+        return FootstepSurfaceType.Default;
+    }
+
     [Button("발소리 테스트")]
     private void TestFootstep()
     {
         PlayFootstep();
+    }
+
+    [Button("바닥별 발소리 미리듣기 (Play Mode)")]
+    private void TestSurfaceFootstep(FootstepSurfaceType surface)
+    {
+        if (!Application.isPlaying) { Debug.LogWarning("[PlayerFootstep] Play Mode에서만 테스트할 수 있습니다."); return; }
+        PlayFootstep(surface);
     }
 }
