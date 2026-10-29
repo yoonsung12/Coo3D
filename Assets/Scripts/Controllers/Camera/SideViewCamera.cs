@@ -127,11 +127,28 @@ public class SideViewCamera : MonoBehaviour
     private Object _maxHeightOwner;
     // 높이 제한을 건 구역이다. 구역끼리 붙어 있을 때 먼저 나간 구역이 새 구역의 제한을 풀어버리지 않도록 기억한다.
 
+    [ReadOnly, ShowInInspector, LabelText("고정 시점 정도 (0=추적, 1=고정)")]
+    private float _fixedBlend;
+    // FixedCameraZone이 DOTween으로 0~1을 오가게 한다. 0이면 기존 추적과 완전히 같고, 1이면 고정 위치/회전에 머문다.
+
+    private Vector3 _fixedPosition;
+    private Quaternion _fixedRotation;
+    // StartFixedView()로 받은, 카메라가 머물 월드 위치와 회전이다.
+
+    private Vector3 _followPosition;
+    // 고정 시점 중에도 계속 계산해 두는 "원래 추적 위치"다. 고정이 풀릴 때 이 위치에서 자연스럽게 이어 따라가게 한다.
+
+    private Tween _fixedTween;
+    // 고정 시점이 켜지고 꺼지는 전환 연출이다. 구역을 빠르게 드나들어도 현재 값에서 이어지게 다시 호출되면 끊는다.
+
     // 지금 카메라 높이 제한이 걸려 있는지 외부(CameraCeilingZone)에서 확인할 때 쓴다.
     public bool HasMaxHeight => _hasMaxHeight;
 
     // 탑다운 시점의 카메라 회전이다. 내려다보는 각도(topDownPitch)에 방향(_topDownYaw)을 더한다.
     private Quaternion TopDownRotation => Quaternion.Euler(topDownPitch, _topDownYaw, 0f);
+
+    // 지금 시점 모드(사이드뷰 ↔ 탑다운 전환 정도)에 맞는 회전이다. 고정 시점이 풀릴 때 이 회전으로 돌아온다.
+    private Quaternion ModeRotation => Quaternion.Slerp(_currentSideRotation, TopDownRotation, _topDownBlend);
 
     private void Start()
     {
@@ -140,6 +157,7 @@ public class SideViewCamera : MonoBehaviour
         _sideRotation = Quaternion.Euler(sidePitch, transform.eulerAngles.y, 0f);
         _currentSideRotation = _sideRotation;
         transform.rotation = _sideRotation;
+        _followPosition = transform.position;
 
         // 시점 모드는 PlayerController가 관리하고, 카메라는 이벤트를 받아 따라 바뀐다.
         // 이렇게 하면 구역 트리거는 플레이어에게만 알리면 되고 카메라를 따로 연결할 필요가 없다.
@@ -218,7 +236,19 @@ public class SideViewCamera : MonoBehaviour
         if (target == null) return;
 
         Vector3 targetPosition = CalculateTargetPosition();
+
+        // 고정 시점 구역(FixedCameraZone) 안이면, 추적 위치는 따로 계속 계산해 두고 화면에는 고정 위치/회전을 섞어 보여준다.
+        // 회전도 매 프레임 덮어쓰므로, 그 사이 시점 모드 전환 Tween이 돌아도 고정 화면이 흔들리지 않는다.
+        if (_fixedBlend > 0f)
+        {
+            _followPosition = Vector3.Lerp(_followPosition, targetPosition, followSpeed * Time.deltaTime);
+            transform.position = Vector3.Lerp(_followPosition, _fixedPosition, _fixedBlend) + _shakeOffset;
+            transform.rotation = BlendWithoutRoll(ModeRotation, _fixedRotation, _fixedBlend);
+            return;
+        }
+
         transform.position = Vector3.Lerp(transform.position, targetPosition, followSpeed * Time.deltaTime) + _shakeOffset;
+        _followPosition = transform.position;
     }
 
     // 지금 플레이어 위치 기준으로 카메라가 있어야 할 위치를 계산한다.
@@ -299,7 +329,72 @@ public class SideViewCamera : MonoBehaviour
     public void SnapToTarget()
     {
         if (target == null) return;
+
+        // 순간이동하면서 바뀐 시점 모드/진행 축/탑다운 방향 전환을 즉시 끝낸다.
+        // 위치만 옮기면 화면이 밝아지는 동안 카메라가 아직 회전 중인 모습(예: 90도 도는 모습)이 보이기 때문이다.
+        // 호출하는 쪽(EntrancePortal 등)은 화면이 검게 덮인 상태에서 부르므로 즉시 끝내도 튀어 보이지 않는다.
+        // IsActive()로 이미 끝났거나 Kill된 Tween은 건너뛴다(끝난 Tween에 Complete를 부르면 DOTween 경고가 난다).
+        if (_blendTween.IsActive()) _blendTween.Complete();
+        if (_axisTween.IsActive()) _axisTween.Complete();
+        if (_yawTween.IsActive()) _yawTween.Complete();
+
         transform.position = CalculateTargetPosition();
+        _followPosition = transform.position;
+        // 고정 시점 중에 순간이동한 경우에도, 고정이 풀리면 이전 자리에서 쓸려 오지 않고 도착 지점에서 시작하게 한다.
+    }
+
+    // FixedCameraZone에 들어갔을 때 호출한다. 카메라를 position/rotation에 고정하고, duration 동안 부드럽게 넘어간다.
+    // duration이 0이면 즉시 고정한다(구역 안으로 리스폰한 경우 등).
+    public void StartFixedView(Vector3 position, Quaternion rotation, float duration, Ease ease)
+    {
+        _fixedPosition = position;
+        _fixedRotation = rotation;
+
+        // 추적 중이었다면 지금 카메라 위치를 추적 위치의 시작점으로 삼는다.
+        if (_fixedBlend <= 0f)
+            _followPosition = transform.position;
+
+        _fixedTween?.Kill();
+        if (duration <= 0f)
+        {
+            _fixedBlend = 1f;
+            return;
+        }
+        _fixedTween = DOTween.To(() => _fixedBlend, v => _fixedBlend = v, 1f, duration).SetEase(ease);
+    }
+
+    // FixedCameraZone을 나갔을 때 호출한다. duration 동안 플레이어 추적으로 돌아오고,
+    // 0이면 즉시 플레이어 위치로 붙는다(순간이동으로 구역을 벗어난 경우).
+    public void EndFixedView(float duration, Ease ease)
+    {
+        _fixedTween?.Kill();
+        if (duration <= 0f)
+        {
+            FinishFixedView(true);
+            return;
+        }
+        _fixedTween = DOTween.To(() => _fixedBlend, v => _fixedBlend = v, 0f, duration)
+            .SetEase(ease)
+            .OnComplete(() => FinishFixedView(false));
+    }
+
+    // 두 회전을 기울기(X)·방향(Y)·롤(Z) 각도별로 섞는다.
+    // Quaternion.Slerp는 기울기와 방향이 둘 다 다르면 중간에 화면이 옆으로 기울어(롤) 보이므로, 고정 시점 전환에는 이 방식을 쓴다.
+    private static Quaternion BlendWithoutRoll(Quaternion from, Quaternion to, float t)
+    {
+        Vector3 a = from.eulerAngles;
+        Vector3 b = to.eulerAngles;
+        return Quaternion.Euler(Mathf.LerpAngle(a.x, b.x, t), Mathf.LerpAngle(a.y, b.y, t), Mathf.LerpAngle(a.z, b.z, t));
+    }
+
+    // 고정 시점을 완전히 끄고 회전을 지금 시점 모드에 맞게 되돌린다.
+    // 평소 LateUpdate는 회전을 건드리지 않으므로, 여기서 한 번 맞춰 두지 않으면 고정 회전이 그대로 남는다.
+    private void FinishFixedView(bool snap)
+    {
+        _fixedBlend = 0f;
+        transform.rotation = ModeRotation;
+        transform.position = snap && target != null ? CalculateTargetPosition() : _followPosition;
+        _followPosition = transform.position;
     }
 
     private void OnDestroy()
@@ -309,6 +404,7 @@ public class SideViewCamera : MonoBehaviour
         _axisTween?.Kill();
         _yawTween?.Kill();
         _focusSequence?.Kill();
+        _fixedTween?.Kill();
         // 씬 전환 등으로 카메라가 파괴될 때 남은 전환 Tween이 파괴된 transform에 접근하지 않게 정리한다.
 
         if (_player != null)
