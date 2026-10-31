@@ -96,6 +96,16 @@ public class PlayerHealth : CharacterBase
 
     private Coroutine _invincibleRoutine;
 
+    private bool _isDamageImmune;
+    // 낙사 연출처럼 조작이 잠긴 동안 데미지를 막기 위한 플래그다.
+    // 피격 무적(_isInvincible)은 깜빡임이 끝나면 자동으로 풀리므로, 연출 길이와 상관없이 유지되도록 따로 둔다.
+
+    // 연출 중 무적을 켜고 끈다. 켠 쪽이 연출이 끝날 때 반드시 false로 되돌려야 한다.
+    public void SetDamageImmune(bool immune)
+    {
+        _isDamageImmune = immune;
+    }
+
     private void Awake()
     {
         Instance = this;
@@ -139,8 +149,8 @@ public class PlayerHealth : CharacterBase
 
     public override void TakeDamage(float amount)
     {
-        // 이미 사망했거나 무적 시간 중이면 타격을 무시한다.
-        if (_isDead || _isInvincible) return;
+        // 이미 사망했거나 무적 시간(피격 무적, 연출 중 무적) 중이면 타격을 무시한다.
+        if (_isDead || _isInvincible || _isDamageImmune) return;
 
         _currentHealth -= amount;
         _currentHealth = Mathf.Max(_currentHealth, 0f);
