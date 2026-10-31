@@ -113,6 +113,17 @@ public class PlayerController : MonoBehaviour
 
     private CharacterController _cc;
 
+    // 수영 튜브(FloatTube)에 탑승 중이면 그 튜브가 들어 있다. null이면 평소처럼 걸어 다닌다.
+    private FloatTube _mountedTube;
+    // 탑승 중에는 튜브 자식이 되므로, 내릴 때 원래 부모로 돌려놓기 위해 기억해 둔다.
+    private Transform _originalParent;
+
+    // 튜브에 타고 있는지 여부다. 선풍기 반동/점프/이동 처리가 탑승 중에는 다르게 동작한다.
+    public bool IsMounted => _mountedTube != null;
+
+    // 지금 타고 있는 튜브다. 탑승 중 순간이동(Respawn)할 때 튜브도 같이 재배치하려고 PlayerHealth가 읽는다.
+    public FloatTube MountedTube => _mountedTube;
+
     // 이동 속도 성분들 (선풍기 반동/바람과 분리해 각각 감속 처리한다)
     private Vector3 _moveVelocity;
     private Vector3 _recoilVelocity;
@@ -199,6 +210,9 @@ public class PlayerController : MonoBehaviour
         // 빙결 디버프 중에는 점프도 막는다.
         if (_isFrozen) return;
 
+        // 튜브에 타고 있는 동안은 점프하지 않는다. (CharacterController가 꺼져 있어 점프 처리도 의미가 없다)
+        if (IsMounted) return;
+
         // 도구 휠/일시정지로 시간이 멈춘 동안 누른 점프가 재개 순간 튀어나가지 않게 막는다.
         if (Time.timeScale == 0f) return;
 
@@ -276,6 +290,16 @@ public class PlayerController : MonoBehaviour
             return;
 
         _moveInput = _moveAction.ReadValue<Vector2>();
+
+        // 튜브 탑승 중에는 CharacterController가 꺼져 있고 이동은 튜브(Rigidbody)가 맡는다.
+        // 화살표는 선풍기를 쏠 방향(FacingDirection)을 정하는 조준에만 쓰고, 나머지 이동/중력 처리는 건너뛴다.
+        // IsGrounded는 true로 유지해 점프/낙하 애니메이션이 재생되지 않고 선풍기 사용 조건도 그대로 만족하게 한다.
+        if (IsMounted)
+        {
+            IsGrounded = true;
+            HandleFacing();
+            return;
+        }
 
         IsGrounded = _cc.isGrounded;
 
@@ -578,12 +602,26 @@ public class PlayerController : MonoBehaviour
     // FanTool 일반 바람에 의한 반동을 설정한다.
     public void SetRecoil(Vector3 velocity)
     {
+        // 튜브 탑승 중에는 반동이 플레이어가 아니라 튜브를 밀어야 하므로 튜브로 넘긴다.
+        if (IsMounted)
+        {
+            _mountedTube.ApplyPush(velocity);
+            return;
+        }
+
         _recoilVelocity = velocity;
     }
 
     // FanTool 블라스트에 의한 강한 반동을 설정한다.
     public void SetBlast(Vector3 velocity)
     {
+        // 튜브 탑승 중에는 블라스트 반동도 튜브가 받는다. 플레이어의 _blastVelocity는 건드리지 않는다.
+        if (IsMounted)
+        {
+            _mountedTube.ApplyBlast(velocity);
+            return;
+        }
+
         _blastVelocity = new Vector3(velocity.x, 0f, velocity.z);
         // 위로 솟구치는 블라스트일 경우 수직 속도도 함께 적용한다.
         if (velocity.y > 0f)
@@ -591,6 +629,63 @@ public class PlayerController : MonoBehaviour
             _verticalVelocity = velocity.y;
             EndPlayerJump();
         }
+    }
+
+    // FloatTube가 호출한다. 플레이어를 튜브의 좌석(seat)에 앉힌다.
+    public void MountTo(FloatTube tube, Transform seat)
+    {
+        if (IsMounted || tube == null || seat == null) return;
+
+        _mountedTube = tube;
+        _originalParent = transform.parent;
+
+        // 걷기/반동/낙하 속도가 탑승 후에 남아 있으면 내린 뒤 엉뚱하게 튀므로 모두 초기화한다.
+        _moveVelocity = Vector3.zero;
+        _recoilVelocity = Vector3.zero;
+        _blastVelocity = Vector3.zero;
+        _windVelocity = Vector3.zero;
+        _platformVelocity = Vector3.zero;
+        _verticalVelocity = 0f;
+        EndPlayerJump();
+
+        // 튜브는 Rigidbody라 블라스트 속도(수 m/s 이상)로 움직인다. CharacterController.Move()로 따라가면 위치가 어긋나므로
+        // CharacterController를 끄고, 대신 튜브의 자식으로 붙여 튜브와 함께 부드럽게 움직이게 한다.
+        // 카메라도 플레이어 transform을 따라가므로 부모가 움직이면 자연스럽게 같이 따라온다.
+        Quaternion keepRotation = Quaternion.LookRotation(FacingDirection, Vector3.up);
+        _cc.enabled = false;
+        transform.SetParent(seat, false);
+        transform.localPosition = Vector3.zero;
+        // 부모의 회전과 상관없이 타기 전에 바라보던 방향을 그대로 유지한다.
+        transform.rotation = keepRotation;
+        IsGrounded = true;
+    }
+
+    // FloatTube가 호출한다. 튜브에서 내려 exitPosition에 선다.
+    public void Dismount(Vector3 exitPosition)
+    {
+        if (!IsMounted) return;
+
+        transform.SetParent(_originalParent, true);
+        _mountedTube = null;
+
+        // 순간이동은 규칙상 PlayerHealth.Respawn()을 거친다. CharacterController를 다시 켜고 시점 모드도 맞춰 준다.
+        if (PlayerHealth.Instance != null)
+            PlayerHealth.Instance.Respawn(exitPosition);
+        else
+        {
+            transform.position = exitPosition;
+            _cc.enabled = true;
+        }
+    }
+
+    // 탑승 상태만 풀고 원래 부모로 돌려놓는다. Dismount와 달리 Respawn을 부르지 않는다.
+    // 탑승 중 사망/순간이동처럼 호출한 쪽이 직접 위치를 옮길 때, 튜브의 자식으로 남아 따라다니는 것을 막기 위해 쓴다.
+    public void ReleaseMount()
+    {
+        if (!IsMounted) return;
+
+        transform.SetParent(_originalParent, true);
+        _mountedTube = null;
     }
 
     // WindZone 진입 시 지속적인 바람 속도를 설정한다.

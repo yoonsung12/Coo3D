@@ -326,6 +326,16 @@ public class PlayerHealth : CharacterBase
     // 체크포인트 리스폰, SaveManager.LoadGame 양쪽에서 공통으로 사용한다.
     public void Respawn(Vector3 position)
     {
+        // 튜브에 탄 채 사망/순간이동하면 플레이어가 튜브의 자식으로 남아 튜브를 따라다닌다.
+        // 그래서 먼저 탑승을 풀고(ReleaseMount), 이동이 끝난 뒤 튜브도 그 자리 근처 수면으로 재배치한다.
+        // (Dismount는 탑승을 먼저 푼 뒤 이 메서드를 부르므로 여기서는 IsMounted가 false라 재귀하지 않는다.)
+        FloatTube releasedTube = null;
+        if (_playerController != null && _playerController.IsMounted)
+        {
+            releasedTube = _playerController.MountedTube;
+            _playerController.ReleaseMount();
+        }
+
         if (_characterController != null)
         {
             _characterController.enabled = false;
@@ -341,6 +351,9 @@ public class PlayerHealth : CharacterBase
         // 그래서 옮긴 위치를 직접 검사해 탑다운/사이드뷰 시점을 맞춘다.
         if (_playerController != null)
             _playerController.SyncViewModeToPosition();
+
+        if (releasedTube != null)
+            releasedTube.ResetNear(position);
     }
 
     // 체력을 amount만큼 회복시킨다. 최대 체력을 넘지 않는다. 체크포인트, 회복 아이템 등에서 사용한다.

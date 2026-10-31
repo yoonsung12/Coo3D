@@ -12,7 +12,12 @@ public class RegionCheckpoint : MonoBehaviour
 
     private void OnTriggerEnter(Collider other)
     {
-        if (other.GetComponent<PlayerController>() == null) return;
+        // 튜브를 타고 있는 동안에는 플레이어의 CharacterController가 꺼져 있어서 트리거에는 튜브 콜라이더만 닿는다.
+        // 그래서 탑승 중인 튜브도 플레이어와 똑같이 인정해야 물 위에서도 체크포인트가 저장된다.
+        bool isPlayer = other.GetComponent<PlayerController>() != null;
+        FloatTube tube = other.GetComponent<FloatTube>();
+        bool isRidingTube = tube != null && tube.IsMounted;
+        if (!isPlayer && !isRidingTube) return;
 
         Vector3 position = respawnPoint != null ? respawnPoint.position : transform.position;
         CheckpointManager.SetCheckpoint(position, gameObject.scene.name);

@@ -72,9 +72,10 @@ public class PlayerAnimatorController : MonoBehaviour
     private void UpdateSpeed()
     {
         Vector3 horizontal = new Vector3(_cc.velocity.x, 0f, _cc.velocity.z);
-        _currentSpeed = _playerController.enabled ? horizontal.magnitude : 0f;
+        _currentSpeed = _playerController.enabled && !_playerController.IsMounted ? horizontal.magnitude : 0f;
         // 컷신·포털 연출 중에는 PlayerController가 꺼져 Move()가 호출되지 않아 _cc.velocity가 마지막 값으로 남는다.
         // 그대로 쓰면 멈춰 있는데도 달리기 애니메이션이 계속 나오므로, 꺼져 있을 때는 정지로 본다.
+        // 튜브 탑승 중에도 CharacterController가 꺼져 같은 문제가 생기므로 정지로 본다.
         animator.SetFloat(SpeedHash, _currentSpeed);
     }
 
