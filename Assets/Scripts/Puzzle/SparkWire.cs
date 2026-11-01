@@ -2,7 +2,7 @@ using DG.Tweening;
 using Sirenix.OdinInspector;
 using UnityEngine;
 
-// 천장에서 늘어진 합선 전선이다. 꺼짐 -> 경고(깜빡임) -> 켜짐 순서로 반복하며,
+// 물에 빠진 합선 전선이다. 꺼짐 -> 경고(깜빡임) -> 켜짐 순서로 반복하며,
 // 켜진 동안 수로 폭을 가로지르는 트리거에 탑승 튜브가 들어오면 감전 데미지를 주고 온 방향으로 튕겨낸다.
 // 꺼져 있을 때 타이밍을 맞춰 지나가는 것이 퍼즐 포인트다.
 [RequireComponent(typeof(BoxCollider))]
@@ -28,6 +28,17 @@ public class SparkWire : MonoBehaviour
 
     [SerializeField, LabelText("감전 소리 (선택)")]
     private AudioClip zapClip;
+
+    [SerializeField, LabelText("지직 반복 소리 (선택)")]
+    private AudioClip buzzLoopClip;
+    // 판정이 켜진 동안에만 반복 재생되는 지지직 소리다. 꺼짐/경고 때는 나지 않는다.
+
+    [SerializeField, LabelText("지직 소리 볼륨"), Range(0f, 1f)]
+    private float buzzVolume = 0.8f;
+
+    [SerializeField, LabelText("지직 소리 끄는 시간(초)")]
+    private float buzzFadeOutDuration = 0.1f;
+    // 꺼질 때 소리가 뚝 끊기지 않게 이 시간 동안 볼륨을 줄인 뒤 멈춘다.
 
     [Title("주기 설정")]
     [SerializeField, LabelText("꺼짐 시간(초)")]
@@ -64,6 +75,26 @@ public class SparkWire : MonoBehaviour
     [SerializeField, LabelText("전선 꺼진 색")]
     private Color offColor = new Color(0.15f, 0.15f, 0.15f, 1f);
 
+    [Title("물 위 전기 효과")]
+    [SerializeField, LabelText("번개 띠 렌더러 (선택)")]
+    private Renderer waterArcRenderer;
+    // 전선을 따라 수면에 깔린 번개 띠 메시다. 가산(Additive) 파티클 머티리얼을 쓴다.
+    // 텍스처는 세로로 번개 무늬 여러 줄(arcRows)을 쌓은 한 장이며, 켜진 동안 줄과 가로 위치를 바꿔 지직거린다.
+
+    [SerializeField, LabelText("번개 무늬 줄 수")]
+    private int arcRows = 4;
+
+    [SerializeField, LabelText("켜진 밝기(알파)"), Range(0f, 1f)]
+    private float arcOnAlpha = 1f;
+
+    [SerializeField, LabelText("경고 밝기(알파)"), Range(0f, 1f)]
+    private float arcWarningAlpha = 0.35f;
+    // 경고 깜빡임 때 번개 띠가 희미하게 보이는 정도다. 0이면 경고 때 안 보인다.
+
+    [SerializeField, LabelText("지직임 간격(초)")]
+    private float arcFlickerInterval = 0.07f;
+    // 켜진 동안 번개 무늬를 바꾸는 간격이다. 작을수록 빠르게 지직거린다.
+
     [Title("런타임 상태 (읽기 전용)")]
     [ShowInInspector, ReadOnly, LabelText("현재 단계")]
     private Phase _phase = Phase.Off;
@@ -72,13 +103,24 @@ public class SparkWire : MonoBehaviour
 
     private Sequence _cycleSequence;
     private Tween _forceTween;
+    private Tween _buzzFadeTween;
     private bool _shockedThisActivation;
     private Material _cableMaterial;
+    private Material _arcMaterial;
+    private Sequence _arcFlickerSequence;
+    private Color _arcBaseColor;
+    private Vector2 _arcScale;
 
     private void Awake()
     {
         GetComponent<BoxCollider>().isTrigger = true;
         if (cableRenderer != null) _cableMaterial = cableRenderer.material;
+        if (waterArcRenderer != null)
+        {
+            _arcMaterial = waterArcRenderer.material;
+            _arcBaseColor = _arcMaterial.GetColor("_BaseColor");
+            _arcScale = _arcMaterial.GetTextureScale("_BaseMap");
+        }
     }
 
     private void OnEnable()
@@ -100,6 +142,9 @@ public class SparkWire : MonoBehaviour
     {
         _cycleSequence?.Kill();
         _forceTween?.Kill();
+        _arcFlickerSequence?.Kill();
+        _buzzFadeTween?.Kill();
+        if (audioSource != null && audioSource.clip == buzzLoopClip) audioSource.Stop();
     }
 
     // 꺼짐 -> 경고 -> 켜짐을 무한 반복하는 Sequence를 만든다.
@@ -114,9 +159,9 @@ public class SparkWire : MonoBehaviour
         _cycleSequence.AppendCallback(() => SetPhase(Phase.Warning));
         for (int i = 0; i < warningBlinks; i++)
         {
-            _cycleSequence.AppendCallback(() => SetLightIntensity(onIntensity * 0.5f));
+            _cycleSequence.AppendCallback(() => { SetLightIntensity(onIntensity * 0.5f); SetArcAlpha(arcWarningAlpha); RandomizeArcFrame(); });
             _cycleSequence.AppendInterval(blinkStep);
-            _cycleSequence.AppendCallback(() => SetLightIntensity(offIntensity));
+            _cycleSequence.AppendCallback(() => { SetLightIntensity(offIntensity); SetArcAlpha(0f); });
             _cycleSequence.AppendInterval(blinkStep);
         }
         _cycleSequence.AppendCallback(() => SetPhase(Phase.On));
@@ -141,6 +186,8 @@ public class SparkWire : MonoBehaviour
                 SetLightIntensity(onIntensity);
                 if (_cableMaterial != null) _cableMaterial.SetColor("_BaseColor", onColor);
                 if (sparkParticles != null) sparkParticles.Play();
+                StartArcFlicker();
+                StartBuzz();
                 if (audioSource != null && zapClip != null) audioSource.PlayOneShot(zapClip);
                 break;
         }
@@ -151,6 +198,61 @@ public class SparkWire : MonoBehaviour
         SetLightIntensity(offIntensity);
         if (_cableMaterial != null) _cableMaterial.SetColor("_BaseColor", offColor);
         if (sparkParticles != null) sparkParticles.Stop(true, ParticleSystemStopBehavior.StopEmitting);
+        _arcFlickerSequence?.Kill();
+        SetArcAlpha(0f);
+        StopBuzz();
+    }
+
+    // 판정이 켜지는 순간 지직 소리를 반복 재생한다. AudioSource의 clip/loop를 사용하므로 PlayOneShot(감전 소리)과 겹쳐도 된다.
+    private void StartBuzz()
+    {
+        if (audioSource == null || buzzLoopClip == null) return;
+        _buzzFadeTween?.Kill();
+        audioSource.clip = buzzLoopClip;
+        audioSource.loop = true;
+        audioSource.volume = buzzVolume;
+        audioSource.Play();
+    }
+
+    // 판정이 꺼지면 볼륨을 짧게 줄인 뒤 멈춘다.
+    private void StopBuzz()
+    {
+        if (audioSource == null || buzzLoopClip == null || !audioSource.isPlaying || audioSource.clip != buzzLoopClip) return;
+        _buzzFadeTween?.Kill();
+        _buzzFadeTween = audioSource.DOFade(0f, buzzFadeOutDuration)
+            .OnComplete(() => audioSource.Stop());
+    }
+
+    // 켜진 동안 일정 간격으로 번개 무늬를 바꾸는 반복 Sequence다. 꺼짐/비활성화 때 Kill한다.
+    private void StartArcFlicker()
+    {
+        if (_arcMaterial == null) return;
+        _arcFlickerSequence?.Kill();
+        SetArcAlpha(arcOnAlpha);
+        RandomizeArcFrame();
+        _arcFlickerSequence = DOTween.Sequence()
+            .AppendInterval(arcFlickerInterval)
+            .AppendCallback(RandomizeArcFrame)
+            .SetLoops(-1, LoopType.Restart);
+    }
+
+    // 텍스처의 번개 줄 하나를 무작위로 고르고 가로 위치도 섞어서, 매번 다른 번개처럼 보이게 한다.
+    private void RandomizeArcFrame()
+    {
+        if (_arcMaterial == null) return;
+        int rows = Mathf.Max(1, arcRows);
+        int row = Random.Range(0, rows);
+        _arcMaterial.SetTextureScale("_BaseMap", new Vector2(_arcScale.x, 1f / rows));
+        _arcMaterial.SetTextureOffset("_BaseMap", new Vector2(Random.value, (float)row / rows));
+    }
+
+    // 가산 머티리얼은 알파가 밝기에 곱해지므로 알파 0이면 완전히 안 보인다.
+    private void SetArcAlpha(float alpha)
+    {
+        if (_arcMaterial == null) return;
+        Color c = _arcBaseColor;
+        c.a = alpha;
+        _arcMaterial.SetColor("_BaseColor", c);
     }
 
     private void SetLightIntensity(float value)
