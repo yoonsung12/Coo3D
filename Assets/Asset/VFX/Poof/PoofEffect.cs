@@ -27,20 +27,19 @@ public class PoofEffect : MonoBehaviour
     [SerializeField] private float randomMovement = 1.28f;
     [SerializeField] private float randomRotation = 37.6f;
 
-    // 기존 Inspector 값을 보존하기 위해 남겨둠.
-    // 이제 크기 랜덤화에는 사용하지 않음.
+    // 기존 Inspector 값 보존
     [SerializeField] private float scaleVariation = 1.4f;
 
     [Header("Alpha")]
     [SerializeField, Range(0f, 1f)]
-    private float maxAlpha = 0.241f;
+    private float maxAlpha = 0.8f;
 
     [SerializeField, Range(0f, 1f)]
     private float fadeStart = 0.5f;
 
     [Header("Test")]
     [SerializeField] private bool playOnStart = false;
-    [SerializeField] private bool testKey = true;
+    [SerializeField] private bool testKey = false;
 
     private SpriteRenderer[] sprites;
     private Vector3[] basePositions;
@@ -51,6 +50,12 @@ public class PoofEffect : MonoBehaviour
     private Sequence sequence;
 
     private void Awake()
+    {
+        InitializeSprites();
+        HideAll();
+    }
+
+    private void InitializeSprites()
     {
         int subCount = subPuffs == null ? 0 : subPuffs.Length;
         int count = subCount + 1;
@@ -75,10 +80,8 @@ public class PoofEffect : MonoBehaviour
             basePositions[i] = t.localPosition;
             baseScales[i] = t.localScale;
             baseRotations[i] = t.localRotation;
-            baseColors[i] = t.GetComponent<SpriteRenderer>().color;
+            baseColors[i] = sprites[i].color;
         }
-
-        HideAll();
     }
 
     private void Start()
@@ -113,20 +116,39 @@ public class PoofEffect : MonoBehaviour
         sequence?.Kill();
         sequence = null;
 
+        // 배열이 아직 초기화되지 않았거나 크기가 다른 경우 재설정
+        int expectedCount =
+            (subPuffs == null ? 0 : subPuffs.Length) + 1;
+
+        if (sprites == null ||
+            basePositions == null ||
+            baseScales == null ||
+            baseRotations == null ||
+            baseColors == null ||
+            sprites.Length != expectedCount ||
+            basePositions.Length != expectedCount ||
+            baseScales.Length != expectedCount ||
+            baseRotations.Length != expectedCount ||
+            baseColors.Length != expectedCount)
+        {
+            InitializeSprites();
+        }
+
         HideAll();
+
+        if (sprites == null || sprites.Length == 0)
+            return;
 
         sequence = DOTween.Sequence();
 
-        // MAIN: Inspector에서 설정한 크기 그대로
+        // 메인 펑
         AnimatePuff(0, 0f);
 
-        // SUB: 크기 랜덤화 없이 순차적으로 재생
+        // 서브 펑 순차 재생
         float previousDelay = 0f;
 
         for (int i = 1; i < sprites.Length; i++)
         {
-            // 기존 Variation 값은 유지하지만,
-            // Sub 순서가 뒤바뀌지 않도록 간격 제한
             float variation = Random.Range(
                 -Mathf.Min(subDelayVariation, subDelay * 0.4f),
                  Mathf.Min(subDelayVariation, subDelay * 0.4f)
@@ -151,21 +173,38 @@ public class PoofEffect : MonoBehaviour
 
     private void AnimatePuff(int index, float delay)
     {
+        // 배열 범위 오류 방지
+        if (sprites == null ||
+            basePositions == null ||
+            baseScales == null ||
+            baseRotations == null ||
+            baseColors == null)
+            return;
+
+        if (index < 0 ||
+            index >= sprites.Length ||
+            index >= basePositions.Length ||
+            index >= baseScales.Length ||
+            index >= baseRotations.Length ||
+            index >= baseColors.Length)
+        {
+            Debug.LogWarning(
+                "[PoofEffect] 배열 인덱스 오류 방지: " + index
+            );
+            return;
+        }
+
         SpriteRenderer sprite = sprites[index];
         if (sprite == null) return;
 
         Transform t = sprite.transform;
 
         Vector3 origin = basePositions[index];
-
-        // 크기는 각 Sprite의 Inspector Scale 기준
         Vector3 originalScale = baseScales[index];
 
-        // Main/Sub 모두 크기 랜덤 적용 안 함
         Vector3 startSize = originalScale * startScale;
         Vector3 finalSize = originalScale * endScale;
 
-        // 랜덤 움직임과 회전은 유지
         float angle = Random.Range(0f, 360f) * Mathf.Deg2Rad;
 
         Vector3 direction = new Vector3(
@@ -190,7 +229,6 @@ public class PoofEffect : MonoBehaviour
 
         float puffDuration = Mathf.Max(0.01f, duration);
 
-        // 시작 상태 초기화
         t.localPosition = origin;
         t.localScale = startSize;
         t.localRotation = baseRotations[index];
@@ -200,7 +238,6 @@ public class PoofEffect : MonoBehaviour
         sprite.color = color;
         sprite.enabled = false;
 
-        // 지정된 시간에 등장
         sequence.InsertCallback(delay, () =>
         {
             if (sprite == null) return;
@@ -212,34 +249,34 @@ public class PoofEffect : MonoBehaviour
             sprite.color = c;
         });
 
-        // 1단계: 빠르게 펑!
         float burstTime = puffDuration * 0.3f;
 
-        sequence.Insert(delay,
+        sequence.Insert(
+            delay,
             t.DOScale(
                 Vector3.Lerp(startSize, finalSize, 0.85f),
                 burstTime
             ).SetEase(Ease.OutBack)
         );
 
-        // 2단계: 천천히 부풀어 오름
-        sequence.Insert(delay + burstTime,
+        sequence.Insert(
+            delay + burstTime,
             t.DOScale(
                 finalSize,
                 puffDuration - burstTime
             ).SetEase(Ease.OutSine)
         );
 
-        // 불규칙하게 이동
-        sequence.Insert(delay,
+        sequence.Insert(
+            delay,
             t.DOLocalMove(
                 destination,
                 puffDuration
             ).SetEase(Ease.OutSine)
         );
 
-        // 회전
-        sequence.Insert(delay,
+        sequence.Insert(
+            delay,
             t.DOLocalRotate(
                 baseRotations[index].eulerAngles +
                 new Vector3(0f, 0f, rotationZ),
@@ -247,14 +284,15 @@ public class PoofEffect : MonoBehaviour
             ).SetEase(Ease.OutSine)
         );
 
-        // 후반부에 서서히 사라짐
-        float fadeDelay =
-            delay + puffDuration * fadeStart;
+        float fadeDelay = delay + puffDuration * fadeStart;
 
-        float fadeDuration =
-            Mathf.Max(0.01f, puffDuration * (1f - fadeStart));
+        float fadeDuration = Mathf.Max(
+            0.01f,
+            puffDuration * (1f - fadeStart)
+        );
 
-        sequence.Insert(fadeDelay,
+        sequence.Insert(
+            fadeDelay,
             sprite.DOFade(
                 0f,
                 fadeDuration

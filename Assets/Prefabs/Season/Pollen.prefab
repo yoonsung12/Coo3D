@@ -10,10 +10,10 @@ GameObject:
   m_Component:
   - component: {fileID: 2476192564232941213}
   - component: {fileID: 6694753227940692344}
-  - component: {fileID: 7059653143505437189}
   - component: {fileID: 8698703380927187725}
   - component: {fileID: 329039424528076192}
   - component: {fileID: 4043643233027023861}
+  - component: {fileID: -1306021764244846615}
   m_Layer: 0
   m_Name: Pollen
   m_TagString: Untagged
@@ -43,28 +43,7 @@ MeshFilter:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 3242391633422008354}
-  m_Mesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
---- !u!135 &7059653143505437189
-SphereCollider:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 3242391633422008354}
-  m_Material: {fileID: 0}
-  m_IncludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ExcludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_LayerOverridePriority: 0
-  m_IsTrigger: 0
-  m_ProvidesContacts: 0
-  m_Enabled: 1
-  serializedVersion: 3
-  m_Radius: 0.5
-  m_Center: {x: 0, y: 0, z: 0}
+  m_Mesh: {fileID: 5461320835613783329, guid: a38fe13ecc54ae84580496766fedbbdf, type: 3}
 --- !u!23 &8698703380927187725
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -88,7 +67,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 31321ba15b8f8eb4c954353edc038b1d, type: 2}
+  - {fileID: 2100000, guid: bf8500a71000ee942bd0c16e8e1202cf, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -155,25 +134,47 @@ MonoBehaviour:
   spawnHalfDepth: 0
   destroyBelowY: -20
   blockedShrinkDuration: 0.2
-  windSpeed: 0.6
+  windSpeed: 0.8
   swaySpeed: 2
   swayAmount: 0.4
   verticalSwayAmount: 0.15
   rotateSpeed: 80
-  fallSpeed: 1.2
-  minScale: 0.3
-  maxScale: 0.5
-  lifetime: 10
+  fallSpeed: 2
+  minScale: 70
+  maxScale: 90
+  lifetime: 6
   lifetimeFadeTime: 0.5
   blownFadeTime: 1.5
   blownShrinkSpeed: 2
   shadowPrefab: {fileID: 1345573366764209907, guid: 37bfda11212b8324a9b72416c97e5e20, type: 3}
   shadowGroundLayer:
     serializedVersion: 2
-    m_Bits: 4294967295
+    m_Bits: 823
   shadowMaxHeight: 12
   shadowSizeRange: {x: 0.6, y: 1.2}
   shadowAlphaRange: {x: 0.3, y: 0.75}
   shadowFadeDuration: 0.3
   blownSound: {fileID: 0}
   soundVolume: 0.8
+--- !u!64 &-1306021764244846615
+MeshCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3242391633422008354}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 5
+  m_Convex: 1
+  m_CookingOptions: 30
+  m_Mesh: {fileID: 5461320835613783329, guid: a38fe13ecc54ae84580496766fedbbdf, type: 3}

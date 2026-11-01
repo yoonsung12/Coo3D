@@ -23,6 +23,10 @@ public class SeasonGaugeManager : MonoBehaviour
     private AudioSource audioSource;
     // 게이지 적립음과 디버프 발동음을 재생한다. 비워두면 소리 없이 넘어간다.
 
+    [Title("계절 파동 이펙트")]
+    [SerializeField, LabelText("플레이어 계절 파동")]
+    private SeasonAuraController seasonAura;
+
     [SerializeField, LabelText("봄(꽃가루) 접촉음")]
     private AudioClip springGaugeSound;
 
@@ -72,6 +76,8 @@ public class SeasonGaugeManager : MonoBehaviour
 
     private static GaugeModel _model;
 
+    private static SeasonAuraController _seasonAura;
+
     // TriggerDebuff가 static이라 새 디버프가 발동될 때 타이머를 함께 리셋하려면 static이어야 한다.
     private static float _debuffTimer;
     // 현재 디버프가 발동된 이후 경과 시간(초)이다.
@@ -99,6 +105,7 @@ public class SeasonGaugeManager : MonoBehaviour
         _model = gaugeModel;
         _debuffDuration = debuffDuration;
 
+        _seasonAura = seasonAura;
         _audioSource = audioSource;
         _springGaugeSound = springGaugeSound;
         _summerGaugeSound = summerGaugeSound;
@@ -151,12 +158,24 @@ public class SeasonGaugeManager : MonoBehaviour
         if (_model == null) return;
 
         int filledBefore = _model.TotalFilled;
+
         _model.Add(season, slots);
+
         OnGaugeChanged?.Invoke();
 
-        // 실제로 칸이 늘어난 경우에만 접촉음을 재생한다. 이미 꽉 차 있어서 무시된 경우는 제외한다.
+        // 게이지가 실제로 증가했을 때만
         if (_model.TotalFilled > filledBefore)
+        {
             PlayGaugeSound(season);
+
+            // 계절별 충전 파동
+            if (_seasonAura != null)
+            {
+                _seasonAura.PlayCharge(
+                    (SeasonAuraController.Season)season
+                );
+            }
+        }
 
         if (_model.IsFull)
             TriggerDebuff();
@@ -165,14 +184,26 @@ public class SeasonGaugeManager : MonoBehaviour
     private static void TriggerDebuff()
     {
         SeasonType dominant = _model.DominantSeason();
+
         CurrentDebuff = SeasonToDebuff(dominant);
-        // 디버프가 활성 상태에서 게이지가 다시 가득 차 새 디버프로 갱신되는 경우를 대비해
-        // 지속 시간을 항상 0부터 다시 세도록 명시적으로 리셋한다.
+
         _debuffTimer = 0f;
 
         OnDebuffTriggered?.Invoke(CurrentDebuff);
+
         PlayDebuffSound(CurrentDebuff);
-        Debug.Log($"[SeasonGaugeManager] 디버프 발동: {CurrentDebuff} ({dominant})");
+
+        // 최종 디버프 파동 + 파티클 실행
+        if (_seasonAura != null)
+        {
+            _seasonAura.PlayDebuff(
+                (SeasonAuraController.Season)dominant
+            );
+        }
+
+        Debug.Log(
+            $"[SeasonGaugeManager] 디버프 발동: {CurrentDebuff} ({dominant})"
+        );
 
         _model.ResetAll();
         OnGaugeChanged?.Invoke();

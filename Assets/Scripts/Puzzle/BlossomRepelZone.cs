@@ -67,16 +67,26 @@ public class BlossomRepelZone : MonoBehaviour
         return offset.sqrMagnitude > 0.0001f ? offset.normalized : -player.FacingDirection;
     }
 
+
     private void Repel(PlayerController player)
     {
+        // 꽃이 제거되었다면 튕김과 게이지 증가 중단
         if (tree != null && tree.IsStripped) return;
 
         _lastRepelTime = Time.time;
 
-        // 선풍기 블라스트 반동과 같은 경로(SetBlast)로 밀어내므로 CharacterController 이동 흐름을 그대로 탄다.
-        player.SetBlast(_pushDirection * pushSpeed + Vector3.up * upSpeed);
+        // 플레이어 튕기기
+        player.SetBlast(
+            _pushDirection * pushSpeed +
+            Vector3.up * upSpeed
+        );
 
+        // 봄 게이지 1칸 증가
+        SeasonGaugeManager.AddGauge(SeasonType.Spring, 1);
+
+        // 나무 흔들림
         if (tree != null)
             tree.PlayRepelFeedback();
     }
+
 }
