@@ -176,6 +176,8 @@ public class NFBTEnemyAI : MonoBehaviour
     // 마지막으로 도약에서 착지한 시간이다. 도약 쿨다운은 뛴 순간이 아니라 이 시간부터 센다.
     // (뛴 순간부터 세면 체공 시간(약 0.9초)만큼 쿨다운이 깎여 착지하자마자 또 뛰게 된다.)
 
+    private EnemyAnimationController enemyAnim;
+
     private const float LeapMinAirTime = 0.15f;
     // 도약 직후에는 IsGrounded가 다음 물리 프레임까지 true로 남아 있어 바로 "착지"로 오판정된다.
     // 이 시간이 지나기 전에는 착지 판정을 하지 않는다.
@@ -199,6 +201,8 @@ public class NFBTEnemyAI : MonoBehaviour
     private PlayerController _player;
     // Player가 탑다운 구역(ViewModeZone)에 들어갔는지 확인하기 위해 playerTransform에서 가져온다.
 
+    private bool _rushAnimationStarted;
+
     private void Awake()
     {
         if (playerTransform != null)
@@ -208,6 +212,7 @@ public class NFBTEnemyAI : MonoBehaviour
         _movement = GetComponent<EnemyMovement>();
         _combat = GetComponent<EnemyCombat>();
         _enemy = GetComponent<Enemy>();
+        enemyAnim = GetComponent<EnemyAnimationController>();
         _combatStats = GetComponent<CombatStatsTracker>();
         _fuzzyRL = new NPCFuzzyRL();
 
@@ -344,6 +349,8 @@ public class NFBTEnemyAI : MonoBehaviour
         Vector3 patrolVector = new Vector3(_patrolDir, 0f, 0f);
         _movement.Move(patrolVector);
         _vision.SetFacingDirection(patrolVector);
+
+        enemyAnim.SetMoving(true);
     }
 
     private bool ShouldReversePatrol()
@@ -380,18 +387,24 @@ public class NFBTEnemyAI : MonoBehaviour
 
         if (HorizontalDistance() <= _combat.AttackRange)
         {
-            // 사거리 안이면 멈추고 Player 쪽을 바라보며 공격을 시도한다.
             _movement.Move(Vector3.zero);
             _movement.FaceDirection(dir);
             _vision.SetFacingDirection(dir);
 
+            enemyAnim.SetMoving(false);
+
             if (_combat.CanAttack)
+            {
                 _combat.StartAttack();
+                enemyAnim.PlayAttack();
+            }
         }
         else
         {
             _movement.Move(dir);
             _vision.SetFacingDirection(dir);
+
+            enemyAnim.SetMoving(true);
         }
     }
 
@@ -405,12 +418,15 @@ public class NFBTEnemyAI : MonoBehaviour
         {
             // 안전 거리를 확보했으면 멈춰서 기다린다. 다음 전술 재계산 때까지 이 상태를 유지한다.
             _movement.Move(Vector3.zero);
+            enemyAnim.SetMoving(false);
+
             _retreatTimer = 0f;
             return;
         }
 
         _movement.Move(awayDir);
         _vision.SetFacingDirection(awayDir);
+        enemyAnim.SetMoving(true);
 
         _retreatTimer += Time.deltaTime;
         if (_retreatTimer < minRetreatDuration) return;
@@ -447,12 +463,14 @@ public class NFBTEnemyAI : MonoBehaviour
 
     private void StartLeap(Vector3 dir)
     {
-        // 바닥에 서 있을 때만 뛴다. 공중이면 JumpMove가 false를 돌려주고 아무 일도 하지 않는다.
         if (!_movement.JumpMove(dir, leapHorizontalSpeed, leapUpForce)) return;
 
         _isLeaping = true;
         _leapStartTime = Time.time;
         _vision.SetFacingDirection(dir);
+
+        enemyAnim.SetMoving(false);
+        enemyAnim.PlayRush();
     }
 
     // 도약 중 매 프레임 호출된다. 날아가다 Player가 공격 사거리 안에 들어오는 순간 공격해서
@@ -547,6 +565,9 @@ public class NFBTEnemyAI : MonoBehaviour
         _rangedDir = dir;
 
         if (Time.time - _rangedAimStartTime < rangedAimDuration) return;
+
+        enemyAnim.SetMoving(false);
+        enemyAnim.PlayShot();
 
         FireRangedProjectile(_rangedDir);
         _lastRangedFireTime = Time.time;
@@ -648,6 +669,7 @@ public class NFBTEnemyAI : MonoBehaviour
         if (HorizontalDistance() > chaseAbandonRange)
         {
             _isCountering = false;
+            _rushAnimationStarted = false; // ① 추적 포기 시 초기화
             return;
         }
 
@@ -659,16 +681,29 @@ public class NFBTEnemyAI : MonoBehaviour
             _movement.FaceDirection(dir);
             _vision.SetFacingDirection(dir);
 
+            enemyAnim.SetMoving(false);
+
             if (_combat.CanAttack)
             {
                 _combat.StartAttack();
+                enemyAnim.PlayAttack();
+
                 _isCountering = false;
+                _rushAnimationStarted = false; // ② 공격 시작 후 초기화
             }
         }
         else
         {
             _movement.Move(dir * counterRushSpeedMultiplier);
             _vision.SetFacingDirection(dir);
+
+            enemyAnim.SetMoving(false);
+
+            if (!_rushAnimationStarted)
+            {
+                enemyAnim.PlayRush();
+                _rushAnimationStarted = true;
+            }
         }
     }
 }

@@ -59,6 +59,8 @@ public class Enemy : CharacterBase
     private Tween _flashTween;
     private Tween _punchTween;
 
+    private EnemyAnimationController enemyAnim;
+
     private bool _isDead;
     // 이미 사망 처리된 경우 추가 타격을 무시하기 위한 플래그다.
 
@@ -74,6 +76,7 @@ public class Enemy : CharacterBase
     private void Awake()
     {
         _currentHealth = maxHealth;
+        enemyAnim = GetComponent<EnemyAnimationController>();
 
         if (visualBody != null)
         {
@@ -98,17 +101,23 @@ public class Enemy : CharacterBase
 
     public override void TakeDamage(float amount)
     {
-        // 이미 사망한 경우 타격을 무시한다.
         if (_isDead) return;
 
         _currentHealth -= amount;
         _currentHealth = Mathf.Max(_currentHealth, 0f);
+
         RaiseDamageTaken(amount);
 
         PlayHitEffect();
 
         if (_currentHealth <= 0f)
+        {
             Die();
+        }
+        else
+        {
+            enemyAnim?.PlayHit();
+        }
     }
 
     private void PlayHitEffect()
