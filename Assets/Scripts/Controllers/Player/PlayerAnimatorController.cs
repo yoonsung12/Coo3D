@@ -30,6 +30,7 @@ public class PlayerAnimatorController : MonoBehaviour
 
     private static readonly int SpeedHash = Animator.StringToHash("Speed");
     private static readonly int IsGroundedHash = Animator.StringToHash("IsGrounded");
+    private static readonly int VerticalSpeedHash = Animator.StringToHash("VerticalSpeed");
     private static readonly int JumpTriggerHash = Animator.StringToHash("JumpTrigger");
     private static readonly int LandTriggerHash = Animator.StringToHash("LandTrigger");
     private static readonly int HitTriggerHash = Animator.StringToHash("Hit");
@@ -67,6 +68,7 @@ public class PlayerAnimatorController : MonoBehaviour
         UpdateSpeed();
         UpdateGrounded();
         UpdateFanBlast();
+        UpdateVerticalSpeed();
     }
 
     private void UpdateSpeed()
@@ -88,13 +90,34 @@ public class PlayerAnimatorController : MonoBehaviour
         if (!_isFanBlasting)
         {
             if (_wasGrounded && !_isGrounded)
+            {
+                animator.ResetTrigger(LandTriggerHash);
                 animator.SetTrigger(JumpTriggerHash);
+            }
+
+            if (!_wasGrounded && _isGrounded)
+            {
+                animator.ResetTrigger(JumpTriggerHash);
+                animator.SetTrigger(LandTriggerHash);
+            }
 
             if (!_wasGrounded && _isGrounded)
                 animator.SetTrigger(LandTriggerHash);
         }
 
         _wasGrounded = _isGrounded;
+    }
+
+    private void UpdateVerticalSpeed()
+    {
+        // CharacterController의 수직 이동 속도
+        float verticalSpeed = _cc.velocity.y;
+
+        // 땅에 있을 때는 0으로 설정
+        if (_isGrounded)
+            verticalSpeed = 0f;
+
+        animator.SetFloat(VerticalSpeedHash, verticalSpeed);
     }
 
     private void UpdateFanBlast()
@@ -159,6 +182,7 @@ public class PlayerAnimatorController : MonoBehaviour
         animator.ResetTrigger(LandTriggerHash);
         animator.SetBool(UmbrellaHash, false);
         animator.SetBool(UmbrellaGlideHash, false);
+        animator.SetFloat(VerticalSpeedHash, 0f);
 
         _wasGrounded = _playerController.IsGrounded;
         animator.Play("Player_Idle", 0, 0f);
