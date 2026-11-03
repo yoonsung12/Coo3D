@@ -136,7 +136,25 @@ public class NFBTEnemyAI : MonoBehaviour
     private float rangedMaxRange = 8f;
     // Player와의 X 거리가 이보다 멀면 걸어서 다가간 뒤 원거리 공격을 시작한다.
 
+    [Title("패턴 사이 휴식")]
+    [SerializeField, LabelText("패턴 후 휴식 시간")]
+    private float postPatternRestTime = 1f;
+    // 도약 착지 후, 원거리 발사 후 제자리에 서서 쉬는 시간이다. 클수록 Player가 반격할 틈이 길어진다. 0이면 휴식 없음.
+
+    [SerializeField, LabelText("근접 공격 후 휴식 시간")]
+    private float postMeleeRestTime = 0.5f;
+    // 지상 근접 공격(쪼기)이 끝난 뒤(히트박스가 꺼진 뒤) 쉬는 시간이다.
+
+    private float _restEndTime = -999f;
+    // 이 시각(Time.time)이 될 때까지 휴식한다. 초기값이 아주 과거라 시작 시엔 휴식 중이 아니다.
+
+    private bool _pendingMeleeRest;
+    // 근접 공격을 시작했고, 공격이 끝나면 휴식을 시작해야 한다는 표시다.
+
     [Title("런타임 상태 (읽기 전용)")]
+    [ReadOnly, ShowInInspector, LabelText("휴식 중")]
+    private bool IsResting => Application.isPlaying && Time.time < _restEndTime;
+
     [ReadOnly, ShowInInspector, LabelText("추적 중")]
     private bool _isChasing;
 
@@ -177,6 +195,10 @@ public class NFBTEnemyAI : MonoBehaviour
     // (뛴 순간부터 세면 체공 시간(약 0.9초)만큼 쿨다운이 깎여 착지하자마자 또 뛰게 된다.)
 
     private EnemyAnimationController enemyAnim;
+    // EnemyAnimationController가 없는 적도 있으므로 null일 수 있다. 그래서 호출은 모두 enemyAnim?. 로 한다.
+
+    private EnemyAttackSound attackSound;
+    // 공격 사운드 컴포넌트다. 없는 적은 소리 없이 동작해야 하므로 null일 수 있고, 호출은 모두 attackSound?. 로 한다.
 
     private const float LeapMinAirTime = 0.15f;
     // 도약 직후에는 IsGrounded가 다음 물리 프레임까지 true로 남아 있어 바로 "착지"로 오판정된다.
@@ -213,6 +235,7 @@ public class NFBTEnemyAI : MonoBehaviour
         _combat = GetComponent<EnemyCombat>();
         _enemy = GetComponent<Enemy>();
         enemyAnim = GetComponent<EnemyAnimationController>();
+        attackSound = GetComponent<EnemyAttackSound>();
         _combatStats = GetComponent<CombatStatsTracker>();
         _fuzzyRL = new NPCFuzzyRL();
 
@@ -256,6 +279,8 @@ public class NFBTEnemyAI : MonoBehaviour
             _isChasing = false;
             _isCornered = false;
             _isCountering = false;
+            _pendingMeleeRest = false; // 탑다운으로 가면 휴식 상태도 풀어 복귀 후 이상한 정지를 막는다.
+            _restEndTime = -999f;
             Patrol();
             return;
         }
@@ -279,6 +304,19 @@ public class NFBTEnemyAI : MonoBehaviour
         {
             // 도약과 같은 이유로, 백스텝~발사가 끝날 때까지는 전술이 바뀌어도 끊지 않는다.
             UpdateRangedAttack();
+            return;
+        }
+
+        // 근접 공격의 히트박스가 끝나는 순간부터 휴식을 센다. (공격 시작부터 세면 선딜레이만큼 휴식이 깎인다.)
+        if (_pendingMeleeRest && !_combat.IsAttacking)
+        {
+            _pendingMeleeRest = false;
+            StartRest(postMeleeRestTime);
+        }
+
+        if (Time.time < _restEndTime)
+        {
+            Rest();
             return;
         }
 
@@ -350,7 +388,7 @@ public class NFBTEnemyAI : MonoBehaviour
         _movement.Move(patrolVector);
         _vision.SetFacingDirection(patrolVector);
 
-        enemyAnim.SetMoving(true);
+        enemyAnim?.SetMoving(true);
     }
 
     private bool ShouldReversePatrol()
@@ -391,12 +429,14 @@ public class NFBTEnemyAI : MonoBehaviour
             _movement.FaceDirection(dir);
             _vision.SetFacingDirection(dir);
 
-            enemyAnim.SetMoving(false);
+            enemyAnim?.SetMoving(false);
 
             if (_combat.CanAttack)
             {
                 _combat.StartAttack();
-                enemyAnim.PlayAttack();
+                enemyAnim?.PlayAttack();
+                attackSound?.PlayMelee();
+                _pendingMeleeRest = true; // 공격이 끝나면 휴식을 시작하도록 표시한다.
             }
         }
         else
@@ -404,7 +444,7 @@ public class NFBTEnemyAI : MonoBehaviour
             _movement.Move(dir);
             _vision.SetFacingDirection(dir);
 
-            enemyAnim.SetMoving(true);
+            enemyAnim?.SetMoving(true);
         }
     }
 
@@ -418,7 +458,7 @@ public class NFBTEnemyAI : MonoBehaviour
         {
             // 안전 거리를 확보했으면 멈춰서 기다린다. 다음 전술 재계산 때까지 이 상태를 유지한다.
             _movement.Move(Vector3.zero);
-            enemyAnim.SetMoving(false);
+            enemyAnim?.SetMoving(false);
 
             _retreatTimer = 0f;
             return;
@@ -426,7 +466,7 @@ public class NFBTEnemyAI : MonoBehaviour
 
         _movement.Move(awayDir);
         _vision.SetFacingDirection(awayDir);
-        enemyAnim.SetMoving(true);
+        enemyAnim?.SetMoving(true);
 
         _retreatTimer += Time.deltaTime;
         if (_retreatTimer < minRetreatDuration) return;
@@ -469,8 +509,28 @@ public class NFBTEnemyAI : MonoBehaviour
         _leapStartTime = Time.time;
         _vision.SetFacingDirection(dir);
 
-        enemyAnim.SetMoving(false);
-        enemyAnim.PlayRush();
+        enemyAnim?.SetMoving(false);
+        // 도약 포즈(Rush)는 길이 0인 정지 포즈라 Exit Time으로는 바로 끝나 버리므로, 착지할 때까지 IsLeaping으로 붙잡아 둔다.
+        enemyAnim?.SetLeaping(true);
+        enemyAnim?.PlayRush();
+        attackSound?.PlayRush();
+    }
+
+    // 패턴이 끝난 뒤 duration초 동안 쉬도록 종료 시각을 정한다. 0 이하면 휴식하지 않는다.
+    private void StartRest(float duration)
+    {
+        if (duration <= 0f) return;
+        _restEndTime = Time.time + duration;
+    }
+
+    // 휴식 중 매 프레임 호출된다. 제자리에 서서 Player 쪽만 바라보게 해 반격할 틈을 준다.
+    private void Rest()
+    {
+        Vector3 dir = DirectionToPlayer();
+        _movement.Move(Vector3.zero);
+        _movement.FaceDirection(dir);
+        _vision.SetFacingDirection(dir);
+        enemyAnim?.SetMoving(false);
     }
 
     // 도약 중 매 프레임 호출된다. 날아가다 Player가 공격 사거리 안에 들어오는 순간 공격해서
@@ -478,15 +538,21 @@ public class NFBTEnemyAI : MonoBehaviour
     private void UpdateLeap()
     {
         if (HorizontalDistance() <= _combat.AttackRange && _combat.CanAttack)
+        {
             _combat.StartAttack();
+            enemyAnim?.PlayAttack(); // 공중에서 쪼기 모션으로 전환(Any State -> Attack)
+            // 여기서는 일부러 attackSound?.PlayMelee()를 부르지 않는다. 도약 시작 때 돌진 울음(PlayRush)이 이미 났고, 겹치면 소리가 지저분해진다.
+        }
 
         float airTime = Time.time - _leapStartTime;
         bool landed = airTime >= LeapMinAirTime && _movement.IsGrounded;
         if (landed || airTime >= LeapMaxDuration)
         {
             _isLeaping = false;
+            enemyAnim?.SetLeaping(false);
             _lastLeapLandTime = Time.time;
             // 착지한 순간부터 쿨다운을 센다.
+            StartRest(postPatternRestTime); // 착지 후 잠깐 서서 쉰다.
         }
     }
 
@@ -533,9 +599,18 @@ public class NFBTEnemyAI : MonoBehaviour
         // 뒤에 벽이 있거나 낭떠러지면 물러날 곳이 없으므로 백스텝 없이 바로 제자리 조준으로 넘어간다.
         bool canBackstep = !_movement.HasWallAhead(-dir) && _movement.HasGroundAhead(-dir);
         if (canBackstep)
+        {
             _movement.JumpMove(-dir, backstepHorizontalSpeed, backstepUpForce);
+            attackSound?.PlayBackstepJump();
+        }
         else
+        {
             _rangedAimStartTime = Time.time;
+            // 조준 시작과 동시에 Shot(몸을 숙이는 모션)을 재생한다. Shot 클립의 숙이는 구간(0~0.4초)이
+            // rangedAimDuration(0.4초)과 같아서, 숙이는 정점에 맞춰 발사된다.
+            enemyAnim?.SetMoving(false);
+            enemyAnim?.PlayShot();
+        }
 
         // JumpMove가 뛰는 방향(뒤)을 바라보게 하므로, 몸은 다시 Player 쪽으로 돌려 "뒷걸음질"처럼 보이게 한다.
         _movement.FaceDirection(dir);
@@ -555,6 +630,11 @@ public class NFBTEnemyAI : MonoBehaviour
 
             _movement.Move(Vector3.zero);
             _rangedAimStartTime = Time.time;
+            attackSound?.PlayBackstepLand();
+            // 조준 시작과 동시에 Shot(몸을 숙이는 모션)을 재생한다. Shot 클립의 숙이는 구간(0~0.4초)이
+            // rangedAimDuration(0.4초)과 같아서, 숙이는 정점에 맞춰 발사된다.
+            enemyAnim?.SetMoving(false);
+            enemyAnim?.PlayShot();
         }
 
         // 조준 중에는 제자리에 서서 Player 쪽을 계속 바라본다. 조준 도중 Player가 움직여도 그쪽으로 쏜다.
@@ -566,12 +646,11 @@ public class NFBTEnemyAI : MonoBehaviour
 
         if (Time.time - _rangedAimStartTime < rangedAimDuration) return;
 
-        enemyAnim.SetMoving(false);
-        enemyAnim.PlayShot();
-
+        attackSound?.PlayRangedFire();
         FireRangedProjectile(_rangedDir);
         _lastRangedFireTime = Time.time;
         _isRangedAttacking = false;
+        StartRest(postPatternRestTime); // 발사 후 잠깐 서서 쉰다.
     }
 
     // Player 쪽 수평(XZ) 방향으로 발사한다. 높이는 유지하므로 Player가 점프하면 피할 수 있다.
@@ -681,12 +760,14 @@ public class NFBTEnemyAI : MonoBehaviour
             _movement.FaceDirection(dir);
             _vision.SetFacingDirection(dir);
 
-            enemyAnim.SetMoving(false);
+            enemyAnim?.SetMoving(false);
 
             if (_combat.CanAttack)
             {
                 _combat.StartAttack();
-                enemyAnim.PlayAttack();
+                enemyAnim?.PlayAttack();
+                attackSound?.PlayMelee();
+                _pendingMeleeRest = true; // 공격이 끝나면 휴식을 시작하도록 표시한다.
 
                 _isCountering = false;
                 _rushAnimationStarted = false; // ② 공격 시작 후 초기화
@@ -697,11 +778,12 @@ public class NFBTEnemyAI : MonoBehaviour
             _movement.Move(dir * counterRushSpeedMultiplier);
             _vision.SetFacingDirection(dir);
 
-            enemyAnim.SetMoving(false);
+            enemyAnim?.SetMoving(false);
 
             if (!_rushAnimationStarted)
             {
-                enemyAnim.PlayRush();
+                enemyAnim?.PlayRush();
+                attackSound?.PlayRush();
                 _rushAnimationStarted = true;
             }
         }

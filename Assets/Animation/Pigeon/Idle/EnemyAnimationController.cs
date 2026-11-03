@@ -21,6 +21,9 @@ public class EnemyAnimationController : MonoBehaviour
     private static readonly int Hit =
         Animator.StringToHash("Hit");
 
+    private static readonly int IsLeaping =
+        Animator.StringToHash("IsLeaping");
+
     private Enemy enemy;
 
     private void Awake()
@@ -61,6 +64,14 @@ public class EnemyAnimationController : MonoBehaviour
     public void PlayHit()
     {
         PlayTrigger(Hit);
+    }
+
+    // 도약 중 여부 (착지할 때까지 도약 포즈 유지)
+    public void SetLeaping(bool leaping)
+    {
+        if (animator == null || enemy.IsDead) return;
+
+        animator.SetBool(IsLeaping, leaping);
     }
 
     private void PlayTrigger(int trigger)
