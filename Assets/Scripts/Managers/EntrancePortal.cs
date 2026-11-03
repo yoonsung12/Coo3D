@@ -29,6 +29,12 @@ public class EntrancePortal : MonoBehaviour
     // PlayerController와 같은 InputSystem_Actions 에셋을 연결한다. Move 액션의 위쪽(W/↑)으로 입장한다.
 
     [Title("입장 방식")]
+    [SerializeField, LabelText("잠긴 상태로 시작")]
+    private bool startLocked;
+    // 켜면 Unlock()이 호출되기 전까지 이 포털로 들어갈 수 없다(안내문도 뜨지 않는다).
+    // 발전기를 돌려 불을 켜야 열리는 계단처럼, 퍼즐을 푼 뒤에만 쓰는 포털에 켠다.
+    // 다른 오브젝트의 이벤트(예: TurbineGenerator의 "작동 시 이벤트")에 Unlock()을 연결해서 연다.
+
     [SerializeField, LabelText("도착하면 자동 입장")]
     private bool autoEnter;
     // 켜면 ↑ 키나 안내문 없이, 플레이어가 트리거 안에 들어선 순간 바로 입장 연출을 시작한다.
@@ -110,6 +116,10 @@ public class EntrancePortal : MonoBehaviour
     [ReadOnly, ShowInInspector, LabelText("입장 연출 중")]
     private bool _isEntering;
 
+    [ReadOnly, ShowInInspector, LabelText("잠금 해제됨")]
+    private bool _isUnlocked;
+    // "잠긴 상태로 시작"이 꺼져 있으면 처음부터 열려 있다.
+
     private const float Gravity = -20f;
     // 연출 중에도 바닥에 붙어 걷도록 PlayerController의 기본 중력값과 같은 값을 쓴다.
 
@@ -129,6 +139,8 @@ public class EntrancePortal : MonoBehaviour
         _triggerCollider = GetComponent<Collider>();
         _triggerCollider.isTrigger = true;
 
+        _isUnlocked = !startLocked;
+
         if (promptCanvasGroup != null)
             promptCanvasGroup.alpha = 0f;
 
@@ -143,9 +155,28 @@ public class EntrancePortal : MonoBehaviour
         _turnTween?.Kill();
     }
 
+    // 잠긴 포털을 연다. 퍼즐 완료 이벤트(UnityEvent)에 연결해서 호출한다.
+    public void Unlock()
+    {
+        _isUnlocked = true;
+    }
+
+    [Button("잠금 해제 테스트")]
+    private void TestUnlock()
+    {
+        if (!Application.isPlaying) return;
+        Unlock();
+    }
+
     private void Update()
     {
         if (_isEntering) return;
+        if (!_isUnlocked) return;
+        // 잠겨 있는 동안은 안내문도 띄우지 않고 입장도 받지 않는다.
+
+        if (_player != null && !_player.enabled) return;
+        // 다른 컷신(예: 열선 가로등 얼음벽 연출)이 플레이어 조작을 잠근 동안에는 입장하지 않는다.
+        // 두 연출이 같은 화면 페이드를 동시에 쓰면 한쪽 연출이 끝나지 못하고 멈추기 때문이다.
 
         // 자동 입장은 키 입력과 안내문 없이, 몸통 중심이 트리거 안에 들어온 순간 바로 연출을 시작한다.
         // 순간이동 뒤에는 트리거 밖이므로 다시 시작되지 않는다.
