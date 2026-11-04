@@ -51,9 +51,13 @@ public class IgniteInteractPrompt : MonoBehaviour
     private Sequence _iconSwapSequence;
     // 아이콘 깜빡임 반복 연출이다. 프롬프트가 숨겨질 때마다 Kill()해서 다시 보일 때 중복 실행되지 않게 한다.
     private bool _isPromptVisible;
+    private FuseLine _fuseLine;
+    // 이 프롬프트가 안내하는 도화선이다. 도화선 밑에 있지 않으면 null이고, 그때는 기존처럼 범위와 횃불만 본다.
 
     private void Awake()
     {
+        _fuseLine = GetComponentInParent<FuseLine>();
+
         _triggerCollider = GetComponent<SphereCollider>();
         _triggerCollider.isTrigger = true;
         _triggerCollider.radius = detectRadius;
@@ -87,7 +91,10 @@ public class IgniteInteractPrompt : MonoBehaviour
     {
         // 범위 안에 있어도 횃불이 꺼져 있으면 프롬프트를 띄우지 않는다.
         // 매 프레임 확인해야, 범위 안에 서 있는 상태에서 나중에 횃불을 켜도 바로 반응한다.
-        bool shouldShow = _playerInRange && TorchTool.IsTorchLit;
+        // 도화선은 안 탄 상태(Unlit)에서만 불이 붙으므로 그때만 안내한다.
+        // 타는 중이거나 다 타면 숨기고, 은행에 꺼져 복구가 끝나면 다시 붙여야 하니 다시 보여준다.
+        bool canIgnite = _fuseLine == null || _fuseLine.CurrentState == FuseLine.FuseState.Unlit;
+        bool shouldShow = _playerInRange && TorchTool.IsTorchLit && canIgnite;
         if (shouldShow == _isPromptVisible) return;
 
         _isPromptVisible = shouldShow;

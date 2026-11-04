@@ -182,14 +182,18 @@ public class Boss : Enemy
 
     // 계절 패턴을 실제로 파훼했을 때 각 패턴 컨트롤러가 호출한다.
     // 필드 소멸은 패턴 컨트롤러 쪽 책임이고, Boss는 무적 해제 + 무방비 타이머만 관리한다.
-    public void NotifyPatternSolved()
+    public void NotifyPatternSolved() => NotifyPatternSolved(vulnerableWindowDuration);
+
+    // 무방비 시간을 패턴이 직접 정할 때 쓴다. 겨울 패턴은 탈진해 쓰러져 있는 동안 공격하지 않아야 해서
+    // 기본값(2.5초) 대신 쓰러진 시간을 넘긴다. float.PositiveInfinity를 넘기면 끝까지 일어나지 않는다.
+    public void NotifyPatternSolved(float vulnerableDuration)
     {
         if (_activePattern == null) return;
 
         _activePattern = null;
         IsInvincible = false;
         _isInVulnerableWindow = true;
-        _vulnerableTimer = vulnerableWindowDuration;
+        _vulnerableTimer = vulnerableDuration;
 
         CheckPatternThreshold();
     }
@@ -214,6 +218,26 @@ public class Boss : Enemy
             return;
         }
 
+        TriggerNextPattern();
+    }
+
+    // 여름/가을 패턴이 아직 없는 씬에서도 겨울까지 바로 확인하기 위한 버튼이다. 체력을 겨울 임계값까지 낮춘 뒤 발동한다.
+    [Button("겨울 패턴 바로 시작 (Play Mode 테스트)")]
+    private void TestStartWinterPattern()
+    {
+        if (!Application.isPlaying) return;
+
+        int winterIndex = (int)SeasonPattern.Winter;
+
+        // 체력을 깎는 동안 다른 계절 패턴이 끼어들지 않도록 잠시 모든 패턴을 소진한 것으로 둔다.
+        _activePattern = null;
+        IsInvincible = false;
+        _nextPatternIndex = patternThresholds.Length;
+
+        float damage = (HealthRatio - patternThresholds[winterIndex]) * MaxHealth;
+        if (damage > 0f) base.TakeDamage(damage);
+
+        _nextPatternIndex = winterIndex;
         TriggerNextPattern();
     }
 

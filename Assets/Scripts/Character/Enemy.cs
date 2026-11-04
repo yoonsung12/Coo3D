@@ -70,6 +70,9 @@ public class Enemy : CharacterBase
     // NFBTEnemyAI가 체력이 낮을 때 후퇴(Evade/Recover)로 전환할지 판단하는 데 사용한다. 0~1 사이 값이다.
     public float HealthRatio => maxHealth > 0f ? _currentHealth / maxHealth : 0f;
 
+    // Boss의 테스트 버튼이 체력을 특정 비율까지 낮출 때 읽는다.
+    public float MaxHealth => maxHealth;
+
     // 적이 사망한 순간 한 번 발행된다. ItemDropper가 이 이벤트를 구독해 사망 위치에 아이템을 드롭한다.
     public event Action OnDied;
 

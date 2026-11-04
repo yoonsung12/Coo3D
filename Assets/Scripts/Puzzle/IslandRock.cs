@@ -44,7 +44,24 @@ public class IslandRock : MonoBehaviour
     [SerializeField, LabelText("부서질 때 흔들림 세기")]
     private float breakShakeStrength = 0.3f;
 
+    [Title("칼바람 내구도")]
+    [SerializeField, LabelText("칼바람 내구도")]
+    private int windDurability = 2;
+    // 겨울 패턴의 바람을 몇 번 맞으면 부서지는지다. 값이 작을수록 바위를 옮겨 다녀야 한다.
+
+    [SerializeField, LabelText("금 간 색")]
+    private Color crackedColor = new Color(0.3f, 0.27f, 0.25f, 1f);
+
+    [SerializeField, LabelText("금 갈 때 흔들림 세기")]
+    private float crackShakeStrength = 0.2f;
+
+    [SerializeField, LabelText("금 갈 때 흔들림 시간")]
+    private float crackShakeDuration = 0.3f;
+
     [Title("런타임 상태 (읽기 전용)")]
+    [ReadOnly, ShowInInspector, LabelText("남은 칼바람 내구도")]
+    private int _windHitsLeft;
+
     [ReadOnly, ShowInInspector, LabelText("솟아올라 있음")]
     public bool IsRisen { get; private set; }
 
@@ -72,6 +89,7 @@ public class IslandRock : MonoBehaviour
         _colliders = GetComponentsInChildren<Collider>();
         _renderers = GetComponentsInChildren<Renderer>();
         _shownPosition = transform.position;
+        _windHitsLeft = windDurability;
         CacheBaseColors();
 
         // 솟아오른 상태(씬 저장 상태)의 콜라이더 범위로 바닥 반지름을 계산한다. 숨기기 전에 한 번만 계산해야 정확하다.
@@ -161,6 +179,40 @@ public class IslandRock : MonoBehaviour
                 r.enabled = false;
         });
         _tween = seq;
+    }
+
+    // 칼바람 한 회차가 이 바위를 스치고 끝났을 때 호출된다. 내구도가 다하면 Break()로 부서진다.
+    // 바람이 부는 도중에 부서지면 숨어 있던 플레이어가 그 자리에서 날아가므로, 패턴이 회차 끝에 부른다.
+    [Button("칼바람 한 번 맞기 (테스트)")]
+    public void TakeWindHit()
+    {
+        if (IsBroken || !IsRisen) return;
+
+        _windHitsLeft--;
+        if (_windHitsLeft <= 0)
+        {
+            Break();
+            return;
+        }
+
+        ApplyCrackedColor();
+
+        // 위치가 흔들림 오차로 어긋난 채 남지 않게 끝나면 원래 자리로 돌린다.
+        if (_tween != null) _tween.Kill();
+        transform.position = _shownPosition;
+        _tween = transform.DOShakePosition(crackShakeDuration, new Vector3(crackShakeStrength, 0f, crackShakeStrength), 25)
+            .OnComplete(() => transform.position = _shownPosition);
+    }
+
+    // 금 간 바위는 남은 전투 동안 어둡게 유지해 "한 번 더 맞으면 부서진다"는 것을 보여 준다.
+    private void ApplyCrackedColor()
+    {
+        foreach (Renderer r in _renderers)
+        {
+            if (r == null) continue;
+            _block.SetColor("_BaseColor", crackedColor);
+            r.SetPropertyBlock(_block);
+        }
     }
 
     // 보스가 이 바위를 들이받을 예정일 때 켜는 경고 연출이다(좌우 떨림 + 색 점멸).
