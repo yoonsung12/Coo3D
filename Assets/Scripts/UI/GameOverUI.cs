@@ -1,12 +1,13 @@
 using DG.Tweening;
 using Sirenix.OdinInspector;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 // 플레이어 체력이 0이 되어 사망했을 때 표시되는 게임오버 화면이다.
 // PlayerHealth.OnDeath 이벤트를 구독해 자동으로 뜨고, 시간을 멈춘 뒤
 // 어두운 오버레이 -> GAME OVER 텍스트 -> 계속하기 버튼 순서로 연출한다.
-// 계속하기를 누르면 시간을 재개하고 PlayerHealth를 체크포인트로 리스폰시킨다.
+// 계속하기를 누르면 마지막 저장을 불러오며 씬을 다시 로드한다(시간 재개는 SaveManager가 페이드 후 처리).
 public class GameOverUI : MonoBehaviour
 {
     [Title("연결")]
@@ -121,16 +122,22 @@ public class GameOverUI : MonoBehaviour
             _showSequence.AppendCallback(() => continueButton.gameObject.SetActive(true));
     }
 
-    // 계속하기 버튼에 연결된다. 시간을 재개하고 체크포인트 위치로 플레이어를 되돌린다.
+    // 계속하기 버튼에 연결된다. 마지막 저장을 불러오며 씬을 다시 로드한다.
     private void HandleContinueClicked()
     {
         _showSequence?.Kill();
         SetVisible(false);
 
-        Time.timeScale = 1f;
+        if (SaveManager.Instance != null)
+        {
+            // timeScale 복구는 ReloadLastSave가 화면 페이드가 끝난 뒤 씬 로드 직전에 처리한다.
+            SaveManager.Instance.ReloadLastSave();
+            return;
+        }
 
-        if (playerHealth != null)
-            playerHealth.RespawnAtCheckpoint();
+        // 타이틀을 거치지 않은 에디터 실행에서는 SaveManager가 없으므로 씬만 다시 로드한다.
+        Time.timeScale = 1f;
+        SceneManager.LoadScene(gameObject.scene.name);
     }
 
     private void SetVisible(bool visible)

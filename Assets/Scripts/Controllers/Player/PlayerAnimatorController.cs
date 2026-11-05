@@ -185,7 +185,8 @@ public class PlayerAnimatorController : MonoBehaviour
         animator.SetFloat(VerticalSpeedHash, 0f);
 
         _wasGrounded = _playerController.IsGrounded;
-        animator.Play("Player_Idle", 0, 0f);
+        // Animator 컨트롤러의 실제 상태 이름이 오타("Plyaer_Idle") 그대로라 그 이름에 맞춘다. 상태 이름을 바꾸면 다른 참조가 깨질 수 있다.
+        animator.Play("Plyaer_Idle", 0, 0f);
     }
 
     // 충전 1/2/3단계 모두 동일한 자세 사용.

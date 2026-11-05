@@ -96,6 +96,9 @@ public class PlayerHealth : CharacterBase
 
     private Coroutine _invincibleRoutine;
 
+    private bool _enteredNewScene;
+    // 이전 씬의 체크포인트가 남은 채 새 씬에 들어왔을 때 true가 된다. Start에서 시작 위치를 세이브에 기록하는 데 쓴다.
+
     private bool _isDamageImmune;
     // 낙사 연출처럼 조작이 잠긴 동안 데미지를 막기 위한 플래그다.
     // 피격 무적(_isInvincible)은 깜빡임이 끝나면 자동으로 풀리므로, 연출 길이와 상관없이 유지되도록 따로 둔다.
@@ -126,14 +129,23 @@ public class PlayerHealth : CharacterBase
 
         // 아직 체크포인트를 한 번도 지나지 않았다면, 시작 위치를 기본 리스폰 지점으로 등록한다.
         // 이렇게 하지 않으면 첫 체크포인트를 밟기 전에 죽었을 때 월드 원점(0,0,0)으로 리스폰하게 된다.
-        if (!CheckpointManager.HasCheckpoint)
+        // 다른 씬의 체크포인트가 남아 있으면 사망 시 이전 씬 좌표로 돌아가는 문제가 생기므로, 씬이 다르면 시작 위치로 다시 등록한다.
+        if (!CheckpointManager.HasCheckpoint || CheckpointManager.CurrentCheckpointScene != gameObject.scene.name)
+        {
             CheckpointManager.SetCheckpoint(transform.position, gameObject.scene.name);
+            _enteredNewScene = true;
+        }
     }
 
     private void Start()
     {
         // UI가 시작 시점의 체력을 바로 반영할 수 있도록 한 번 이벤트를 발행한다.
         OnHealthChanged?.Invoke(_currentHealth, maxHealth);
+
+        // 씬 입장 시 시작 위치를 자동 저장한다. 포털 입장은 SceneSpawnPoint가 이어서 위치를 덮어쓰고 다시 저장하므로
+        // 두 스크립트의 실행 순서와 상관없이 최종 저장 위치는 스폰 포인트가 된다.
+        if (_enteredNewScene && SaveManager.Instance != null)
+            SaveManager.Instance.SaveCheckpoint();
     }
 
     private void OnDestroy()

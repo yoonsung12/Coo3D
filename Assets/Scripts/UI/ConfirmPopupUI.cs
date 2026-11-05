@@ -34,6 +34,8 @@ public class ConfirmPopupUI : MonoBehaviour
     private Tween _popTween;
     private Action _pendingConfirmAction;
     // Show()를 호출할 때마다 새로 채워지며, 확인 버튼을 눌렀을 때 실행할 동작을 잠시 기억해 둔다.
+    private Action _pendingCancelAction;
+    // 취소 버튼을 눌렀을 때 실행할 동작이다. 팝업을 열며 가렸던 화면을 되돌릴 때 쓴다.
 
     private void Awake()
     {
@@ -48,11 +50,12 @@ public class ConfirmPopupUI : MonoBehaviour
         _popTween?.Kill();
     }
 
-    // message를 표시하며 팝업을 연다. 확인 버튼을 누르면 onConfirm이 실행된다.
-    public void Show(string message, Action onConfirm)
+    // message를 표시하며 팝업을 연다. 확인 버튼을 누르면 onConfirm이, 취소 버튼을 누르면 onCancel이 실행된다.
+    public void Show(string message, Action onConfirm, Action onCancel = null)
     {
         messageText.text = message;
         _pendingConfirmAction = onConfirm;
+        _pendingCancelAction = onCancel;
 
         SetVisible(true);
         transform.localScale = Vector3.zero;
@@ -68,12 +71,15 @@ public class ConfirmPopupUI : MonoBehaviour
         SetVisible(false);
         _pendingConfirmAction?.Invoke();
         _pendingConfirmAction = null;
+        _pendingCancelAction = null;
     }
 
     private void HandleNoClicked()
     {
         SetVisible(false);
+        _pendingCancelAction?.Invoke();
         _pendingConfirmAction = null;
+        _pendingCancelAction = null;
     }
 
     private void SetVisible(bool visible)

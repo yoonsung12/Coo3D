@@ -4,8 +4,8 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
-// "처음부터"/"이어하기" 양쪽에서 공유하는 세이브 슬롯 선택 화면이다.
-// 모드(NewGame/Continue)에 따라 슬롯 클릭 시 동작이 달라진다.
+// "이어하기"와 파우즈 메뉴의 "저장하기"에서 공유하는 세이브 슬롯 선택 화면이다.
+// 모드에 따라 슬롯 클릭 시 동작이 달라진다. "처음부터"는 이 화면을 열지 않고 오토 슬롯으로 바로 시작한다.
 public class SaveSlotSelectController : MonoBehaviour
 {
     public enum Mode
@@ -37,6 +37,10 @@ public class SaveSlotSelectController : MonoBehaviour
     private SaveSlotUIItem[] slotItems;
     // 배열 인덱스 i는 세이브 슬롯 번호 (i + 1)에 대응한다.
 
+    [SerializeField, LabelText("오토 세이브 칸 (타이틀 씬만 연결)")]
+    private SaveSlotUIItem autoSlotItem;
+    // 이어하기 화면에서만 보인다. 파우즈 메뉴에서는 오토 슬롯에 수동 저장할 수 없으므로 게임 씬에서는 비워 둔다.
+
     [SerializeField, LabelText("확인 팝업")]
     private ConfirmPopupUI confirmPopup;
 
@@ -63,6 +67,10 @@ public class SaveSlotSelectController : MonoBehaviour
             slotItems[i].SelectButton.onClick.AddListener(() => OnSlotSelected(slot));
             slotItems[i].DeleteButton.onClick.AddListener(() => OnSlotDeleteClicked(slot));
         }
+
+        // 오토 세이브는 삭제 기능이 없으므로 선택 버튼만 연결한다.
+        if (autoSlotItem != null)
+            autoSlotItem.SelectButton.onClick.AddListener(() => OnSlotSelected(SaveManager.AutoSaveSlot));
 
         backButton.onClick.AddListener(Close);
 
@@ -127,6 +135,40 @@ public class SaveSlotSelectController : MonoBehaviour
             slotItems[i].SetState(hasSave, data?.savedAtIso, showDeleteButton: _currentMode != Mode.SaveInGame);
             slotItems[i].SelectButton.interactable = hasSave || _currentMode == Mode.NewGame || _currentMode == Mode.SaveInGame;
         }
+
+        if (autoSlotItem != null)
+        {
+            SaveData autoData = SaveManager.Instance.PeekSlotData(SaveManager.AutoSaveSlot);
+            autoSlotItem.gameObject.SetActive(_currentMode == Mode.Continue);
+            autoSlotItem.SetState(autoData != null, autoData?.savedAtIso, showDeleteButton: false);
+            autoSlotItem.SelectButton.interactable = autoData != null;
+        }
+    }
+
+    // 타이틀의 "처음부터"에서 호출한다. 새 게임은 오토 슬롯에 저장되므로 슬롯을 고르지 않고 바로 시작한다.
+    // 기존 오토 세이브가 있으면 사라지므로 먼저 확인을 받는다. 수동 슬롯(1~3)은 그대로 남는다.
+    public void StartNewGameFromTitle()
+    {
+        if (SaveManager.Instance.HasSave(SaveManager.AutoSaveSlot))
+        {
+            // 슬롯 화면을 거치지 않으므로, 팝업이 타이틀 메뉴 버튼과 겹치지 않게 메뉴를 가리고 취소하면 되돌린다.
+            SetTitleRootVisible(false);
+            confirmPopup.Show(
+                "처음부터 시작하시겠습니까?\n이전 진행은 사라집니다.",
+                () => StartNewGame(SaveManager.AutoSaveSlot),
+                () => SetTitleRootVisible(true));
+        }
+        else
+        {
+            StartNewGame(SaveManager.AutoSaveSlot);
+        }
+    }
+
+    private void SetTitleRootVisible(bool visible)
+    {
+        titleRootPanel.alpha = visible ? 1f : 0f;
+        titleRootPanel.interactable = visible;
+        titleRootPanel.blocksRaycasts = visible;
     }
 
     private void OnSlotSelected(int slot)

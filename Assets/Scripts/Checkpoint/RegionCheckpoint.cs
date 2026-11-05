@@ -1,8 +1,8 @@
 using Sirenix.OdinInspector;
 using UnityEngine;
 
-// 트리거 범위에 플레이어가 들어오면 리스폰 지점만 갱신한다. 디스크 저장은 하지 않는다.
-// 실제 저장(+ 전체 회복)은 더 드물게 배치되는 CheckpointTrigger가 담당한다.
+// 트리거 범위에 플레이어가 들어오면 리스폰 지점을 갱신하고, 첫 진입 때 한 번만 디스크에 저장한다.
+// 이미 지나간 구역은 다시 밟아도 갱신·저장하지 않는다. 체력 전체 회복은 CheckpointTrigger만 담당한다.
 [RequireComponent(typeof(Collider))]
 public class RegionCheckpoint : MonoBehaviour
 {
@@ -19,7 +19,15 @@ public class RegionCheckpoint : MonoBehaviour
         bool isRidingTube = tube != null && tube.IsMounted;
         if (!isPlayer && !isRidingTube) return;
 
+        // 첫 진입이 아니면 아무것도 하지 않는다. 저장 이후 되돌아와도 리스폰 지점이 뒤로 밀리지 않게 한다.
+        if (SaveManager.Instance != null && !SaveManager.Instance.MarkCheckpointActivated(SaveManager.GetObjectId(gameObject)))
+            return;
+
         Vector3 position = respawnPoint != null ? respawnPoint.position : transform.position;
         CheckpointManager.SetCheckpoint(position, gameObject.scene.name);
+
+        // 튜브를 탄 채 저장했으면 불러올 때 튜브도 이 근처로 옮길 수 있게 기록한다.
+        if (SaveManager.Instance != null)
+            SaveManager.Instance.SaveCheckpoint(isRidingTube);
     }
 }

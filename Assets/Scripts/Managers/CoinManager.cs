@@ -3,7 +3,8 @@ using Sirenix.OdinInspector;
 using UnityEngine;
 
 // 자판기에서 사용하는 런타임 전용 화폐를 관리하는 싱글턴이다.
-// ScoreManager의 누적 점수와 달리 저장되지 않으며, 씬을 나가거나 게임을 재시작하면 초기화된다.
+// ScoreManager의 누적 점수와 달리 체크포인트 저장 시점의 값만 SaveManager가 세이브 파일에 기록한다.
+// 사망 후 계속하기를 하면 그 저장 시점의 코인으로 복귀하고, 새 게임을 시작하면 0으로 초기화된다.
 public class CoinManager : MonoBehaviour
 {
     public static CoinManager Instance { get; private set; }
@@ -32,6 +33,13 @@ public class CoinManager : MonoBehaviour
     public void AddCoin(int amount)
     {
         _coinCount += amount;
+        OnCoinChanged?.Invoke(_coinCount);
+    }
+
+    // 코인 수를 amount로 직접 설정한다. 저장 불러오기(사망 후 계속하기 포함)에서 저장 시점의 코인으로 되돌릴 때 쓴다.
+    public void SetCoin(int amount)
+    {
+        _coinCount = Mathf.Max(amount, 0);
         OnCoinChanged?.Invoke(_coinCount);
     }
 

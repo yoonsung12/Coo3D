@@ -26,7 +26,17 @@ public class SceneSpawnPoint : MonoBehaviour
 
         PlacePlayer();
         RestorePendingHealth();
+        SaveEntryPoint();
         FadeIn();
+    }
+
+    // 포털로 들어온 위치를 새 체크포인트로 등록하고 저장한다. 이렇게 해야 입장 직후 죽거나 종료해도 이 씬의 입구에서 이어진다.
+    private void SaveEntryPoint()
+    {
+        CheckpointManager.SetCheckpoint(transform.position, gameObject.scene.name);
+
+        if (SaveManager.Instance != null)
+            SaveManager.Instance.SaveCheckpoint();
     }
 
     // 플레이어를 이 스폰 포인트 위치로 순간 이동시킨다.

@@ -38,7 +38,7 @@ public class TitleMenuController : MonoBehaviour
     // 세이브 슬롯이 하나도 없으면 이어하기 버튼을 눌러도 할 게 없으므로 아예 비활성화한다.
     private void Start()
     {
-        bool anySaveExists = false;
+        bool anySaveExists = SaveManager.Instance.HasSave(SaveManager.AutoSaveSlot);
         for (int slot = 1; slot <= slotCount; slot++)
         {
             if (SaveManager.Instance.HasSave(slot))
@@ -51,7 +51,7 @@ public class TitleMenuController : MonoBehaviour
         continueButton.interactable = anySaveExists;
     }
 
-    private void OnNewGameClicked() => slotSelectController.Open(SaveSlotSelectController.Mode.NewGame);
+    private void OnNewGameClicked() => slotSelectController.StartNewGameFromTitle();
 
     private void OnContinueClicked() => slotSelectController.Open(SaveSlotSelectController.Mode.Continue);
 

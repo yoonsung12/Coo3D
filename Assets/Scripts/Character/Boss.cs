@@ -17,6 +17,9 @@ using UnityEngine;
 [RequireComponent(typeof(EnemyMovement))]
 public class Boss : Enemy
 {
+    protected override bool PersistsDefeat => false;
+    // 보스는 죽어도 처치 기록을 남기지 않는다. 불러오기 후에는 항상 처음부터 싸운다.
+
     public enum SeasonPattern { Spring, Summer, Autumn, Winter }
 
     [Title("페이즈 설정")]

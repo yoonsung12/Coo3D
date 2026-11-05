@@ -151,12 +151,29 @@ public class Enemy : CharacterBase
             .Append(_meshRenderer.material.DOColor(_originalColor, "_BaseColor", hitFlashDuration * 0.7f));
     }
 
+    // 저장 전에 죽인 적은 불러온 뒤에도 죽은 상태를 유지할지 여부다. 보스는 false로 재정의해 항상 처음부터 싸운다.
+    protected virtual bool PersistsDefeat => true;
+
+    private void Start()
+    {
+        // 씬이 다시 로드됐을 때, 저장 전에 처치한 적이면 부활시키지 않고 바로 숨긴다.
+        if (PersistsDefeat && SaveManager.Instance != null && SaveManager.Instance.IsEnemyDefeated(SaveManager.GetObjectId(gameObject)))
+        {
+            _isDead = true;
+            gameObject.SetActive(false);
+        }
+    }
+
     private void Die()
     {
         _isDead = true;
 
         _flashTween?.Kill();
         _punchTween?.Kill();
+
+        // 처치 기록은 다음 체크포인트 저장 때 파일에 기록된다. 그 전에 죽으면 불러오기로 적이 다시 나타난다.
+        if (PersistsDefeat && SaveManager.Instance != null)
+            SaveManager.Instance.MarkEnemyDefeated(SaveManager.GetObjectId(gameObject));
 
         OnDied?.Invoke();
 
@@ -166,6 +183,8 @@ public class Enemy : CharacterBase
         {
             visualBody.DOScale(Vector3.zero, deathShrinkDuration)
                 .SetEase(Ease.InBack)
+                .SetLink(gameObject)
+                // 연출 도중 씬을 다시 불러오면 오브젝트가 먼저 파괴되므로, 함께 정리되도록 묶어 경고를 막는다.
                 .OnComplete(() => gameObject.SetActive(false));
         }
         else

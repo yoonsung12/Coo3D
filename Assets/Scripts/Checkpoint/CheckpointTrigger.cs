@@ -14,7 +14,7 @@ public class CheckpointTrigger : MonoBehaviour
 
     [SerializeField, LabelText("한 번만 활성화")]
     private bool activateOnce = true;
-    // 켜두면 한 번 활성화된 체크포인트는 다시 지나가도 저장을 반복하지 않는다.
+    // 켜두면 한 번 활성화된 체크포인트는 다시 지나가도 저장·회복을 하지 않는다.
 
     [ReadOnly, ShowInInspector, LabelText("활성화 여부")]
     private bool _activated;
@@ -42,18 +42,28 @@ public class CheckpointTrigger : MonoBehaviour
         if (activateOnce && _activated) return;
         if (other.GetComponent<PlayerController>() == null) return;
 
-        Vector3 position = respawnPoint != null ? respawnPoint.position : transform.position;
-        CheckpointManager.SetCheckpoint(position, gameObject.scene.name);
+        // SaveManager가 없으면(에디터 단독 실행) 이 오브젝트의 _activated로 첫 진입을 판단한다.
+        // 불러오기 후 씬이 다시 로드돼도 SaveManager가 기억한 ID로 "이미 지나간 체크포인트"를 구분한다.
+        bool firstEntry = SaveManager.Instance != null
+            ? SaveManager.Instance.MarkCheckpointActivated(SaveManager.GetObjectId(gameObject))
+            : !_activated;
 
-        if (SaveManager.Instance != null)
-            SaveManager.Instance.SaveCheckpoint();
+        if (firstEntry)
+        {
+            Vector3 position = respawnPoint != null ? respawnPoint.position : transform.position;
+            CheckpointManager.SetCheckpoint(position, gameObject.scene.name);
+
+            if (SaveManager.Instance != null)
+                SaveManager.Instance.SaveCheckpoint();
+
+            PlayActivateEffect();
+        }
 
         if (PlayerHealth.Instance != null)
             PlayerHealth.Instance.Heal(float.MaxValue);
         // Heal은 내부에서 최대 체력을 넘지 않도록 제한하므로, 아주 큰 값을 넘겨 사실상 전체 회복시킨다.
 
         _activated = true;
-        PlayActivateEffect();
     }
 
     private void PlayActivateEffect()

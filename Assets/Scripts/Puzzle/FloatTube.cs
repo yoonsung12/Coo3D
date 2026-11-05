@@ -161,6 +161,17 @@ public class FloatTube : MonoBehaviour
         _interactAction = playerMap.FindAction("Interact", throwIfNotFound: true);
     }
 
+    private void Start()
+    {
+        // 물 위 체크포인트에서 불러오면 튜브가 시작 위치에 그대로 있어 플레이어가 고립되므로, 체크포인트 근처 재배치 지점으로 옮긴다.
+        if (SaveManager.Instance != null && SaveManager.Instance.SavedOnTube
+            && CheckpointManager.HasCheckpoint
+            && CheckpointManager.CurrentCheckpointScene == gameObject.scene.name)
+        {
+            ResetNear(CheckpointManager.CurrentCheckpointPosition);
+        }
+    }
+
     private void OnEnable()
     {
         _interactAction.Enable();
