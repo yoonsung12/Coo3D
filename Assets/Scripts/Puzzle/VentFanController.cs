@@ -24,6 +24,10 @@ public class VentFanController : MonoBehaviour
     // 켜면 버튼이 눌려 있는 동안에만 바람이 나오고, 버튼에서 벗어나면 서서히 멈춘다.
     // (플레이어가 직접 밟고 있으면 바람을 탈 수 없으므로, 상자(WoodenBox)를 올려두는 퍼즐에 쓴다.)
 
+    [SerializeField, LabelText("시작하자마자 작동")]
+    private bool runOnStart;
+    // 켜면 버튼 없이 씬이 시작될 때부터 계속 돈다. 항상 이용할 수 있어야 하는 복귀용 환풍기에 쓴다.
+
     [SerializeField, LabelText("회전할 날개")]
     private Transform fanBlade;
     // Inspector에서 실제로 돌아갈 환풍기 날개 모델을 연결한다.
@@ -55,6 +59,28 @@ public class VentFanController : MonoBehaviour
     [SerializeField, LabelText("감속 Ease"), ShowIf("holdToRun")]
     private Ease spinDownEase = Ease.OutQuad;
 
+    [Title("작동 효과")]
+    [SerializeField, LabelText("바람 파티클")]
+    private ParticleSystem windParticles;
+    // Inspector에서 환풍기가 도는 동안 위로 올라갈 바람 줄기 파티클을 연결한다. 비워두면 파티클 없이 동작한다.
+    // WindZoneVolume의 파티클은 우산을 편 플레이어가 구역 안에 있을 때만 나오므로, 환풍기가 켜졌다는 표시는 여기서 따로 재생한다.
+
+    [SerializeField, LabelText("작동 소리 오디오 소스")]
+    private AudioSource fanAudioSource;
+    // Inspector에서 Loop, 3D 사운드로 설정한 AudioSource를 연결한다. 비워두면 소리 없이 동작한다.
+
+    [SerializeField, LabelText("작동 소리")]
+    private AudioClip fanLoopClip;
+    // 환풍기가 도는 동안 반복 재생할 소리다.
+
+    [SerializeField, LabelText("작동 소리 볼륨"), Range(0f, 1f)]
+    private float fanVolume = 0.6f;
+    // 값이 클수록 환풍기 소리가 크게 들린다.
+
+    [SerializeField, LabelText("소리 페이드 시간")]
+    private float soundFadeDuration = 0.8f;
+    // 소리가 서서히 커지거나 작아지는 데 걸리는 시간이다. 날개 가속/감속 시간과 비슷하게 맞추면 자연스럽다.
+
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("작동 중")]
     private bool _isRunning;
@@ -63,6 +89,8 @@ public class VentFanController : MonoBehaviour
     // 무한 반복 회전 Tween이다. timeScale을 0→1로 올려 서서히 빨라지게 만든다.
     private Tween _spinUpTween;
     private Tween _punchTween;
+    private Tween _soundFadeTween;
+    // 소리 페이드가 겹치지 않도록 현재 실행 중인 페이드를 저장한다.
     private Vector3 _originalScale;
     // 누르는 동안만 작동 모드에서는 펀치가 여러 번 실행되므로, 펀치 도중 끊겨도 크기가 틀어지지 않게 원래 크기를 기억한다.
 
@@ -80,6 +108,10 @@ public class VentFanController : MonoBehaviour
     {
         if (switchButton != null)
             switchButton.OnStateChanged += OnButtonStateChanged;
+
+        // Awake에서 바람을 끈 뒤에 켜야 하므로 Start에서 처리한다.
+        if (runOnStart)
+            Activate();
     }
 
     private void OnDestroy()
@@ -90,6 +122,7 @@ public class VentFanController : MonoBehaviour
         _spinTween?.Kill();
         _spinUpTween?.Kill();
         _punchTween?.Kill();
+        _soundFadeTween?.Kill();
         // 씬 전환 등으로 파괴될 때 남은 Tween이 파괴된 Transform에 접근하지 않게 정리한다.
     }
 
@@ -119,6 +152,7 @@ public class VentFanController : MonoBehaviour
             windZone.enabled = true;
 
         StartSpin();
+        PlayRunEffects();
     }
 
     // 환풍기를 끈다(누르는 동안만 작동 모드 전용). 바람을 끊고 날개를 서서히 멈춘다.
@@ -131,6 +165,42 @@ public class VentFanController : MonoBehaviour
             windZone.enabled = false;
 
         StopSpin();
+        StopRunEffects();
+    }
+
+    // 환풍기가 켜졌음을 알리는 바람 줄기와 작동 소리를 시작한다.
+    private void PlayRunEffects()
+    {
+        if (windParticles != null)
+            windParticles.Play();
+
+        if (fanAudioSource == null || fanLoopClip == null) return;
+
+        _soundFadeTween?.Kill();
+
+        // 페이드아웃 도중 다시 켜진 경우엔 처음부터 재생하지 않고 현재 볼륨에서 다시 키운다.
+        if (!fanAudioSource.isPlaying)
+        {
+            fanAudioSource.clip = fanLoopClip;
+            fanAudioSource.loop = true;
+            fanAudioSource.volume = 0f;
+            fanAudioSource.Play();
+        }
+
+        _soundFadeTween = fanAudioSource.DOFade(fanVolume, soundFadeDuration);
+    }
+
+    // 바람 줄기 생성을 멈추고 소리를 서서히 줄인다. 이미 나온 파티클은 끝까지 올라간 뒤 사라진다.
+    private void StopRunEffects()
+    {
+        if (windParticles != null)
+            windParticles.Stop(true, ParticleSystemStopBehavior.StopEmitting);
+
+        if (fanAudioSource == null) return;
+
+        _soundFadeTween?.Kill();
+        _soundFadeTween = fanAudioSource.DOFade(0f, soundFadeDuration)
+            .OnComplete(fanAudioSource.Stop);
     }
 
     // 날개를 무한 회전시키고, 회전 Tween의 timeScale을 올려 서서히 빨라지게 한다.
