@@ -244,6 +244,45 @@ public class Boss : Enemy
         TriggerNextPattern();
     }
 
+    // 봄 패턴 없이 여름 패턴만 바로 확인하기 위한 버튼이다. 체력을 여름 임계값까지 낮춘 뒤 발동한다.
+    [Button("여름 패턴 바로 시작 (Play Mode 테스트)")]
+    private void TestStartSummerPattern()
+    {
+        if (!Application.isPlaying) return;
+
+        int summerIndex = (int)SeasonPattern.Summer;
+
+        // 체력을 깎는 동안 다른 계절 패턴이 끼어들지 않도록 잠시 모든 패턴을 소진한 것으로 둔다.
+        _activePattern = null;
+        IsInvincible = false;
+        _nextPatternIndex = patternThresholds.Length;
+
+        float damage = (HealthRatio - patternThresholds[summerIndex]) * MaxHealth;
+        if (damage > 0f) base.TakeDamage(damage);
+
+        _nextPatternIndex = summerIndex;
+        TriggerNextPattern();
+    }
+
+    // 봄/여름 패턴 없이 가을 패턴만 바로 확인하기 위한 버튼이다. 체력을 가을 임계값까지 낮춘 뒤 발동한다.
+    [Button("가을 패턴 바로 시작 (Play Mode 테스트)")]
+    private void TestStartAutumnPattern()
+    {
+        if (!Application.isPlaying) return;
+
+        int autumnIndex = (int)SeasonPattern.Autumn;
+
+        _activePattern = null;
+        IsInvincible = false;
+        _nextPatternIndex = patternThresholds.Length;
+
+        float damage = (HealthRatio - patternThresholds[autumnIndex]) * MaxHealth;
+        if (damage > 0f) base.TakeDamage(damage);
+
+        _nextPatternIndex = autumnIndex;
+        TriggerNextPattern();
+    }
+
     [Button("현재 패턴 파훼 처리 (테스트)")]
     private void TestSolvePattern() => NotifyPatternSolved();
 }
