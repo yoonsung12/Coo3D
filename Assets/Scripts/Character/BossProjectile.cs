@@ -66,6 +66,10 @@ public class BossProjectile : MonoBehaviour
             return;
         }
 
+        // 시점 전환 구역 같은 투명 트리거는 벽이 아니므로 장애물로 보지 않는다.
+        // (섬 아레나 전체를 덮는 ArenaViewZone 안에서 생성되자마자 사라지던 문제 방지)
+        if (other.isTrigger) return;
+
         if (IsInLayerMask(other.gameObject.layer, obstacleLayers))
         {
             _hasHit = true;
