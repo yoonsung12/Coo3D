@@ -6,7 +6,7 @@ using UnityEngine;
 [CreateAssetMenu(menuName = "Season/GaugeModel", fileName = "GaugeModel")]
 public class GaugeModel : ScriptableObject
 {
-    public const int TOTAL_SLOTS = 10;
+    public const int TOTAL_SLOTS = 5;
     // 게이지 총 칸 수다. 4개 계절 합산이 이 값에 도달하면 디버프가 발동된다.
 
     [SerializeField] private int spring;
