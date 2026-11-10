@@ -36,6 +36,44 @@ public class WeaponWheelUI : MonoBehaviour
     private GameObject eastSlot;
     // Inspector에서 화면 오른쪽에 배치할 슬롯 UI 오브젝트를 연결한다.
 
+    [Title("아이콘")]
+    [SerializeField, LabelText("북 아이콘 Image")]
+    private Image northIcon;
+    // 각 슬롯 안의 자식 "Icon" Image를 연결한다. 비워 두면 그 슬롯은 기존처럼 글씨(Label)만 보인다.
+
+    [SerializeField, LabelText("서 아이콘 Image")]
+    private Image westIcon;
+
+    [SerializeField, LabelText("남 아이콘 Image")]
+    private Image southIcon;
+
+    [SerializeField, LabelText("동 아이콘 Image")]
+    private Image eastIcon;
+
+    [SerializeField, LabelText("공격(배게) 그림"), PreviewField(50)]
+    private Sprite attackSprite;
+    // Assets/UI/WeaponIcons의 아이콘을 연결한다. 같은 파일명으로 덮어쓰면 그림만 바로 교체된다.
+
+    [SerializeField, LabelText("선풍기 그림"), PreviewField(50)]
+    private Sprite fanSprite;
+
+    [SerializeField, LabelText("우산 그림"), PreviewField(50)]
+    private Sprite umbrellaSprite;
+
+    [SerializeField, LabelText("횃불 그림"), PreviewField(50)]
+    private Sprite torchSprite;
+
+    [SerializeField, LabelText("잠김(?) 그림"), PreviewField(50)]
+    private Sprite lockedSprite;
+    // 아직 해금되지 않은 도구 슬롯에 도구 그림 대신 보여 준다.
+
+    [SerializeField, LabelText("선택 시 아이콘 튕김 크기")]
+    private float iconPunchScale = 0.2f;
+    // 화살표로 슬롯을 고를 때 아이콘이 이 비율만큼 커졌다 돌아온다. 0이면 연출 없음.
+
+    [SerializeField, LabelText("선택 시 아이콘 튕김 시간")]
+    private float iconPunchDuration = 0.2f;
+
     [Title("연결")]
     [SerializeField, LabelText("Tool Manager")]
     private ToolManager toolManager;
@@ -101,6 +139,10 @@ public class WeaponWheelUI : MonoBehaviour
     // 휠이 열려 있는 동안 화살표 방향으로 슬롯을 고르기 위해 이동(Move) 액션을 함께 읽는다.
     // PlayerController와 같은 InputActionAsset을 쓰므로 활성화는 PlayerController가 담당한다.
     private Tween _panelTween;
+    private Tween _iconTween;
+    // 선택한 슬롯 아이콘의 튕김 연출이다. 빠르게 슬롯을 바꿀 때 겹치지 않도록 저장해 두고 Kill한다.
+    private Image _punchedIcon;
+    // 튕김 연출 중인 아이콘이다. 연출을 끊을 때 크기를 원래대로(1) 되돌리기 위해 기억한다.
 
     private void Awake()
     {
@@ -123,8 +165,20 @@ public class WeaponWheelUI : MonoBehaviour
         _wheelAction.canceled  += OnWheelCanceled;
 
         if (toolManager != null)
+        {
             toolManager.OnUnlockStateChanged += ResetHighlights;
-        // 횃불을 얻거나 잠기면 슬롯 색(잠김/기본)을 바로 다시 칠한다.
+            toolManager.OnUnlockStateChanged += RefreshIcons;
+        }
+        // 횃불을 얻거나 잠기면 슬롯 색(잠김/기본)과 그림(도구/?)을 바로 다시 맞춘다.
+
+        RefreshIcons();
+    }
+
+    private void OnDestroy()
+    {
+        _iconTween?.Kill();
+        _panelTween?.Kill();
+        // 씬 전환 등으로 파괴될 때 남은 연출 Tween을 정리해 파괴된 오브젝트 접근 오류를 막는다.
     }
 
     private void OnDisable()
@@ -134,7 +188,10 @@ public class WeaponWheelUI : MonoBehaviour
         _wheelAction.Disable();
 
         if (toolManager != null)
+        {
             toolManager.OnUnlockStateChanged -= ResetHighlights;
+            toolManager.OnUnlockStateChanged -= RefreshIcons;
+        }
     }
 
     // Update는 Time.timeScale=0에서도 매 프레임 호출된다.
@@ -167,8 +224,9 @@ public class WeaponWheelUI : MonoBehaviour
         Time.timeScale = 0f;
         // 게임 시간을 정지해 도구 선택 중 피격이나 이동이 발생하지 않도록 한다.
 
-        // 열 때마다 잠긴 슬롯이 회색으로 보이도록 색을 맞춘다.
+        // 열 때마다 잠긴 슬롯이 회색과 "?" 그림으로 보이도록 색과 아이콘을 맞춘다.
         ResetHighlights();
+        RefreshIcons();
 
         if (wheelPanel != null)
         {
@@ -265,7 +323,54 @@ public class WeaponWheelUI : MonoBehaviour
 
         if (targetSlot != null)
             SetSlotColor(targetSlot, highlightColor);
+
+        PunchIcon(GetIcon(slot));
     }
+
+    // 고른 슬롯의 아이콘을 살짝 커졌다 돌아오게 해서 선택된 느낌을 준다.
+    private void PunchIcon(Image icon)
+    {
+        _iconTween?.Kill();
+        if (_punchedIcon != null)
+            _punchedIcon.transform.localScale = Vector3.one;
+        // 이전 연출이 중간에 끊겨도 아이콘 크기가 커진 채로 남지 않게 원래 크기로 되돌린다.
+
+        _punchedIcon = icon;
+        if (icon == null || iconPunchScale <= 0f) return;
+
+        _iconTween = icon.transform
+            .DOPunchScale(Vector3.one * iconPunchScale, iconPunchDuration, 6, 0.5f)
+            .SetUpdate(true);
+        // SetUpdate(true)로 휠이 시간을 멈춘(Time.timeScale=0) 상태에서도 연출이 재생된다.
+    }
+
+    // 각 슬롯 아이콘을 해금 상태에 맞춰 도구 그림 또는 "?" 그림으로 바꾼다.
+    private void RefreshIcons()
+    {
+        SetIcon(northIcon, WeaponSlot.Attack,   attackSprite);
+        SetIcon(westIcon,  WeaponSlot.Fan,      fanSprite);
+        SetIcon(southIcon, WeaponSlot.Umbrella, umbrellaSprite);
+        SetIcon(eastIcon,  WeaponSlot.Torch,    torchSprite);
+    }
+
+    private void SetIcon(Image icon, WeaponSlot slot, Sprite toolSprite)
+    {
+        if (icon == null) return;
+
+        Sprite sprite = IsUnlocked(slot) ? toolSprite : lockedSprite;
+        icon.sprite = sprite;
+        icon.enabled = sprite != null;
+        // 그림이 연결되지 않았으면 흰 사각형이 보이지 않도록 Image를 끈다.
+    }
+
+    private Image GetIcon(WeaponSlot slot) => slot switch
+    {
+        WeaponSlot.Attack   => northIcon,
+        WeaponSlot.Fan      => westIcon,
+        WeaponSlot.Umbrella => southIcon,
+        WeaponSlot.Torch    => eastIcon,
+        _                   => null
+    };
 
     // 슬롯 오브젝트의 Image 색상을 DOTween으로 변경한다.
     private void SetSlotColor(GameObject slotObj, Color color)
@@ -297,4 +402,7 @@ public class WeaponWheelUI : MonoBehaviour
 
     [Button("휠 닫기 테스트")]
     private void TestClose() => CloseWheel();
+
+    [Button("아이콘 갱신 테스트")]
+    private void TestRefreshIcons() => RefreshIcons();
 }

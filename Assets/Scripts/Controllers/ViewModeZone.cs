@@ -37,6 +37,10 @@ public class ViewModeZone : MonoBehaviour
         PlayerController player = other.GetComponent<PlayerController>();
         if (player == null) return;
 
+        // 활성화된 사이드뷰 라인(SideViewLaneZone) 안에서 이 구역 경계를 넘으면 탑다운으로 바꾸지 않는다.
+        // 라인이 매 물리 프레임 사이드뷰로 되돌리기 때문에, 여기서 바꾸면 한순간 탑다운으로 깜빡이기만 한다.
+        if (IsInsideActiveSideViewLane(player)) return;
+
         // 사이드뷰에서 걸어 들어온 순간의 Z만 기억해 두었다가, 나갈 때 원래 사이드뷰 라인으로 돌려보낸다.
         // 이미 탑다운인 상태(구역 안으로 리스폰 등)에서 들어온 경우엔 기록을 덮어쓰지 않아 원래 라인이 유지된다.
         if (player.CurrentViewMode == ViewMode.SideView)
@@ -77,6 +81,17 @@ public class ViewModeZone : MonoBehaviour
         foreach (Collider hit in hits)
         {
             if (hit.GetComponent<ViewModeZone>() != null) return true;
+        }
+        return false;
+    }
+
+    // 플레이어 몸이 활성화된 사이드뷰 라인에 겹쳐 있는지 검사한다.
+    private static bool IsInsideActiveSideViewLane(PlayerController player)
+    {
+        foreach (Collider hit in SideViewLaneZone.OverlapPlayerBody(player))
+        {
+            SideViewLaneZone lane = hit.GetComponent<SideViewLaneZone>();
+            if (lane != null && lane.IsActive) return true;
         }
         return false;
     }

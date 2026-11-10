@@ -33,6 +33,9 @@ public class SideViewLaneZone : MonoBehaviour
     public float LaneZ => laneZ;
     // BoxLaneGoal이 상자를 같은 라인에 스냅할 때 사용한다.
 
+    public bool IsActive => _isActive;
+    // ViewModeZone이 "활성화된 사이드뷰 라인 안에서는 탑다운으로 바꾸지 않기" 위해 읽는다.
+
     private void Awake()
     {
         _collider = GetComponent<Collider>();
@@ -66,9 +69,33 @@ public class SideViewLaneZone : MonoBehaviour
         if (player == null) return;
 
         // 오른쪽 끝(출구)으로 나갔을 때만 탑다운으로 돌린다. 왼쪽으로 돌아가면 사이드뷰를 유지한다.
+        // 단, 오른쪽 출구 바깥이 이미 탑다운 구역 밖(사이드뷰 길)이면 탑다운으로 바꾸지 않는다.
+        // 그렇지 않으면 라인을 나가는 순간 잠깐 탑다운이 됐다가 바로 사이드뷰로 돌아오는 깜빡임이 생긴다.
         bool exitedRight = player.transform.position.x >= _collider.bounds.max.x - rightExitMargin;
-        if (exitedRight)
+        if (exitedRight && IsTouchingViewModeZone(player))
             player.SetViewMode(ViewMode.TopDown, laneZ);
+    }
+
+    // 플레이어 몸(CharacterController 캡슐 전체)이 탑다운 구역(ViewModeZone)에 조금이라도 겹쳐 있는지 검사한다.
+    // QueryTriggerInteraction.Collide: 구역 콜라이더는 트리거라 이 옵션이 있어야 검사에 잡힌다.
+    private static bool IsTouchingViewModeZone(PlayerController player)
+    {
+        foreach (Collider hit in OverlapPlayerBody(player))
+        {
+            if (hit.GetComponent<ViewModeZone>() != null) return true;
+        }
+        return false;
+    }
+
+    // 플레이어 몸 전체와 겹치는 콜라이더를 모은다. 트리거 진입 판정도 몸 가장자리 기준이라 같은 기준으로 맞춘다.
+    public static Collider[] OverlapPlayerBody(PlayerController player)
+    {
+        CharacterController cc = player.GetComponent<CharacterController>();
+        Vector3 center = player.transform.TransformPoint(cc.center);
+        float half = Mathf.Max(0f, cc.height * 0.5f - cc.radius);
+        Vector3 top = center + Vector3.up * half;
+        Vector3 bottom = center - Vector3.up * half;
+        return Physics.OverlapCapsule(top, bottom, cc.radius, ~0, QueryTriggerInteraction.Collide);
     }
 
     [Button("라인 활성화 테스트")]
