@@ -231,11 +231,6 @@ public class BossSummerIslandPattern : BossSeasonPatternBase
     // 줄마다 이어서 비워 두는 칸 수다(맨 바깥 칸 제외). 2칸이면 틈 폭이 약 2.7m다.
 
     [TabGroup("설정", "견제")]
-    [SerializeField, LabelText("[흐름] 시작 거리")]
-    private float flowStartDistance = 18f;
-    // 중앙에서 진행 반대 방향으로 떨어진 시작 거리(m)다. 반대편 같은 거리에서 사라진다.
-
-    [TabGroup("설정", "견제")]
     [SerializeField, LabelText("[흐름] 이동 속도")]
     private float flowSpeed = 4f;
     // 기둥이 흐르는 속도(m/s)다. 빠를수록 피하기 어렵다.
@@ -674,7 +669,8 @@ public class BossSummerIslandPattern : BossSeasonPatternBase
             .OnComplete(() => { if (source != null) Destroy(source.gameObject); });
     }
 
-    // 흐르는 기둥: 줄 지은 기둥이 한쪽에서 반대쪽으로 쓸고 지나간다. 줄마다 틈이 있어 그 사이로 피한다.
+    // 흐르는 기둥: 줄 지은 기둥이 섬 한쪽 테두리에서 솟아 반대쪽 테두리로 쓸고 지나간다. 줄마다 틈이 있어 그 사이로 피한다.
+    // 기둥은 원형 섬(타원) 위에서만 보이고 피해를 준다. 섬 테두리에 들어오는 순간 솟고(Appear), 벗어나면 사라진다(Vanish).
     private IEnumerator FlowPillarsRoutine()
     {
         Vector3 direction = PickFlowDirection();
@@ -687,12 +683,16 @@ public class BossSummerIslandPattern : BossSeasonPatternBase
 
         // 줄 방향(side)으로 본 섬의 반지름이다. 가로로 늘어선 줄이면 X 반지름, 세로면 Z 반지름을 쓴다.
         float islandLateralHalf = Mathf.Abs(side.x) * islandHalfSize.x + Mathf.Abs(side.z) * islandHalfSize.y;
+        // 진행 방향(direction)으로 본 섬의 반지름이다. 줄 가운데 기둥은 중앙에서 이만큼 떨어진 테두리에서 섬에 들어온다.
+        float islandForwardHalf = Mathf.Abs(direction.x) * islandHalfSize.x + Mathf.Abs(direction.z) * islandHalfSize.y;
         float gapLimit = islandLateralHalf * flowGapInsideRatio;
 
-        // 기둥별 옆 오프셋과 출발 지연 거리를 저장해 두고 매 프레임 위치를 다시 계산한다.
+        // 기둥별 옆 오프셋, 출발 지연 거리, 섬 안에 머무는 반길이(entryDepth)를 저장해 두고 매 프레임 위치를 다시 계산한다.
         List<Vector3> startPositions = new List<Vector3>();
+        List<Vector3> entryPoints = new List<Vector3>(); // 기둥마다 섬에 들어오는 테두리 지점이다. 원 예고를 여기에 띄운다.
         List<float> laterals = new List<float>();
         List<float> rowBehind = new List<float>();
+        List<float> entryDepths = new List<float>();
         for (int r = 0; r < rows; r++)
         {
             HashSet<int> gaps = PickFlowGapSlots(slotCount, flowGapCount, gapLimit);
@@ -700,39 +700,101 @@ public class BossSummerIslandPattern : BossSeasonPatternBase
             {
                 if (gaps.Contains(i)) continue;
                 float lateral = (i - (slotCount - 1) * 0.5f) * flowPillarSpacing;
+                // 섬 옆 폭 밖의 기둥은 섬 위를 한 번도 지나지 않으므로 만들지 않는다.
+                if (Mathf.Abs(lateral) >= islandLateralHalf) continue;
+
+                // 타원 식 (옆/옆반지름)² + (앞/앞반지름)² = 1 에서, 이 옆 위치에서 섬이 앞뒤로 얼마나 이어지는지 구한다.
+                // 가운데 기둥은 섬을 길게 지나고, 가장자리 기둥일수록 짧게 스치고 지나간다.
+                float t = lateral / islandLateralHalf;
+                float entryDepth = islandForwardHalf * Mathf.Sqrt(1f - t * t);
                 float behind = r * flowRowSpacing; // 첫 줄이 맨 앞, 뒤 줄일수록 더 뒤에서 출발한다.
+
                 laterals.Add(lateral);
                 rowBehind.Add(behind);
-                startPositions.Add(center + side * lateral - direction * (flowStartDistance + behind));
+                entryDepths.Add(entryDepth);
+                startPositions.Add(center + side * lateral - direction * (islandForwardHalf + behind));
+                entryPoints.Add(center + side * lateral - direction * entryDepth);
             }
         }
 
-        yield return TelegraphRoutine(startPositions);
-        List<LightningPillar> group = SpawnPillars(startPositions);
+        // 원 예고는 기둥마다 하나씩, 그 기둥이 섬에 들어오기 '기둥 예고 시간'만큼 앞서 띄우고 기둥이 솟으면 지운다.
+        // 예고 시간 동안 기둥이 움직이는 거리만큼 미리 띄우면 된다(속도 x 시간).
+        float telegraphLeadDistance = flowSpeed * pillarTelegraphDuration;
+        GroundTelegraph[] telegraphs = new GroundTelegraph[startPositions.Count];
+
+        // 첫 줄은 출발 직후 바로 섬에 들어오므로, 출발 전에 예고를 띄우고 예고 시간만큼 기다린다.
+        for (int i = 0; i < startPositions.Count; i++)
+        {
+            if (rowBehind[i] <= 0f) telegraphs[i] = ShowFlowTelegraph(entryPoints[i]);
+        }
+        yield return new WaitForSeconds(pillarTelegraphDuration);
+
+        // 처음엔 보이지 않고 피해도 없는 상태로 만들어 두고, 섬에 들어올 때 솟게 한다.
+        List<LightningPillar> group = SpawnPillars(startPositions, false);
+        bool[] appeared = new bool[group.Count];
+        bool[] gone = new bool[group.Count];
 
         // 소리는 줄 묶음의 가운데(앞줄과 뒷줄 사이)를 따라간다.
         float soundBehind = (rows - 1) * flowRowSpacing * 0.5f;
-        AudioSource sound = CreatePillarSound(center - direction * (flowStartDistance + soundBehind));
+        AudioSource sound = CreatePillarSound(center - direction * (islandForwardHalf + soundBehind));
 
-        // 맨 뒤 줄이 반대편 시작 거리를 넘을 때까지 이동한다.
-        float totalDistance = flowStartDistance * 2f + (rows - 1) * flowRowSpacing;
+        // 맨 뒤 줄이 반대편 테두리를 벗어날 때까지 이동한다.
+        float totalDistance = islandForwardHalf * 2f + (rows - 1) * flowRowSpacing;
         float travelled = 0f;
         while (travelled < totalDistance)
         {
             travelled += flowSpeed * Time.deltaTime; // 프레임 속도와 무관하게 같은 속도로 흐르게 한다.
             for (int i = 0; i < group.Count; i++)
             {
-                if (group[i] == null) continue;
-                float along = -(flowStartDistance + rowBehind[i]) + travelled;
+                if (group[i] == null || gone[i]) continue;
+                // along: 중앙 기준 진행 방향 위치다. -entryDepth ~ +entryDepth 사이일 때만 섬 위에 있다.
+                float along = -(islandForwardHalf + rowBehind[i]) + travelled;
                 group[i].SetPosition(center + side * laterals[i] + direction * along);
+
+                // 뒤 줄 기둥: 섬 테두리에 닿기 예고 거리만큼 앞에서 원 예고를 띄운다.
+                if (!appeared[i] && telegraphs[i] == null && along >= -entryDepths[i] - telegraphLeadDistance)
+                    telegraphs[i] = ShowFlowTelegraph(entryPoints[i]);
+
+                if (!appeared[i] && along >= -entryDepths[i])
+                {
+                    appeared[i] = true;
+                    RemoveFlowTelegraph(telegraphs[i]); // 기둥이 솟으면 그 자리 예고는 더 필요 없다.
+                    telegraphs[i] = null;
+                    group[i].Appear(); // 섬 테두리에 닿는 순간 솟아올라 위험 상태가 된다.
+                }
+                if (appeared[i] && along > entryDepths[i])
+                {
+                    gone[i] = true;
+                    group[i].Vanish(); // 반대편 테두리를 벗어나면 사라진다(물 위로는 넘어가지 않는다).
+                }
             }
-            MovePillarSound(sound, center + direction * (-(flowStartDistance + soundBehind) + travelled));
+            MovePillarSound(sound, center + direction * (-(islandForwardHalf + soundBehind) + travelled));
             yield return null;
         }
 
+        // 기둥 프리팹이 비어 있는 등으로 남은 예고가 있으면 함께 지운다.
+        foreach (GroundTelegraph telegraph in telegraphs) RemoveFlowTelegraph(telegraph);
         VanishGroup(group);
         FadeOutPillarSound(sound);
         _harassRoutine = null;
+    }
+
+    // 흐르는 기둥 하나의 섬 진입 지점에 원 예고를 띄운다.
+    // _pillarTelegraphs에도 넣어 두어 패턴이 중간에 끊겨도 ClearPillarTelegraphs()가 함께 지우게 한다.
+    private GroundTelegraph ShowFlowTelegraph(Vector3 pos)
+    {
+        if (circleTelegraphPrefab == null) return null;
+        GroundTelegraph telegraph = Instantiate(circleTelegraphPrefab);
+        telegraph.ShowCircle(pos, pillarTelegraphRadius);
+        _pillarTelegraphs.Add(telegraph);
+        return telegraph;
+    }
+
+    private void RemoveFlowTelegraph(GroundTelegraph telegraph)
+    {
+        if (telegraph == null) return;
+        _pillarTelegraphs.Remove(telegraph);
+        Destroy(telegraph.gameObject);
     }
 
     // 기둥 포위: 플레이어 주변에 원으로 솟아 한 점으로 모였다가 바깥으로 퍼진다. 틈 각도는 그대로다.
@@ -808,7 +870,8 @@ public class BossSummerIslandPattern : BossSeasonPatternBase
     }
 
     // positions와 같은 순서/개수의 리스트를 돌려준다(프리팹이 없으면 null 칸). 인덱스로 위치를 갱신하기 위해서다.
-    private List<LightningPillar> SpawnPillars(List<Vector3> positions)
+    // appearNow가 false면 보이지 않고 피해도 없는 상태로만 만들어 두고, 호출한 쪽이 원하는 순간에 Appear()를 부른다.
+    private List<LightningPillar> SpawnPillars(List<Vector3> positions, bool appearNow = true)
     {
         List<LightningPillar> group = new List<LightningPillar>();
         foreach (Vector3 pos in positions)
@@ -821,7 +884,7 @@ public class BossSummerIslandPattern : BossSeasonPatternBase
             LightningPillar pillar = Instantiate(pillarPrefab);
             pillar.Init(playerController, pillarDamage, pillarHitRadius);
             pillar.SetPosition(pos);
-            pillar.Appear();
+            if (appearNow) pillar.Appear();
             _pillars.Add(pillar);
             group.Add(pillar);
         }
