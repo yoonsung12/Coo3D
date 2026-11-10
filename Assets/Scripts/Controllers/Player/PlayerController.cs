@@ -20,6 +20,16 @@ public class PlayerController : MonoBehaviour
     private float moveSpeed = 5f;
     // 값이 커질수록 플레이어가 더 빠르게 이동한다.
 
+    [SerializeField, LabelText("시점 전환 중 이동 잠금 시간")]
+    private float viewChangeMoveLockTime = 0.6f;
+    // 사이드뷰 ↔ 탑다운이 바뀐 직후 이 시간(초) 동안 화살표 이동 입력을 무시한다.
+    // 카메라가 돌아가는 도중에 바뀐 시점 기준으로 바로 움직이면 캐릭터가 움찔거리고 구역 경계를 다시 넘나들 수 있기 때문이다.
+    // SideViewCamera의 "전환 시간"과 같게 맞춘다. 0이면 잠그지 않는다.
+
+    [ReadOnly, ShowInInspector, LabelText("남은 이동 잠금 시간")]
+    private float _viewChangeMoveLockTimer;
+    // 시점이 바뀔 때 viewChangeMoveLockTime으로 채우고, 매 프레임 줄어들어 0이 되면 다시 움직일 수 있다.
+
     [SerializeField, LabelText("중력 가속도")]
     private float gravity = -20f;
     // CharacterController는 물리 엔진 중력을 받지 않으므로 수동으로 적용한다.
@@ -291,6 +301,14 @@ public class PlayerController : MonoBehaviour
 
         _moveInput = _moveAction.ReadValue<Vector2>();
 
+        // 시점 전환 직후에는 화살표 입력을 없는 것으로 처리해, 카메라가 넘어가는 동안 캐릭터가 멈춰 있게 한다.
+        // Time.deltaTime으로 줄여 프레임레이트와 무관하게 정해진 초만큼만 잠긴다. 점프·중력은 그대로 동작한다.
+        if (_viewChangeMoveLockTimer > 0f)
+        {
+            _viewChangeMoveLockTimer -= Time.deltaTime;
+            _moveInput = Vector2.zero;
+        }
+
         // 튜브 탑승 중에는 CharacterController가 꺼져 있고 이동은 튜브(Rigidbody)가 맡는다.
         // 화살표는 선풍기를 쏠 방향(FacingDirection)을 정하는 조준에만 쓰고, 나머지 이동/중력 처리는 건너뛴다.
         // IsGrounded는 true로 유지해 점프/낙하 애니메이션이 재생되지 않고 선풍기 사용 조건도 그대로 만족하게 한다.
@@ -485,6 +503,9 @@ public class PlayerController : MonoBehaviour
         if (CurrentViewMode == mode) return;
 
         CurrentViewMode = mode;
+
+        // 시점이 실제로 바뀐 순간부터 카메라 전환이 끝날 때까지 이동 입력을 잠근다.
+        _viewChangeMoveLockTimer = viewChangeMoveLockTime;
 
         // 이전 모드에서 받은 선풍기 반동이 새 모드에서 엉뚱한 방향으로 이어지지 않게 초기화한다.
         _recoilVelocity = Vector3.zero;
