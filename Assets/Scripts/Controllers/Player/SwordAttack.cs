@@ -31,6 +31,12 @@ public class SwordAttack : MonoBehaviour
     // 아래→위 베기의 완료 자세다. 칼끝이 화면 오른쪽 위를 향한다.
     // 이 값은 Swing 1의 준비 각도와 일치시켜야 두 궤적이 같아진다.
 
+
+    [Header("베개 깃털 VFX")]
+    [SerializeField] private GameObject featherVFXPrefab;
+    [SerializeField] private Transform featherSpawnPoint;
+
+
     [Header("베개 효과")]
     [SerializeField] private Transform pillowMesh;
     [SerializeField, LabelText("내려올 때 베개 기울기 (로컬)")]
@@ -80,6 +86,7 @@ public class SwordAttack : MonoBehaviour
     {
         // 공격 도중 오브젝트가 꺼져도 이동 정지 상태가 남지 않도록 풀어준다.
         _playerController?.SetAttackLock(false);
+        pillowSlashVFX?.Stop();
     }
 
     private void CachePillowScale()
@@ -126,21 +133,12 @@ public class SwordAttack : MonoBehaviour
     private Ease slashEase = Ease.OutQuart;
     // 처음에 빠르고 끝에 느려지는 느낌을 준다.
 
-    [Title("잔상 효과")]
-    [SerializeField, LabelText("칼끝 TrailRenderer")]
-    private TrailRenderer swordTrail;
-    // SW08 자식 SwordTip 오브젝트의 TrailRenderer를 연결한다.
-    // 비워두면 잔상 효과가 동작하지 않는다.
+    [Title("베개 공격 VFX")]
+    [SerializeField, LabelText("위→아래 슬래시 메시 VFX")]
+    private PillowSlashRevealVFX pillowSlashVFX;
 
-    [SerializeField, LabelText("칼끝 Point Light")]
-    private Light tipLight;
-    // SW08 자식 SwordTip 오브젝트의 Point Light를 연결한다.
-    // 비워두면 빛 반짝임 효과가 동작하지 않는다.
-
-    [SerializeField, LabelText("빛 최대 강도")]
-    private float lightMaxIntensity = 3f;
-    // 베기 순간 칼끝에서 발산하는 빛의 최대 밝기다. 클수록 더 강하게 빛난다.
-    // URP Bloom이 활성화되어 있으면 HDR 효과로 번짐 효과도 생긴다.
+    [SerializeField, LabelText("명중 시 퍽+깃털 프리팹")]
+    private GameObject pillowHitVFXPrefab;
 
     [Title("사운드")]
     [SerializeField, LabelText("쉬잉 사운드 클립")]
@@ -209,6 +207,7 @@ public class SwordAttack : MonoBehaviour
     {
         _slashSequence?.Kill();
         _pillowSequence?.Kill();
+        pillowSlashVFX?.Stop();
         if (_comboResetCoroutine != null)
             StopCoroutine(_comboResetCoroutine);
     }
@@ -236,6 +235,7 @@ public class SwordAttack : MonoBehaviour
         // SW08은 현재 각도에 멈추며, 새 Sequence가 그 위치에서 바로 이어진다.
         _slashSequence?.Kill();
         _pillowSequence?.Kill();
+        pillowSlashVFX?.Stop();
         ResetPillowVisual();
 
         // 누른 시점에 즉시 다음 방향을 결정하고 인덱스를 전환한다.
@@ -259,8 +259,8 @@ public class SwordAttack : MonoBehaviour
         // 이전 Sequence의 Kill이 끝난 뒤에 호출되므로, 이전 공격의 해제가 이 잠금을 덮어쓰지 않는다.
         _playerController?.SetAttackLock(true);
 
-        // 이전 연출이 남아 있을 경우를 대비해 빛을 꺼진 상태로 초기화한다.
-        if (tipLight != null) tipLight.intensity = 0f;
+        // 이전 공격의 시각 상태 초기화.
+
 
         CachePillowScale();
         sw08Transform.localRotation = Quaternion.Euler(preLiftStartAngle);
@@ -290,7 +290,10 @@ public class SwordAttack : MonoBehaviour
                 sw08Transform.localRotation = Quaternion.Euler(readyAngle);
                 swordHitbox?.EnableHitbox();
 
-                if (swordTrail != null) swordTrail.emitting = true;
+                SpawnFeatherVFX(); // 추가
+
+                if (pillowSlashVFX != null) pillowSlashVFX.Play(slashDuration);
+                else Debug.LogWarning("[SwordAttack] PillowSlashRevealVFX가 연결되지 않았습니다.", this);
                 PlaySwishSound();
                 // 베기 시작 순간 휘두르는 소리를 재생한다.
 
@@ -298,12 +301,10 @@ public class SwordAttack : MonoBehaviour
             // 준비 자세에서 베기 완료 각도로 빠르게 휘두른다.
             // DOLocalRotateQuaternion으로 오일러 정규화 없이 순수 쿼터니언 경로로 이동해 기즈모 호와 일치시킨다.
             .Append(sw08Transform.DOLocalRotateQuaternion(Quaternion.Euler(slashEndAngle), slashDuration).SetEase(slashEase))
-            // 베기 완료: 히트박스 비활성화, 잔상 끄기
-            // 잔상은 emitting을 끈 이후에도 TrailRenderer의 Time 설정만큼 서서히 사라진다.
+            // 베기 완료: 히트박스 비활성화
             .AppendCallback(() =>
             {
                 swordHitbox?.DisableHitbox();
-                if (swordTrail != null) swordTrail.emitting = false;
                 // 찌그러짐은 아래 InsertCallback에서 한 번만 실행
             })
             // 압축+두 번 반동이 끝나기를 기다린 다음, 짧게 유지하고 '퍽' 하고 숨긴다.
@@ -315,15 +316,15 @@ public class SwordAttack : MonoBehaviour
                 sw08Transform.localRotation = Quaternion.Euler(restAngle);
             })
             .OnComplete(() => _isAttacking = false)
-            // 콤보 캔슬 시에도 히트박스, 잔상, 빛을 반드시 정리한다.
+            // 콤보 캔슬 시에도 히트박스와 VFX를 정리한다.
             // OnKill은 자연 완료 시에도 호출되므로 모두 멱등성 있게 처리한다.
             .OnKill(() =>
             {
                 // 공격이 끝나거나 끊기면 이동 정지를 푼다. 다음 공격은 이 Kill 이후에 다시 잠근다.
                 _playerController?.SetAttackLock(false);
                 swordHitbox?.DisableHitbox();
-                if (swordTrail != null) swordTrail.emitting = false;
-                if (tipLight != null) tipLight.intensity = 0f;
+
+                pillowSlashVFX?.Stop();
             });
 
         // 휘두르기가 끝나는 순간 말랑하게 눌렸다 복원됨 (실제 충돌 감지는 아님)
@@ -342,17 +343,42 @@ public class SwordAttack : MonoBehaviour
                 pillowMesh.DOLocalRotate(pillowImpactRotation, slashDuration).SetEase(Ease.InOutSine));
         }
 
-        // 빛 반짝임: Sequence에 Insert해 캔슬 시 자동으로 함께 정리되도록 한다.
-        // 베기 시작 순간 최대 강도로 점등하고, 복귀 구간 동안 서서히 소멸한다.
-        if (tipLight != null)
-        {
-            _slashSequence
-                .Insert(slashStartTime, tipLight.DOIntensity(lightMaxIntensity, 0.02f))
-                .Insert(slashEndTime, tipLight.DOIntensity(0f, returnDuration));
-        }
+
     }
     // 휘두르는 소리를 재생한다. 전용 AudioSource가 있으면 음높이를 조금씩 바꿔 재생하고,
     // 없으면 예전 방식(칼 위치에서 PlayClipAtPoint)으로 재생한다.
+    [Button("슬래시 VFX 단독 테스트 (Play Mode)")]
+    private void TestSlashVFX()
+    {
+        if (!Application.isPlaying) { Debug.LogWarning("Play Mode에서 실행하세요.", this); return; }
+        if (pillowSlashVFX == null) { Debug.LogError("PillowSlashRevealVFX 필드가 비었습니다.", this); return; }
+        pillowSlashVFX.Play(Mathf.Max(0.05f, slashDuration));
+    }
+
+    [Button("명중 VFX 단독 테스트 (Play Mode)")]
+    private void TestImpactVFX()
+    {
+        if (!Application.isPlaying) { Debug.LogWarning("Play Mode에서 실행하세요.", this); return; }
+        Vector3 point = transform.position + transform.forward + Vector3.up;
+        PlayPillowHitVFX(point, -transform.forward);
+    }
+
+    // SwordHitbox에서 실제 적 명중이 확정될 때 호출할 메서드.
+    // SwordHitbox에서 명중이 확정되면 호출된다.
+    public void PlayPillowHitVFX(Vector3 hitPoint, Vector3 hitNormal)
+    {
+        if (pillowHitVFXPrefab == null)
+        {
+            Debug.LogWarning("[SwordAttack] 명중 VFX Prefab이 연결되지 않았습니다.", this);
+            return;
+        }
+        Quaternion rotation = hitNormal.sqrMagnitude > 0.001f
+            ? Quaternion.FromToRotation(Vector3.forward, hitNormal.normalized)
+            : Quaternion.identity;
+        GameObject fx = Instantiate(pillowHitVFXPrefab, hitPoint, rotation);
+        Destroy(fx, 3f);
+    }
+
     private void PlaySwishSound()
     {
         if (swishClip == null) return;
@@ -378,6 +404,22 @@ public class SwordAttack : MonoBehaviour
         pillowMesh.localScale = _pillowBaseScale;
         pillowMesh.localRotation = Quaternion.Euler(pillowStartRotation);
     }
+
+
+    private void SpawnFeatherVFX()
+    {
+        if (featherVFXPrefab == null || featherSpawnPoint == null)
+            return;
+
+        GameObject vfx = Instantiate(
+            featherVFXPrefab,
+            featherSpawnPoint.position,
+            featherSpawnPoint.rotation
+        );
+
+        Destroy(vfx, 4f);
+    }
+
 
     private void PlayPillowSquash()
     {

@@ -108,6 +108,8 @@ public class SideViewCamera : MonoBehaviour
     // transform.position을 직접 흔들면 매 프레임 아래 추적 로직이 덮어써서 무효화되므로 별도 필드로 분리했다.
 
     private Tween _shakeTween;
+    // 흔들림이 추적 위치에 누적되지 않도록 순수 카메라 위치를 저장한다.
+    private Vector3 _unshakenCameraPosition;
 
     [ReadOnly, ShowInInspector, LabelText("탑다운 카메라 방향 (Y 회전)")]
     private float _topDownYaw;
@@ -158,6 +160,7 @@ public class SideViewCamera : MonoBehaviour
         _currentSideRotation = _sideRotation;
         transform.rotation = _sideRotation;
         _followPosition = transform.position;
+        _unshakenCameraPosition = transform.position;
 
         // 시점 모드는 PlayerController가 관리하고, 카메라는 이벤트를 받아 따라 바뀐다.
         // 이렇게 하면 구역 트리거는 플레이어에게만 알리면 되고 카메라를 따로 연결할 필요가 없다.
@@ -183,11 +186,11 @@ public class SideViewCamera : MonoBehaviour
         float targetYaw = _topDownYaw + Mathf.DeltaAngle(_topDownYaw, yaw);
 
         _yawTween = DOTween.To(() => _topDownYaw, v =>
-            {
-                _topDownYaw = v;
-                if (_topDownBlend > 0f)
-                    transform.rotation = Quaternion.Slerp(_currentSideRotation, TopDownRotation, _topDownBlend);
-            }, targetYaw, transitionDuration)
+        {
+            _topDownYaw = v;
+            if (_topDownBlend > 0f)
+                transform.rotation = Quaternion.Slerp(_currentSideRotation, TopDownRotation, _topDownBlend);
+        }, targetYaw, transitionDuration)
             .SetEase(transitionEase);
     }
 
@@ -204,11 +207,11 @@ public class SideViewCamera : MonoBehaviour
         // 통로 입구를 오가며 축이 연달아 바뀌어도 현재 각도에서 새 목표로 자연스럽게 이어지게 이전 Tween을 끊는다.
 
         _axisTween = DOTween.To(() => 0f, v =>
-            {
-                _currentSideRotation = Quaternion.Slerp(from, to, v);
-                // 탑다운 전환이 섞여 있는 중이면 그 비율도 함께 반영해 두 연출이 서로 덮어쓰지 않게 한다.
-                transform.rotation = Quaternion.Slerp(_currentSideRotation, TopDownRotation, _topDownBlend);
-            }, 1f, transitionDuration)
+        {
+            _currentSideRotation = Quaternion.Slerp(from, to, v);
+            // 탑다운 전환이 섞여 있는 중이면 그 비율도 함께 반영해 두 연출이 서로 덮어쓰지 않게 한다.
+            transform.rotation = Quaternion.Slerp(_currentSideRotation, TopDownRotation, _topDownBlend);
+        }, 1f, transitionDuration)
             .SetEase(transitionEase);
     }
 
@@ -220,13 +223,13 @@ public class SideViewCamera : MonoBehaviour
         // 전환 도중 다시 구역을 드나들어도 현재 값에서 새 목표로 자연스럽게 이어지게 이전 Tween을 끊는다.
 
         _blendTween = DOTween.To(() => _topDownBlend, v =>
-            {
-                _topDownBlend = v;
-                // 회전은 플레이어 위치와 무관하므로 Tween이 진행되는 동안에만 갱신한다.
-                // 전환이 끝난 뒤에는 회전을 건드리지 않아 기존 사이드뷰 동작과 똑같이 유지된다.
-                transform.rotation = Quaternion.Slerp(_currentSideRotation, TopDownRotation, v);
-                // TopDownRotation을 매번 새로 읽어, 방향(_topDownYaw) 전환 Tween이 동시에 돌아도 서로 덮어쓰지 않게 한다.
-            }, targetBlend, transitionDuration)
+        {
+            _topDownBlend = v;
+            // 회전은 플레이어 위치와 무관하므로 Tween이 진행되는 동안에만 갱신한다.
+            // 전환이 끝난 뒤에는 회전을 건드리지 않아 기존 사이드뷰 동작과 똑같이 유지된다.
+            transform.rotation = Quaternion.Slerp(_currentSideRotation, TopDownRotation, v);
+            // TopDownRotation을 매번 새로 읽어, 방향(_topDownYaw) 전환 Tween이 동시에 돌아도 서로 덮어쓰지 않게 한다.
+        }, targetBlend, transitionDuration)
             .SetEase(transitionEase);
     }
 
@@ -242,13 +245,17 @@ public class SideViewCamera : MonoBehaviour
         if (_fixedBlend > 0f)
         {
             _followPosition = Vector3.Lerp(_followPosition, targetPosition, followSpeed * Time.deltaTime);
-            transform.position = Vector3.Lerp(_followPosition, _fixedPosition, _fixedBlend) + _shakeOffset;
+            _unshakenCameraPosition = Vector3.Lerp(_followPosition, _fixedPosition, _fixedBlend);
+            transform.position = _unshakenCameraPosition + _shakeOffset;
             transform.rotation = BlendWithoutRoll(ModeRotation, _fixedRotation, _fixedBlend);
             return;
         }
 
-        transform.position = Vector3.Lerp(transform.position, targetPosition, followSpeed * Time.deltaTime) + _shakeOffset;
-        _followPosition = transform.position;
+        // 흔들림을 Lerp 입력에 포함하지 않음: 반복 공격 시 카메라가 밀리는 현상 방지
+        _unshakenCameraPosition = Vector3.Lerp(_unshakenCameraPosition, targetPosition,
+            Mathf.Clamp01(followSpeed * Time.deltaTime));
+        transform.position = _unshakenCameraPosition + _shakeOffset;
+        _followPosition = _unshakenCameraPosition;
     }
 
     // 지금 플레이어 위치 기준으로 카메라가 있어야 할 위치를 계산한다.
@@ -338,8 +345,9 @@ public class SideViewCamera : MonoBehaviour
         if (_axisTween.IsActive()) _axisTween.Complete();
         if (_yawTween.IsActive()) _yawTween.Complete();
 
-        transform.position = CalculateTargetPosition();
-        _followPosition = transform.position;
+        _unshakenCameraPosition = CalculateTargetPosition();
+        transform.position = _unshakenCameraPosition + _shakeOffset;
+        _followPosition = _unshakenCameraPosition;
         // 고정 시점 중에 순간이동한 경우에도, 고정이 풀리면 이전 자리에서 쓸려 오지 않고 도착 지점에서 시작하게 한다.
     }
 
@@ -393,8 +401,9 @@ public class SideViewCamera : MonoBehaviour
     {
         _fixedBlend = 0f;
         transform.rotation = ModeRotation;
-        transform.position = snap && target != null ? CalculateTargetPosition() : _followPosition;
-        _followPosition = transform.position;
+        _unshakenCameraPosition = snap && target != null ? CalculateTargetPosition() : _followPosition;
+        transform.position = _unshakenCameraPosition + _shakeOffset;
+        _followPosition = _unshakenCameraPosition;
     }
 
     private void OnDestroy()
@@ -421,7 +430,12 @@ public class SideViewCamera : MonoBehaviour
         _shakeTween?.Kill();
         _shakeOffset = Vector3.zero;
 
-        _shakeTween = DOTween.Shake(() => _shakeOffset, v => _shakeOffset = v, duration, strength, vibrato: 20, randomness: 90f);
+        // Hit Stop 중에도 흔들림은 실시간으로 재생된다.
+        _shakeTween = DOTween.Shake(() => _shakeOffset, v => _shakeOffset = v,
+                duration, strength, vibrato: 22, randomness: 75f)
+            .SetUpdate(true)
+            .OnComplete(() => _shakeOffset = Vector3.zero)
+            .OnKill(() => _shakeOffset = Vector3.zero);
     }
 
     // 카메라가 플레이어를 떠나 focusPoint를 잠시 비춘 뒤 다시 플레이어로 돌아오는 연출이다.

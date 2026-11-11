@@ -255,6 +255,18 @@ public class WeaponWheelUI : MonoBehaviour
         ResetHighlights();
         _currentSlot = WeaponSlot.None;
 
+        _iconTween?.Kill();
+
+        if (_punchedIcon != null)
+        {
+            _punchedIcon.transform.DOKill();
+            _punchedIcon.DOKill();
+
+            _punchedIcon.transform.localScale = Vector3.one;
+            _punchedIcon.color = Color.white;
+            _punchedIcon = null;
+        }
+
         _panelTween?.Kill();
 
         if (wheelPanel != null)
@@ -331,17 +343,41 @@ public class WeaponWheelUI : MonoBehaviour
     private void PunchIcon(Image icon)
     {
         _iconTween?.Kill();
+
+        // 이전에 선택한 아이콘 복구
         if (_punchedIcon != null)
-            _punchedIcon.transform.localScale = Vector3.one;
-        // 이전 연출이 중간에 끊겨도 아이콘 크기가 커진 채로 남지 않게 원래 크기로 되돌린다.
+        {
+            _punchedIcon.transform.DOKill();
+            _punchedIcon.DOKill();
+
+            _punchedIcon.transform
+                .DOScale(Vector3.one, 0.12f)
+                .SetEase(Ease.OutQuad)
+                .SetUpdate(true);
+
+            _punchedIcon
+                .DOColor(Color.white, 0.12f)
+                .SetUpdate(true);
+        }
 
         _punchedIcon = icon;
-        if (icon == null || iconPunchScale <= 0f) return;
 
+        if (icon == null) return;
+
+        icon.transform.DOKill();
+        icon.DOKill();
+
+        // 선택 시 부드럽게 확대
         _iconTween = icon.transform
-            .DOPunchScale(Vector3.one * iconPunchScale, iconPunchDuration, 6, 0.5f)
+            .DOScale(Vector3.one * 1.25f, 0.18f)
+            .SetEase(Ease.OutBack)
             .SetUpdate(true);
-        // SetUpdate(true)로 휠이 시간을 멈춘(Time.timeScale=0) 상태에서도 연출이 재생된다.
+
+        // 선택된 아이콘 밝게 강조
+        icon.DOColor(
+            new Color(1f, 0.92f, 0.65f, 1f),
+            0.18f
+        ).SetUpdate(true);
     }
 
     // 각 슬롯 아이콘을 해금 상태에 맞춰 도구 그림 또는 "?" 그림으로 바꾼다.
