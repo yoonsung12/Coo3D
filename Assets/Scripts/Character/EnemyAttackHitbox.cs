@@ -23,8 +23,8 @@ public class EnemyAttackHitbox : MonoBehaviour
     [Title("디버그")]
     [SerializeField, LabelText("씬에 범위 표시")]
     private bool showRangeInScene = true;
-    // 켜면 Scene 뷰에 공격 범위를 그린다. 공격 판정이 살아있는 동안은 선택하지 않아도 빨간 박스로,
-    // 평소에는 선택했을 때만 주황 테두리로 보인다. 기즈모라 빌드된 게임 화면에는 나오지 않는다.
+    // 켜면 Scene 뷰에 공격 범위를 항상 그린다. 공격 판정이 살아있는 동안은 빨간 박스로,
+    // 평소에는 주황 테두리로 보인다. 기즈모라 빌드된 게임 화면에는 나오지 않는다.
 
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("히트박스 활성 중")]
@@ -74,18 +74,15 @@ public class EnemyAttackHitbox : MonoBehaviour
     }
 
 #if UNITY_EDITOR
-    // 공격 판정이 켜져 있는 순간에는 선택 여부와 상관없이 Scene 뷰에 빨간 박스로 보여준다.
+    // 선택 여부와 상관없이 항상 Scene 뷰에 판정 범위를 보여준다.
+    // 공격 판정이 켜져 있는 순간에는 빨간 박스, 평소에는 주황 테두리로 그린다.
     private void OnDrawGizmos()
     {
-        if (!showRangeInScene || !_isActive) return;
-        DrawRangeGizmo(new Color(1f, 0.1f, 0.1f, 0.35f), Color.red);
-    }
-
-    // 평소에는 오브젝트를 선택했을 때만 범위 위치를 연한 테두리로 보여준다.
-    private void OnDrawGizmosSelected()
-    {
-        if (!showRangeInScene || _isActive) return;
-        DrawRangeGizmo(Color.clear, new Color(1f, 0.6f, 0.2f, 0.8f));
+        if (!showRangeInScene) return;
+        if (_isActive)
+            DrawRangeGizmo(new Color(1f, 0.1f, 0.1f, 0.35f), Color.red);
+        else
+            DrawRangeGizmo(Color.clear, new Color(1f, 0.6f, 0.2f, 0.8f));
     }
 
     // 실제 판정 콜라이더의 모양/크기/회전을 그대로 그린다. fillColor가 투명이면 테두리만 그린다.

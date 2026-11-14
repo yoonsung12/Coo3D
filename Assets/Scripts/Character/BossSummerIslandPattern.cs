@@ -636,6 +636,7 @@ public class BossSummerIslandPattern : BossSeasonPatternBase
         go.transform.position = position + Vector3.up;
         AudioSource source = go.AddComponent<AudioSource>();
         source.clip = pillarSoundClip;
+        source.outputAudioMixerGroup = SoundSettings.MixerGroup(SoundCategory.SFX); // 효과음 볼륨 설정 적용
         source.loop = true;
         source.playOnAwake = false;
         source.spatialBlend = 1f;

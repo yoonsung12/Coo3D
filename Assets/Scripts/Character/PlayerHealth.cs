@@ -238,7 +238,7 @@ public class PlayerHealth : CharacterBase
     private void PlayHitEffect()
     {
         if (hitClip != null)
-            AudioSource.PlayClipAtPoint(hitClip, transform.position);
+            SfxPlayer.PlayAt(hitClip, transform.position);
 
         if (visualBody == null) return;
 

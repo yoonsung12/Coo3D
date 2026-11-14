@@ -22,6 +22,9 @@ public class PauseMenuUI : MonoBehaviour
     [SerializeField, LabelText("저장하기 버튼")]
     private Button saveButton;
 
+    [SerializeField, LabelText("사운드 설정 버튼")]
+    private Button soundButton;
+
     [SerializeField, LabelText("타이틀로 나가기 버튼")]
     private Button exitToTitleButton;
 
@@ -33,6 +36,10 @@ public class PauseMenuUI : MonoBehaviour
     private CanvasGroup panel;
     // ConfirmPopupUI와 같은 이유로 패널 오브젝트 자체를 SetActive로 끄지 않고 CanvasGroup으로만 보이기/막기를 제어한다.
     // 버튼 클릭과 같은 프레임에 부모(패널)를 비활성화하면 클릭 처리가 꼬일 수 있기 때문이다.
+
+    [SerializeField, LabelText("사운드 설정 화면")]
+    private SoundSettingsUI soundSettingsUI;
+    // "사운드 설정" 버튼이 열어 주는 화면이다. 열려 있는 동안 파우즈 메뉴는 뒤에 그대로 남는다.
 
     [SerializeField, LabelText("나가기 확인 팝업")]
     private ConfirmPopupUI exitConfirmPopup;
@@ -81,6 +88,7 @@ public class PauseMenuUI : MonoBehaviour
 
         resumeButton.onClick.AddListener(Resume);
         saveButton.onClick.AddListener(HandleSaveClicked);
+        soundButton.onClick.AddListener(HandleSoundClicked);
         exitToTitleButton.onClick.AddListener(HandleExitToTitleClicked);
         quitButton.onClick.AddListener(HandleQuitClicked);
 
@@ -108,6 +116,14 @@ public class PauseMenuUI : MonoBehaviour
 
     private void OnCancelPerformed(InputAction.CallbackContext ctx)
     {
+        // 가이드북과 파우즈는 같은 Esc(Cancel) 액션을 구독한다.
+        // 가이드북이 열려 있거나 이번 프레임에 방금 닫혔다면 무시한다. 프레임 검사가 없으면
+        // 가이드북이 먼저 닫힌 뒤 같은 입력으로 파우즈가 바로 열려 버린다.
+        if (GuideBookUI.IsOpen || GuideBookUI.LastClosedFrame == Time.frameCount) return;
+
+        // 사운드 설정 화면도 같은 Esc(Cancel)로 닫히므로 가이드북과 같은 방식으로 무시한다.
+        if (SoundSettingsUI.IsOpen || SoundSettingsUI.LastClosedFrame == Time.frameCount) return;
+
         // 무기 휠이 열려 있는 동안에는 ESC를 무시한다.
         // 두 UI가 동시에 Time.timeScale을 제어하면 한쪽을 닫을 때 시간이 잘못 풀리는 문제가 생길 수 있다.
         if (weaponWheelUI != null && weaponWheelUI.IsOpen) return;
@@ -164,6 +180,12 @@ public class PauseMenuUI : MonoBehaviour
     private void HandleSaveClicked()
     {
         saveSlotSelectController.Open(SaveSlotSelectController.Mode.SaveInGame);
+    }
+
+    // 파우즈 메뉴 위에 사운드 설정 화면을 연다.
+    private void HandleSoundClicked()
+    {
+        soundSettingsUI.Open();
     }
 
     // 되돌리기 어려운 동작이므로 확인 팝업을 한 번 거친 뒤에만 타이틀로 이동한다.

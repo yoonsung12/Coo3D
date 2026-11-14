@@ -119,7 +119,7 @@ public class ShakeableTree : MonoBehaviour, IHittable
         Shake(isFinalHit);
 
         if (hitSound != null)
-            AudioSource.PlayClipAtPoint(hitSound, transform.position);
+            SfxPlayer.PlayAt(hitSound, transform.position);
 
         // 상자가 이미 떨어진 뒤에는 흔들리기만 하고 은행은 더 떨어지지 않는다.
         if (_isCleared) return;

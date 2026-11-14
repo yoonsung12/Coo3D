@@ -52,7 +52,7 @@ public abstract class BaseTool : MonoBehaviour
     public virtual void OnEquip()
     {
         if (equipSound != null)
-            AudioSource.PlayClipAtPoint(equipSound, transform.position);
+            SfxPlayer.PlayAt(equipSound, transform.position);
         // 장착 사운드를 재생한다. 클립이 연결되지 않으면 무시한다.
     }
 

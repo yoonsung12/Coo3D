@@ -199,7 +199,7 @@ public class SwordHitbox : MonoBehaviour
         }
         else
         {
-            AudioSource.PlayClipAtPoint(hitClip, hitPosition, hitVolume);
+            SfxPlayer.PlayAt(hitClip, hitPosition, hitVolume);
         }
     }
 

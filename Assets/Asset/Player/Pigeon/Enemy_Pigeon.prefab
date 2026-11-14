@@ -130,10 +130,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 476d404134412a54198475fb018d5028, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  damageFlash: {fileID: 0}
   maxHealth: 80
   visualBody: {fileID: 8514646067855142495}
-  hitFlashColor: {r: 1, g: 1, b: 1, a: 1}
-  hitFlashDuration: 0.15
+  solidRedMaterial: {fileID: 0}
+  hitRedDuration: 0.15
+  includeInactiveRenderers: 0
   punchStrength: 0.12
   punchDuration: 0.25
   hitClip: {fileID: 8300000, guid: 8b23b175a78d6b5458322e3a6c9905d0, type: 3}
@@ -226,6 +228,7 @@ MonoBehaviour:
   attackDelay: 0.38
   attackDuration: 0.2
   attackHitbox: {fileID: 7361485329590545506}
+  showRangeInScene: 1
 --- !u!114 &4238403748713255545
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -267,6 +270,8 @@ MonoBehaviour:
   rangedMaxRange: 8
   postPatternRestTime: 1
   postMeleeRestTime: 0.5
+  hitStunDuration: 0.25
+  showRangeInScene: 1
 --- !u!114 &2768269345534219865
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -299,8 +304,8 @@ MonoBehaviour:
   dropEntries:
   - prefab: {fileID: 4411053148606924165, guid: 66af0cd4ab226b74f80fa752c1dea584, type: 3}
     dropChance: 0.6
-  - prefab: {fileID: 7351636547087334584, guid: abedface4e236b947a8f8d376df512d4, type: 3}
-    dropChance: 0.15
+  - prefab: {fileID: 2486654690855222422, guid: 1725cd84971d9f24f9e85c16a7b99994, type: 3}
+    dropChance: 0.3
 --- !u!136 &5017352981497243719
 CapsuleCollider:
   m_ObjectHideFlags: 0
@@ -346,7 +351,7 @@ AudioSource:
   m_GameObject: {fileID: 7584004369258708151}
   m_Enabled: 1
   serializedVersion: 4
-  OutputAudioMixerGroup: {fileID: 0}
+  OutputAudioMixerGroup: {fileID: 7991656544339603462, guid: 957db1b737e236444a4a16cae76b13f0, type: 2}
   m_audioClip: {fileID: 0}
   m_Resource: {fileID: 0}
   m_PlayOnAwake: 0

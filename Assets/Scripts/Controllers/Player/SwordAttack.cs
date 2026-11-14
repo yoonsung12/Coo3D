@@ -391,7 +391,7 @@ public class SwordAttack : MonoBehaviour
         }
         else
         {
-            AudioSource.PlayClipAtPoint(swishClip, sw08Transform.position);
+            SfxPlayer.PlayAt(swishClip, sw08Transform.position);
         }
     }
 

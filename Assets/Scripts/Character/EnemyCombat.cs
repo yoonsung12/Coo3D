@@ -23,6 +23,12 @@ public class EnemyCombat : MonoBehaviour
     [SerializeField, LabelText("공격 히트박스")]
     private EnemyAttackHitbox attackHitbox;
 
+    [Title("디버그")]
+    [SerializeField, LabelText("씬에 범위 표시")]
+    private bool showRangeInScene = true;
+    // 켜면 Scene 뷰에 근접 공격 사거리를 발밑 빨간 원으로 그린다. Player가 이 원 안에 들어오면 공격을 시도한다.
+    // 기즈모라 게임 화면과 빌드에는 나오지 않는다.
+
     public float AttackRange => attackRange;
 
     [ReadOnly, ShowInInspector, LabelText("공격 중")]
@@ -53,6 +59,27 @@ public class EnemyCombat : MonoBehaviour
         IsAttacking = false;
     }
 
+    // 피격 경직처럼 공격을 도중에 끊어야 할 때 호출한다.
+    // 선딜 중이면 히트박스가 켜지기 전에 멈추고, 판정 중이면 즉시 끈다. 쿨다운은 그대로 유지된다.
+    public void CancelAttack()
+    {
+        if (!IsAttacking) return;
+        StopAllCoroutines();
+        if (attackHitbox != null) attackHitbox.DisableHitbox();
+        IsAttacking = false;
+    }
+
     [Button("공격 테스트")]
     private void TestAttack() => StartAttack();
+
+#if UNITY_EDITOR
+    // 선택하지 않아도 항상 보이게 OnDrawGizmos를 쓴다.
+    // NFBTEnemyAI가 높이를 뺀 XZ 거리로 사거리를 비교하므로, 바닥과 평행한 원(Y축 기준)으로 그린다.
+    private void OnDrawGizmos()
+    {
+        if (!showRangeInScene) return;
+        UnityEditor.Handles.color = new Color(1f, 0.2f, 0.2f, 0.9f);
+        UnityEditor.Handles.DrawWireDisc(transform.position, Vector3.up, attackRange);
+    }
+#endif
 }

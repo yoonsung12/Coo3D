@@ -17,12 +17,19 @@ public class TitleMenuController : MonoBehaviour
     [SerializeField, LabelText("이어하기 버튼")]
     private Button continueButton;
 
+    [SerializeField, LabelText("사운드 설정 버튼")]
+    private Button soundButton;
+
     [SerializeField, LabelText("종료 버튼")]
     private Button quitButton;
 
     [Title("연결")]
     [SerializeField, LabelText("슬롯 선택 컨트롤러")]
     private SaveSlotSelectController slotSelectController;
+
+    [SerializeField, LabelText("사운드 설정 화면")]
+    private SoundSettingsUI soundSettingsUI;
+    // "사운드 설정" 버튼이 여는 화면이다.
 
     [SerializeField, LabelText("세이브 슬롯 개수")]
     private int slotCount = 3;
@@ -32,6 +39,7 @@ public class TitleMenuController : MonoBehaviour
     {
         newGameButton.onClick.AddListener(OnNewGameClicked);
         continueButton.onClick.AddListener(OnContinueClicked);
+        soundButton.onClick.AddListener(OnSoundClicked);
         quitButton.onClick.AddListener(OnQuitClicked);
     }
 
@@ -54,6 +62,8 @@ public class TitleMenuController : MonoBehaviour
     private void OnNewGameClicked() => slotSelectController.StartNewGameFromTitle();
 
     private void OnContinueClicked() => slotSelectController.Open(SaveSlotSelectController.Mode.Continue);
+
+    private void OnSoundClicked() => soundSettingsUI.Open();
 
     private void OnQuitClicked()
     {

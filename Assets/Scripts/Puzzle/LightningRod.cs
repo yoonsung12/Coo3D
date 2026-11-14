@@ -109,6 +109,7 @@ public class LightningRod : MonoBehaviour
             // 피뢰침이 꽂히는 자리에서 소리가 나도록 루트에 3D 소리를 둔다.
             _audio = gameObject.AddComponent<AudioSource>();
             _audio.playOnAwake = false;
+            _audio.outputAudioMixerGroup = SoundSettings.MixerGroup(SoundCategory.SFX); // 효과음 볼륨 설정 적용
             _audio.spatialBlend = 1f;
             _audio.rolloffMode = AudioRolloffMode.Linear;
             _audio.minDistance = 15f; // 이 거리 안에서는 최대 볼륨으로 들린다. 섬 대부분이 들어오게 넓혀 멀리서도 세게 들리게 한다.

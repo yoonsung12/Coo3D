@@ -8,11 +8,16 @@ using UnityEngine;
 public abstract class BasePickupItem : MonoBehaviour
 {
     [Title("흡수 설정")]
-    [SerializeField, LabelText("감지 범위")]
+    [SerializeField, LabelText("자석 흡수 사용")]
+    private bool useAttract = true;
+    // 켜면 감지 범위 안에서 플레이어 쪽으로 끌려간다(코인 등 기존 방식).
+    // 끄면 제자리에 머물고, 플레이어가 "획득 거리" 안까지 직접 다가와야 먹힌다(회복 하트).
+
+    [SerializeField, LabelText("감지 범위"), ShowIf(nameof(useAttract))]
     private float attractRange = 3f;
     // 플레이어가 이 거리 안으로 들어오면 아이템이 플레이어 쪽으로 끌려가기 시작한다.
 
-    [SerializeField, LabelText("흡수 속도")]
+    [SerializeField, LabelText("흡수 속도"), ShowIf(nameof(useAttract))]
     private float attractSpeed = 8f;
     // 값이 클수록 플레이어에게 더 빠르게 빨려 들어간다.
 
@@ -61,6 +66,15 @@ public abstract class BasePickupItem : MonoBehaviour
     {
         if (_isCollected) return;
 
+        if (!useAttract)
+        {
+            // 자석 흡수를 끈 아이템은 움직이지 않고, 플레이어 몸이 획득 거리 안에 들어왔을 때만 먹힌다.
+            if (PlayerHealth.Instance == null) return;
+            if (DistanceToPlayerBody(PlayerHealth.Instance.transform) <= pickupDistance && CanCollect())
+                Collect();
+            return;
+        }
+
         if (_target == null)
         {
             // GameObject.Find 대신, PlayerHealth가 스스로 등록해 둔 Instance로 플레이어 위치를 확인한다.
@@ -76,7 +90,7 @@ public abstract class BasePickupItem : MonoBehaviour
 
         if (distance <= pickupDistance)
         {
-            Collect();
+            if (CanCollect()) Collect();
             return;
         }
 
@@ -92,6 +106,34 @@ public abstract class BasePickupItem : MonoBehaviour
         ApplyEffect();
         Destroy(gameObject);
     }
+
+    private CharacterController _playerBody;
+    // 자석 흡수를 끈 아이템이 플레이어 몸(캡슐)까지의 거리를 재기 위해 캐시한다.
+
+    // 플레이어 발끝 한 점이 아니라 CharacterController 캡슐(발~머리) 표면까지의 거리를 잰다.
+    // 발끝 기준이면 아이템이 머리 높이쯤 떠 있을 때 바로 밑에 서도 거리가 멀게 나와 먹을 수 없었다.
+    private float DistanceToPlayerBody(Transform player)
+    {
+        if (_playerBody == null || _playerBody.transform != player)
+            _playerBody = player.GetComponent<CharacterController>();
+        if (_playerBody == null)
+            return Vector3.Distance(transform.position, player.position);
+
+        // 캡슐의 위/아래 반구 중심을 잇는 선분에서 아이템과 가장 가까운 점을 구한 뒤, 반지름만큼 빼서 표면까지 거리로 만든다.
+        Vector3 center = player.TransformPoint(_playerBody.center);
+        float half = Mathf.Max(0f, _playerBody.height * 0.5f - _playerBody.radius);
+        Vector3 top = center + Vector3.up * half;
+        Vector3 bottom = center - Vector3.up * half;
+
+        Vector3 segment = top - bottom;
+        float t = segment.sqrMagnitude > 0f ? Mathf.Clamp01(Vector3.Dot(transform.position - bottom, segment) / segment.sqrMagnitude) : 0f;
+        Vector3 closest = bottom + segment * t;
+        return Mathf.Max(0f, Vector3.Distance(transform.position, closest) - _playerBody.radius);
+    }
+
+    // 지금 먹을 수 있는지 하위 클래스가 판단한다. false면 아이템이 그대로 남는다.
+    // 예: 회복 하트는 체력이 가득 차 있으면 먹지 않고 바닥에 남겨 둔다. 기본은 항상 먹을 수 있음.
+    protected virtual bool CanCollect() => true;
 
     protected abstract void ApplyEffect();
 }

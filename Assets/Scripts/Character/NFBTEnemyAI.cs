@@ -136,6 +136,25 @@ public class NFBTEnemyAI : MonoBehaviour
     private float rangedMaxRange = 8f;
     // Player와의 X 거리가 이보다 멀면 걸어서 다가간 뒤 원거리 공격을 시작한다.
 
+    [Title("알짱거림 원거리 공격")]
+    [SerializeField, LabelText("알짱거림 원거리 사용")]
+    private bool loiterRangedEnabled = true;
+    // 켜면 Player가 멀리서(알짱거림 최소 거리 ~ 원거리 최대 사거리) 일정 시간 머물 때,
+    // 학습이 고른 전술과 상관없이 원거리 공격을 한다. 느린 비둘기가 멀리서 걸어오기만 하는 것을 막기 위해서다.
+
+    [SerializeField, LabelText("알짱거림 최소 거리"), ShowIf(nameof(loiterRangedEnabled))]
+    private float loiterMinRange = 4.5f;
+    // 이보다 가까우면 쪼기/도약 거리이므로 알짱거림으로 보지 않는다. 기본값은 도약 최대 거리와 같다.
+
+    [SerializeField, LabelText("알짱거림 판정 시간(초)"), ShowIf(nameof(loiterRangedEnabled))]
+    private float loiterDuration = 1.5f;
+    // Player가 위 거리 범위 안에 이 시간 이상 계속 머물면 원거리 공격을 시작한다. 짧을수록 더 자주 쏜다.
+
+    private float _loiterTimer;
+
+    [ReadOnly, ShowInInspector, LabelText("알짱거림 시간")]
+    private float LoiterTimer => _loiterTimer;
+
     [Title("패턴 사이 휴식")]
     [SerializeField, LabelText("패턴 후 휴식 시간")]
     private float postPatternRestTime = 1f;
@@ -144,6 +163,26 @@ public class NFBTEnemyAI : MonoBehaviour
     [SerializeField, LabelText("근접 공격 후 휴식 시간")]
     private float postMeleeRestTime = 0.5f;
     // 지상 근접 공격(쪼기)이 끝난 뒤(히트박스가 꺼진 뒤) 쉬는 시간이다.
+
+    [Title("피격 경직")]
+    [SerializeField, LabelText("피격 경직 시간")]
+    private float hitStunDuration = 0.25f;
+    // Enemy의 "진동 지속 시간"과 Pigeon.controller의 Hit→Idle 전환 시간(둘 다 0.25초)과 맞춰야
+    // 움찔하는 연출이 끝나기 전에 걸어오지 않는다.
+    // 맞은 순간부터 이 시간 동안 제자리에 멈춰 아무 행동도 하지 않는다. 연속으로 맞으면 다시 처음부터 센다.
+    // 값이 클수록 Player가 연타로 몰아붙이기 쉬워진다. 0이면 경직 없음.
+
+    private float _stunEndTime = -999f;
+    // 이 시각(Time.time)이 될 때까지 경직 상태다.
+
+    [ReadOnly, ShowInInspector, LabelText("경직 중")]
+    private bool IsStunned => Time.time < _stunEndTime;
+
+    [Title("디버그")]
+    [SerializeField, LabelText("씬에 범위 표시")]
+    private bool showRangeInScene = true;
+    // 켜면 Scene 뷰에 도약 공격 거리(노랑)와 원거리 최대 사거리(파랑)를 발밑 원으로 그린다.
+    // 해당 공격 옵션이 켜진 적만 그린다. 기즈모라 게임 화면과 빌드에는 나오지 않는다.
 
     private float _restEndTime = -999f;
     // 이 시각(Time.time)이 될 때까지 휴식한다. 초기값이 아주 과거라 시작 시엔 휴식 중이 아니다.
@@ -259,7 +298,33 @@ public class NFBTEnemyAI : MonoBehaviour
     }
 
     // 이 적이 맞으면 방금 선택했던 전술에 벌점(-0.5)을 준다.
-    private void HandleSelfDamaged(float amount) => _fuzzyRL.OnRewardReceived(-0.5f);
+    private void HandleSelfDamaged(float amount)
+    {
+        _fuzzyRL.OnRewardReceived(-0.5f);
+        StartHitStun();
+    }
+
+    // 맞으면 짧게 경직시킨다. 도약 중(공중)이나 원거리 공격 중에는 걸지 않는다.
+    // 그때 속도를 0으로 덮으면 공중에 멈춰 떠 있는 것처럼 보이기 때문이다.
+    private void StartHitStun()
+    {
+        if (hitStunDuration <= 0f || _enemy.IsDead || _isLeaping || _isRangedAttacking) return;
+
+        _stunEndTime = Time.time + hitStunDuration;
+
+        // 쪼기 선딜 중에 맞으면 공격을 끊는다. 안 끊으면 경직 중에 히트박스가 켜져 Player가 맞는다.
+        _combat.CancelAttack();
+        _pendingMeleeRest = false;
+        _isCountering = false;
+        _rushAnimationStarted = false;
+    }
+
+    // 경직 중에는 제자리에 서 있기만 한다. 바라보는 방향은 맞은 순간 그대로 둔다.
+    private void Stunned()
+    {
+        _movement.Move(Vector3.zero);
+        enemyAnim?.SetMoving(false);
+    }
 
     // 이 적이 공격 사거리 근처에서 Player에게 피해를 입혔다면, 방금 선택했던 전술에 보상(+1.0)을 준다.
     private void HandlePlayerDamaged(float amount)
@@ -282,6 +347,13 @@ public class NFBTEnemyAI : MonoBehaviour
             _pendingMeleeRest = false; // 탑다운으로 가면 휴식 상태도 풀어 복귀 후 이상한 정지를 막는다.
             _restEndTime = -999f;
             Patrol();
+            return;
+        }
+
+        // 피격 경직은 발악·추적·공격보다 우선한다. (도약/원거리 중에는 StartHitStun이 경직을 걸지 않는다.)
+        if (IsStunned)
+        {
+            Stunned();
             return;
         }
 
@@ -314,6 +386,16 @@ public class NFBTEnemyAI : MonoBehaviour
             StartRest(postMeleeRestTime);
         }
 
+        // 기본 공격(쪼기)이 진행되는 동안(선딜~히트박스 끝)에는 제자리에 서 있는다.
+        // 이게 없으면 공격 도중 Player가 사거리 밖으로 살짝 벗어날 때 쪼는 모션 그대로 걸어와 버린다.
+        // 바라보는 방향도 바꾸지 않아, 공격을 시작한 쪽으로 그대로 쫀다. (도약 중 공중 쪼기는 위에서 이미 처리된다)
+        if (_combat.IsAttacking)
+        {
+            _movement.Move(Vector3.zero);
+            enemyAnim?.SetMoving(false);
+            return;
+        }
+
         if (Time.time < _restEndTime)
         {
             Rest();
@@ -328,9 +410,13 @@ public class NFBTEnemyAI : MonoBehaviour
 
         if (!_isChasing)
         {
+            _loiterTimer = 0f;
             Patrol();
             return;
         }
+
+        // Player가 멀리서 알짱거리면 전술과 상관없이 원거리 공격을 먼저 한다.
+        if (TryLoiterRangedAttack()) return;
 
         UpdateTactics();
 
@@ -587,6 +673,33 @@ public class NFBTEnemyAI : MonoBehaviour
         StartRangedAttack(dir);
     }
 
+    // Player가 [알짱거림 최소 거리 ~ 원거리 최대 사거리] 안에 알짱거림 판정 시간 이상 머물렀고
+    // 원거리 쿨다운이 끝났으면 원거리 공격을 시작한다. 시작했으면 true를 반환한다.
+    // (경직/도약/원거리/쪼기/휴식 중에는 Update가 여기까지 오지 않으므로 그 사이에는 끼어들지 않는다.)
+    private bool TryLoiterRangedAttack()
+    {
+        if (!loiterRangedEnabled || rangedProjectilePrefab == null)
+        {
+            _loiterTimer = 0f;
+            return false;
+        }
+
+        float distance = HorizontalDistance();
+        if (distance >= loiterMinRange && distance <= rangedMaxRange)
+            _loiterTimer += Time.deltaTime;
+        else
+            _loiterTimer = 0f;
+        // 범위를 벗어나는 순간 0으로 돌려서, "계속" 머물렀을 때만 쏘게 한다.
+
+        bool rangedReady = Time.time - _lastRangedFireTime >= rangedCooldown;
+        if (_loiterTimer < loiterDuration || !rangedReady) return false;
+
+        _loiterTimer = 0f;
+        StartRangedAttack(DirectionToPlayer());
+        return _isRangedAttacking;
+        // 공중이라 시작하지 못했으면(StartRangedAttack이 바로 return) 이번 프레임은 평소 전술로 움직인다.
+    }
+
     private void StartRangedAttack(Vector3 dir)
     {
         if (!_movement.IsGrounded) return;
@@ -788,4 +901,28 @@ public class NFBTEnemyAI : MonoBehaviour
             }
         }
     }
+
+#if UNITY_EDITOR
+    // 선택하지 않아도 항상 보이게 OnDrawGizmos를 쓴다.
+    // 거리 판정(HorizontalDistance)이 높이를 뺀 XZ 거리이므로, 바닥과 평행한 원(Y축 기준)으로 그린다.
+    private void OnDrawGizmos()
+    {
+        if (!showRangeInScene) return;
+        Vector3 center = transform.position;
+
+        if (replaceEvadeWithLeap)
+        {
+            // 도약은 최소~최대 거리 사이에서만 나가므로 두 원 사이 띠가 도약 구간이다.
+            UnityEditor.Handles.color = new Color(1f, 0.85f, 0.1f, 0.9f);
+            UnityEditor.Handles.DrawWireDisc(center, Vector3.up, leapMinRange);
+            UnityEditor.Handles.DrawWireDisc(center, Vector3.up, leapMaxRange);
+        }
+
+        if (replaceCounterWithRanged)
+        {
+            UnityEditor.Handles.color = new Color(0.25f, 0.6f, 1f, 0.9f);
+            UnityEditor.Handles.DrawWireDisc(center, Vector3.up, rangedMaxRange);
+        }
+    }
+#endif
 }

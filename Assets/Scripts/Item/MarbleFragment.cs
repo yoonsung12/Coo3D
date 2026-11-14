@@ -15,7 +15,7 @@ public class MarbleFragment : BasePickupItem
     {
         if (pickupSound != null)
             // 오브젝트가 Destroy된 뒤에도 소리가 끝까지 재생되도록 PlayClipAtPoint를 사용한다.
-            AudioSource.PlayClipAtPoint(pickupSound, transform.position);
+            SfxPlayer.PlayAt(pickupSound, transform.position);
 
         if (MarbleInventory.Instance != null)
             MarbleInventory.Instance.AddFragment();

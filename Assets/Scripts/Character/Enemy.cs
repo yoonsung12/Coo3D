@@ -135,7 +135,7 @@ public class Enemy : CharacterBase
         }
 
         if (hitClip != null)
-            AudioSource.PlayClipAtPoint(hitClip, transform.position);
+            SfxPlayer.PlayAt(hitClip, transform.position);
 
         PlayRedHit();
     }

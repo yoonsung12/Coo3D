@@ -256,7 +256,7 @@ public class Pollen : BaseHazard, IBlowable
 
         // PlayClipAtPoint를 사용해 오브젝트가 Destroy된 뒤에도 소리가 끝까지 재생된다.
         if (blownSound != null)
-            AudioSource.PlayClipAtPoint(blownSound, transform.position, soundVolume);
+            SfxPlayer.PlayAt(blownSound, transform.position, soundVolume);
 
         StartCoroutine(BlownAwayRoutine());
     }
