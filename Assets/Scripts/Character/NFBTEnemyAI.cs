@@ -27,10 +27,21 @@ public class NFBTEnemyAI : MonoBehaviour
     private float chaseAbandonRange = 15f;
     // Player를 감지한 뒤에도 이 거리보다 멀어지면 추적을 포기하고 순찰로 돌아간다.
 
+    [SerializeField, LabelText("탑다운에서도 전투")]
+    private bool fightInTopDown = false;
+    // 켜면 Player가 탑다운 구역에 있어도 추적·공격을 계속한다. 추적/공격/도약/원거리는 이미 XZ 평면으로 동작한다.
+    // 꺼 두면(기본값) 기존처럼 Player가 탑다운으로 들어가는 순간 추적을 포기하고 순찰로 돌아간다.
+    // 탑다운 구역 안에 배치한 적만 켠다.
+
     [Title("순찰 설정")]
     [SerializeField, LabelText("순찰 범위 절반 너비")]
     private float patrolHalfWidth = 3f;
     // 시작 위치를 중심으로 좌우 이 거리만큼 왕복한다.
+
+    [SerializeField, LabelText("앞뒤(Z)로 순찰")]
+    private bool patrolAlongZ = false;
+    // 켜면 좌우(X) 대신 앞뒤(Z)로 순찰한다. 탑다운 다리처럼 X 폭은 좁고 Z로 긴 길에 배치한 적에 켠다.
+    // 꺼 두면(기본값) 기존처럼 좌우로 순찰한다. 순찰 거리는 위의 "순찰 범위 절반 너비"를 그대로 쓴다.
 
     [Title("전술 학습 설정")]
     [SerializeField, LabelText("전술 재계산 주기(초)")]
@@ -224,6 +235,9 @@ public class NFBTEnemyAI : MonoBehaviour
 
     private float _patrolLeftX;
     private float _patrolRightX;
+    private float _patrolBackZ;
+    private float _patrolFrontZ;
+    // "앞뒤(Z)로 순찰"을 켰을 때 쓰는 순찰 범위다. 시작 Z를 중심으로 ±순찰 범위 절반 너비.
     private float _retreatTimer;
     private float _corneredTimer;
     private float _tacticsTimer;
@@ -281,6 +295,10 @@ public class NFBTEnemyAI : MonoBehaviour
         float startX = transform.position.x;
         _patrolLeftX = startX - patrolHalfWidth;
         _patrolRightX = startX + patrolHalfWidth;
+
+        float startZ = transform.position.z;
+        _patrolBackZ = startZ - patrolHalfWidth;
+        _patrolFrontZ = startZ + patrolHalfWidth;
     }
 
     private void OnEnable()
@@ -302,6 +320,11 @@ public class NFBTEnemyAI : MonoBehaviour
     {
         _fuzzyRL.OnRewardReceived(-0.5f);
         StartHitStun();
+
+        // 탑다운 전투 적은 시야각(정면 90도) 밖, 예를 들어 등 뒤에서 맞아도 바로 Player를 쫓는다.
+        // 탑다운에서는 Player가 어느 방향에서든 다가오므로, 맞고도 순찰만 계속하면 어색하기 때문이다.
+        if (fightInTopDown && IsPlayerInTopDown())
+            _isChasing = true;
     }
 
     // 맞으면 짧게 경직시킨다. 도약 중(공중)이나 원거리 공격 중에는 걸지 않는다.
@@ -339,7 +362,8 @@ public class NFBTEnemyAI : MonoBehaviour
 
         // Player가 탑다운 구역에 들어가면 추적을 포기하고 순찰로 돌아간다(CLAUDE.md: 탑다운 구역에는 적을 두지 않는다).
         // 도약/원거리 공격은 공중에 떠 있는 중일 수 있어 끝까지 마치게 두고, 그 뒤 프레임부터 순찰한다.
-        if (IsPlayerInTopDown() && !_isLeaping && !_isRangedAttacking)
+        // 단, "탑다운에서도 전투"를 켠 적은 이 처리를 건너뛰고 아래의 평소 전투 로직을 그대로 쓴다.
+        if (!fightInTopDown && IsPlayerInTopDown() && !_isLeaping && !_isRangedAttacking)
         {
             _isChasing = false;
             _isCornered = false;
@@ -469,8 +493,8 @@ public class NFBTEnemyAI : MonoBehaviour
         if (ShouldReversePatrol())
             _patrolDir = -_patrolDir;
 
-        // 순찰은 X축 왕복만 하지만, 몸이 부드럽게 돌도록 360도 버전 API에 ±X 방향을 넘긴다.
-        Vector3 patrolVector = new Vector3(_patrolDir, 0f, 0f);
+        // 순찰은 한 축(기본 X, 옵션을 켜면 Z) 왕복만 하지만, 몸이 부드럽게 돌도록 360도 버전 API에 방향을 넘긴다.
+        Vector3 patrolVector = patrolAlongZ ? new Vector3(0f, 0f, _patrolDir) : new Vector3(_patrolDir, 0f, 0f);
         _movement.Move(patrolVector);
         _vision.SetFacingDirection(patrolVector);
 
@@ -479,6 +503,18 @@ public class NFBTEnemyAI : MonoBehaviour
 
     private bool ShouldReversePatrol()
     {
+        // 앞뒤(Z) 순찰: 범위 끝이나 앞쪽 벽/낭떠러지에서 돌아선다. (좌우 순찰은 아래 기존 판정을 그대로 쓴다)
+        if (patrolAlongZ)
+        {
+            if (_patrolDir > 0f && transform.position.z >= _patrolFrontZ) return true;
+            if (_patrolDir < 0f && transform.position.z <= _patrolBackZ) return true;
+
+            Vector3 patrolVector = new Vector3(0f, 0f, _patrolDir);
+            if (_movement.HasWallAhead(patrolVector)) return true;
+            if (!_movement.HasGroundAhead(patrolVector)) return true;
+            return false;
+        }
+
         if (_patrolDir > 0f && transform.position.x >= _patrolRightX) return true;
         if (_patrolDir < 0f && transform.position.x <= _patrolLeftX) return true;
 

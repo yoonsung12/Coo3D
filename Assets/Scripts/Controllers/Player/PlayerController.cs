@@ -104,6 +104,17 @@ public class PlayerController : MonoBehaviour
     [ReadOnly, ShowInInspector, LabelText("탑다운 카메라 방향 (Y 회전)")]
     public float TopDownYaw { get; private set; }
 
+    [ReadOnly, ShowInInspector, LabelText("이동에 쓰는 카메라 방향 (Y 회전)")]
+    private float _moveYaw;
+    // 탑다운 화살표 입력을 돌릴 때 실제로 쓰는 각도다. 평소엔 TopDownYaw와 같고,
+    // 화살표를 누른 채 카메라 방향이 바뀌면 키를 뗄 때까지 이전 각도를 유지한다(UpdateMoveYaw).
+
+    private Vector2 _moveYawHeldInput;
+    // _moveYaw를 정한 순간 누르고 있던 화살표 입력이다. 이 입력에서 크게 벗어나면 새 카메라 방향으로 갱신한다.
+
+    private const float MoveYawRefreshAngle = 30f;
+    // 누르는 방향이 이 각도보다 많이 바뀌면 새로 누른 것으로 본다. 8방향 입력의 한 칸(45도)보다 작게 잡는다.
+
     // 탑다운 카메라 방향이 바뀔 때 알린다. SideViewCamera가 구독해 탑다운 카메라를 함께 돌린다.
     public event System.Action<float> OnTopDownYawChanged;
 
@@ -184,6 +195,12 @@ public class PlayerController : MonoBehaviour
     private void Awake()
     {
         _cc = GetComponent<CharacterController>();
+
+        // 최소 이동 거리를 0으로 둬서 아무리 작은 Move()도 무시되지 않게 한다.
+        // 기본값(0.001)이면 히트스톱(Time.timeScale 0.05) 중 바닥으로 누르는 이동량이 그보다 작아져 Move()가 건너뛰어지고,
+        // 그 프레임에 isGrounded가 false가 되어 애니메이터가 점프→낙하 모션을 재생했다.
+        // Player가 씬마다 따로 배치돼 있어 Inspector 대신 코드에서 한 번에 맞춘다.
+        _cc.minMoveDistance = 0f;
 
         // 씬에 배치된 캐릭터가 바라보는 수평 방향을 처음 조준 방향으로 삼는다.
         // 기본값(+Z)으로 두면 화살표를 누르기 전에 쓴 선풍기/횃불이 몸과 다른 쪽(화면 안쪽)으로 나간다.
@@ -309,6 +326,8 @@ public class PlayerController : MonoBehaviour
             _moveInput = Vector2.zero;
         }
 
+        UpdateMoveYaw();
+
         // 튜브 탑승 중에는 CharacterController가 꺼져 있고 이동은 튜브(Rigidbody)가 맡는다.
         // 화살표는 선풍기를 쏠 방향(FacingDirection)을 정하는 조준에만 쓰고, 나머지 이동/중력 처리는 건너뛴다.
         // IsGrounded는 true로 유지해 점프/낙하 애니메이션이 재생되지 않고 선풍기 사용 조건도 그대로 만족하게 한다.
@@ -428,7 +447,8 @@ public class PlayerController : MonoBehaviour
         // X = 좌우
         // Z = 앞뒤
         // 탑다운은 카메라 방향(TopDownYaw)만큼 입력을 돌려 ↑가 항상 화면 위쪽이 되게 한다. 기본 0도면 월드 X/Z 그대로다.
-        Vector3 moveDir = Quaternion.Euler(0f, TopDownYaw, 0f) * new Vector3(xInput, 0f, zInput);
+        // 단, 화살표를 누르고 있는 동안 카메라 방향이 바뀌면 원래 걷던 방향을 유지한다(UpdateMoveYaw 참고).
+        Vector3 moveDir = Quaternion.Euler(0f, _moveYaw, 0f) * new Vector3(xInput, 0f, zInput);
 
         // 사이드뷰에서는 좌우 입력을 진행 축 방향으로, ↑/↓ 입력을 깊이 방향(카메라가 바라보는 쪽 = 화면 안쪽)으로 쓴다.
         // 기본 축(+X)이면 깊이 방향이 +Z라서 위와 같은 값이고, -Z 통로에서는 통로 기준 좌우/앞뒤로 바뀐다.
@@ -472,6 +492,29 @@ public class PlayerController : MonoBehaviour
         _moveVelocity = Vector3.MoveTowards(_moveVelocity, targetVelocity, rate * Time.deltaTime);
     }
 
+    // 탑다운 이동/조준에 실제로 쓸 카메라 방향(_moveYaw)을 정한다.
+    // 고정 카메라 구역(FixedCameraZone)이나 TopDownYawZone에 들어가면 TopDownYaw가 바뀌는데, 그 순간 같은 화살표가
+    // 다른 월드 방향을 가리키게 되어 플레이어가 구역 밖으로 되돌아 나가고, 나가면 다시 들어오는 반복이 생겼다(계단 아래 광장).
+    // 그래서 화살표를 누르고 있는 동안은 원래 걷던 방향을 유지하고, 키를 떼거나 다른 방향을 누를 때 새 카메라 기준으로 바꾼다.
+    private void UpdateMoveYaw()
+    {
+        // 입력이 없으면 지금 카메라 방향을 그대로 쓴다. 다음에 누르는 키는 새 화면 기준으로 움직인다.
+        if (_moveInput.sqrMagnitude < 0.01f)
+        {
+            _moveYaw = TopDownYaw;
+            _moveYawHeldInput = Vector2.zero;
+            return;
+        }
+
+        // 새로 누르기 시작했거나, 누르는 방향이 크게 바뀌었으면(대각선 전환 포함) 그때의 카메라 방향으로 갱신한다.
+        // 같은 방향을 계속 누르고 있는 동안에는 _moveYaw를 바꾸지 않아 걷던 월드 방향이 그대로 유지된다.
+        if (_moveYawHeldInput == Vector2.zero || Vector2.Angle(_moveInput, _moveYawHeldInput) > MoveYawRefreshAngle)
+        {
+            _moveYaw = TopDownYaw;
+            _moveYawHeldInput = _moveInput;
+        }
+    }
+
     // 사이드뷰/탑다운 모두 화살표로 이동하는 방향(8방향)을 바라본다. 입력이 없으면 마지막 방향을 유지한다.
     // 몸통을 360도 돌리고, 선풍기/횃불도 이 방향(FacingDirection)으로 나간다.
     private void HandleFacing()
@@ -485,7 +528,7 @@ public class PlayerController : MonoBehaviour
         // -Z 통로처럼 카메라가 돌아간 구간에서도 누른 화살표 쪽(화면 기준)을 바라보게 한다.
         Vector3 dir = CurrentViewMode == ViewMode.SideView
             ? SideViewAxis * xInput + SideViewDepthAxis * zInput
-            : Quaternion.Euler(0f, TopDownYaw, 0f) * new Vector3(xInput, 0f, zInput);
+            : Quaternion.Euler(0f, _moveYaw, 0f) * new Vector3(xInput, 0f, zInput);
         // Y 성분은 0으로 두어 바닥과 평행한 방향만 쓴다. 위아래 조준은 쓰지 않는다.
 
         if (dir.sqrMagnitude > AimInputThreshold * AimInputThreshold)

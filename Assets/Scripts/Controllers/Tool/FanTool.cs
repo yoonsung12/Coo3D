@@ -201,6 +201,8 @@ public class FanTool : BaseTool
         {
             _lastChargeLevel = level;
             PlaySound(level == 1 ? chargeSound1 : level == 2 ? chargeSound2 : chargeSound3, chargeSoundVolume);
+            // 소리와 같은 타이밍에 차징 이펙트(빨려드는 바람·고리)도 해당 단계로 바꾼다.
+            windEffect?.PlayCharge(level);
         }
 
         // 차징하는 동안 단계별 세기로 뒤로 계속 밀어낸다. SetRecoil은 매 프레임 덮어쓰이므로
@@ -227,6 +229,7 @@ public class FanTool : BaseTool
         _player?.SetSpeedMultiplier(1f);
 
         windEffect?.Stop();
+        windEffect?.StopCharge();
         StopBlowSound();
 
         // 선풍기 사용 애니메이션 종료

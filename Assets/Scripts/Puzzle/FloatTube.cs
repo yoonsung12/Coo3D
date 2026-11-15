@@ -43,11 +43,26 @@ public class FloatTube : MonoBehaviour
     [SerializeField, LabelText("탑승 안내 UI (선택)")]
     private CanvasGroup boardPrompt;
     // 탑승 가능 범위에 들어오면 페이드로 나타나는 안내다. 비워 두면 안내 없이 동작한다.
+    // World Space Canvas에 붙은 CanvasGroup을 연결하면 플레이어 머리 위를 따라다니며 카메라를 바라본다.
+
+    [SerializeField, LabelText("안내 높이"), ShowIf(nameof(boardPrompt))]
+    private float promptHeight = 2.3f;
+    // 플레이어 발(루트) 기준으로 안내를 띄울 높이(m)다. 클수록 머리 위 더 높이 뜬다.
 
     [Title("탑승")]
     [SerializeField, LabelText("탑승 가능 거리")]
     private float boardRange = 2.5f;
     // 플레이어와 튜브의 수평(XZ) 거리가 이 값 이하일 때만 탑승할 수 있다. 클수록 멀리서도 탄다.
+
+    [SerializeField, LabelText("탑승 구역 (선택)")]
+    private Collider boardArea;
+    // 출발 선착장(StartDock) 위를 덮는 Is Trigger 콜라이더다. 플레이어가 이 안에 있으면 튜브와 조금 떨어져 있어도 탈 수 있다.
+    // 비워 두면 기존처럼 "탑승 가능 거리"로만 판정한다.
+
+    [SerializeField, LabelText("구역 탑승 최대 거리"), ShowIf(nameof(boardArea))]
+    private float areaBoardMaxDistance = 9f;
+    // 탑승 구역 안이어도 튜브가 이 거리(XZ)보다 멀리 떠내려가 있으면 타지 않는다.
+    // 튜브가 다른 섬에 가 있는데 선착장에서 순간이동해 타는 것을 막기 위한 값이다.
 
     [Title("물리")]
     [SerializeField, LabelText("물 저항 (Drag)")]
@@ -119,6 +134,10 @@ public class FloatTube : MonoBehaviour
     private Tween _boardTween;
     private Tween _tiltTween;
     private Tween _promptTween;
+    private Transform _cameraTransform;
+    // 안내가 바라볼 메인 카메라다. 매 프레임 Camera.main을 찾지 않도록 Awake에서 한 번 저장해 둔다.
+    private CharacterController _playerCC;
+    // 탑승 구역 안/밖 판정에 플레이어 몸통 중심을 쓰기 위해 저장해 둔다.
 
     private void Awake()
     {
@@ -156,6 +175,12 @@ public class FloatTube : MonoBehaviour
 
         if (boardPrompt != null)
             boardPrompt.alpha = 0f;
+
+        if (Camera.main != null)
+            _cameraTransform = Camera.main.transform;
+
+        if (player != null)
+            _playerCC = player.GetComponent<CharacterController>();
 
         var playerMap = inputActionAsset.FindActionMap("Player", throwIfNotFound: true);
         _interactAction = playerMap.FindAction("Interact", throwIfNotFound: true);
@@ -199,6 +224,20 @@ public class FloatTube : MonoBehaviour
         SetPromptVisible(!player.IsMounted && IsPlayerInRange());
     }
 
+    // 플레이어가 이동한 뒤(Update) 위치를 따라가야 흔들리지 않으므로 LateUpdate에서 안내 위치를 맞춘다.
+    // 보이는 동안(페이드 중 포함)만 계산한다.
+    private void LateUpdate()
+    {
+        if (boardPrompt == null || player == null || boardPrompt.alpha <= 0f) return;
+
+        Transform promptTransform = boardPrompt.transform;
+        promptTransform.position = player.transform.position + Vector3.up * promptHeight;
+
+        // 카메라와 같은 회전을 주면 사이드뷰·탑다운 어느 시점에서도 글씨가 화면 정면으로 보인다.
+        if (_cameraTransform != null)
+            promptTransform.rotation = _cameraTransform.rotation;
+    }
+
     private void FixedUpdate()
     {
         // 선풍기 일반 반동은 가속도로 계속 밀어준다.
@@ -232,12 +271,27 @@ public class FloatTube : MonoBehaviour
         Mount();
     }
 
-    // 플레이어와 튜브의 XZ 거리가 탑승 가능 거리 안인지 확인한다. 높이 차이는 무시한다.
+    // 탑승할 수 있는 위치인지 확인한다. 높이 차이는 무시하고 XZ 거리만 본다.
+    // 1) 튜브와 탑승 가능 거리 안이거나, 2) 탑승 구역(선착장) 안이고 튜브가 구역 탑승 최대 거리 안에 떠 있으면 탈 수 있다.
     private bool IsPlayerInRange()
     {
         Vector3 offset = player.transform.position - transform.position;
         offset.y = 0f;
-        return offset.sqrMagnitude <= boardRange * boardRange;
+        float sqrDistance = offset.sqrMagnitude;
+
+        if (sqrDistance <= boardRange * boardRange) return true;
+
+        return boardArea != null
+            && sqrDistance <= areaBoardMaxDistance * areaBoardMaxDistance
+            && IsPlayerInsideBoardArea();
+    }
+
+    // 플레이어 몸통 중심이 탑승 구역 콜라이더 안에 있는지 확인한다.
+    // ClosestPoint는 점이 콜라이더 안이면 그 점을 그대로 돌려주므로, 같으면 안에 있다는 뜻이다(FixedCameraZone과 같은 방식).
+    private bool IsPlayerInsideBoardArea()
+    {
+        Vector3 center = _playerCC != null ? player.transform.TransformPoint(_playerCC.center) : player.transform.position + Vector3.up;
+        return boardArea.enabled && boardArea.ClosestPoint(center) == center;
     }
 
     private void SetPromptVisible(bool visible)
