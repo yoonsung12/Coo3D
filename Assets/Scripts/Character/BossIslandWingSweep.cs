@@ -82,7 +82,7 @@ public class BossIslandWingSweep : MonoBehaviour
     private Vector3 _startLocalPosition;
     private Quaternion _startLocalRotation;
     private Vector3 _startLocalScale;
-
+    private BossAnimationController bossAnim;
     private void Awake()
     {
         if (bossVisual != null)
@@ -92,6 +92,7 @@ public class BossIslandWingSweep : MonoBehaviour
             _startLocalRotation = bossVisual.localRotation;
             _startLocalScale = bossVisual.localScale;
         }
+        bossAnim = GetComponent<BossAnimationController>();
     }
 
     private void OnDisable()
@@ -150,6 +151,7 @@ public class BossIslandWingSweep : MonoBehaviour
         yield return new WaitForSeconds(telegraphDuration * 0.4f);
 
         // 휘두르기: 한 바퀴 돌며 날개를 편다. 판정은 이 순간 한 번만 한다.
+        bossAnim?.PlayWing();
         DestroyTelegraph();
         if (bossVisual != null)
         {

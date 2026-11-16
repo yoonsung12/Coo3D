@@ -356,7 +356,7 @@ public class BossSummerIslandPattern : BossSeasonPatternBase
     private readonly List<LightningPillar> _pillars = new List<LightningPillar>();
     private readonly List<AudioSource> _pillarSounds = new List<AudioSource>();
     // 기둥 무리마다 만든 지지직 소리다. 중단/파훼 때 남지 않도록 모아서 정리한다.
-
+    private BossAnimationController bossAnim;
     // 수평 4방향이다. 흐르는 기둥 회차마다 이 중 하나를 고른다.
     private static readonly Vector3[] FlowDirections = { Vector3.right, Vector3.left, Vector3.forward, Vector3.back };
 
@@ -373,6 +373,7 @@ public class BossSummerIslandPattern : BossSeasonPatternBase
             _visualStartLocalPosition = bossVisual.localPosition;
             _visualStartLocalRotation = bossVisual.localRotation;
         }
+        bossAnim = GetComponent<BossAnimationController>();
     }
 
     // 탈진 대기 중(IsRunning이 false인 동안)에 꺼져도 피뢰침과 물리를 정리하기 위해 덧붙인다.
@@ -985,6 +986,7 @@ public class BossSummerIslandPattern : BossSeasonPatternBase
         }
 
         yield return new WaitForSeconds(lockDuration);
+        bossAnim?.PlaySummerWing(); // 추가
 
         ApplyStrike(strikePoint);
 

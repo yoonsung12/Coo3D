@@ -259,6 +259,7 @@ public class BossAutumnIslandPattern : BossSeasonPatternBase
     private Quaternion _visualStartLocalRotation;
     private readonly List<GroundTelegraph> _telegraphs = new List<GroundTelegraph>();
     private readonly List<AutumnRoot> _roots = new List<AutumnRoot>();
+    private BossAnimationController bossAnim;
 
     protected override Boss.SeasonPattern Season => Boss.SeasonPattern.Autumn;
     protected override bool IsRunning => _cycleRoutine != null;
@@ -273,6 +274,7 @@ public class BossAutumnIslandPattern : BossSeasonPatternBase
             _visualStartLocalPosition = bossVisual.localPosition;
             _visualStartLocalRotation = bossVisual.localRotation;
         }
+        bossAnim = GetComponent<BossAnimationController>();
     }
 
     // 탈진 대기 중(IsRunning이 false인 동안)에 꺼져도 물리를 정리하기 위해 덧붙인다.
@@ -363,6 +365,7 @@ public class BossAutumnIslandPattern : BossSeasonPatternBase
     // 몸을 뒤로 젖혔다가 내려찍는다. 끝에서 카메라가 흔들린다.
     private IEnumerator StompRoutine()
     {
+        bossAnim?.PlayStomp(); // 추가
         float windUpTime = stompDuration * 0.7f;
         if (bossVisual != null)
         {

@@ -212,7 +212,7 @@ public class BossWinterIslandPattern : BossSeasonPatternBase
     private readonly List<GroundTelegraph> _rockTelegraphs = new List<GroundTelegraph>();
     private readonly HashSet<IslandRock> _rocksHitThisSwing = new HashSet<IslandRock>();
     // 이번 회차 바람이 스친 바위다. 숨어 있는 도중 부서지지 않도록 회차가 끝날 때 한꺼번에 깎는다.
-
+    private BossAnimationController bossAnim;
     protected override Boss.SeasonPattern Season => Boss.SeasonPattern.Winter;
     protected override bool IsRunning => _cycleRoutine != null;
 
@@ -229,6 +229,7 @@ public class BossWinterIslandPattern : BossSeasonPatternBase
 
         if (fanTelegraph != null)
             fanTelegraph.SetRocks(rocks);
+        bossAnim = GetComponent<BossAnimationController>();
     }
 
     private void OnDestroy()
@@ -435,6 +436,7 @@ public class BossWinterIslandPattern : BossSeasonPatternBase
     // 칼바람: 일정 시간 동안 매 프레임 플레이어가 경로 안인지 확인해서 밀어낸다.
     private IEnumerator WindRoutine(WindSwing swing, float signedSweep)
     {
+        bossAnim?.PlayWinterWing(); // 추가
         PlaySwingPose();
         _rocksHitThisSwing.Clear();
 

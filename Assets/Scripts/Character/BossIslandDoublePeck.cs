@@ -91,6 +91,7 @@ public class BossIslandDoublePeck : MonoBehaviour
     private Vector3 _startLocalPosition;
     private Quaternion _startLocalRotation;
     private Vector3 _startLocalScale;
+    private BossAnimationController bossAnim;
 
     private void Awake()
     {
@@ -103,6 +104,7 @@ public class BossIslandDoublePeck : MonoBehaviour
             _startLocalRotation = bossVisual.localRotation;
             _startLocalScale = bossVisual.localScale;
         }
+        bossAnim = GetComponent<BossAnimationController>();
     }
 
     private void OnDisable()
@@ -163,6 +165,7 @@ public class BossIslandDoublePeck : MonoBehaviour
         yield return new WaitForSeconds(telegraphDuration * 0.3f);
 
         // 쪼기 두 번. 각 쪼기는 한 번씩만 맞는다.
+        bossAnim?.PlayPeck();
         yield return PeckOnce(dir, firstLength);
         yield return new WaitForSeconds(peckInterval);
         yield return PeckOnce(dir, firstLength + extraLength);

@@ -116,6 +116,8 @@ public class BossIslandBasicPattern : MonoBehaviour
     private float _nextSweepTime;
     // 이 시각(Time.time) 이후부터 다시 날개 쓸기를 쓸 수 있다.
 
+    private BossAnimationController bossAnim;
+
     private Boss _boss;
     private Rigidbody _rb;
     private float _timer;
@@ -133,6 +135,7 @@ public class BossIslandBasicPattern : MonoBehaviour
         _boss = GetComponent<Boss>();
         _rb = GetComponent<Rigidbody>();
         _timer = cycleInterval;
+        bossAnim = GetComponent<BossAnimationController>();
     }
 
     private void OnEnable()
@@ -250,6 +253,7 @@ public class BossIslandBasicPattern : MonoBehaviour
         _isAttacking = true;
         _currentAttackName = attackName;
         _boss.SetBasicAttacking(true);
+        bossAnim?.PlayReady();
         SetFlatVelocity(Vector3.zero);
         execute(dir, OnAttackFinished);
     }
@@ -259,6 +263,7 @@ public class BossIslandBasicPattern : MonoBehaviour
         _isAttacking = false;
         _currentAttackName = "없음";
         _boss.SetBasicAttacking(false);
+        bossAnim?.EndAction();
     }
 
     // 걷기 영역 밖에 있는 보스를 섬 중앙 방향의 영역 안쪽(80% 지점)으로 점프시킨다.

@@ -239,7 +239,7 @@ public class BossSpringIslandPattern : BossSeasonPatternBase
     private IslandRock _planRock;
     private IslandRock _warningRock; // 현재 경고 연출 중인 바위(없으면 null)
     private Vector3 _planEnd; // 돌진 도착 지점(지면 높이, 보스 중심 Y는 standHeightY)
-
+    private BossAnimationController bossAnim;
     protected override Boss.SeasonPattern Season => Boss.SeasonPattern.Spring;
     protected override bool IsRunning => _cycleRoutine != null;
 
@@ -251,6 +251,7 @@ public class BossSpringIslandPattern : BossSeasonPatternBase
 
         if (dashHitbox != null)
             dashHitbox.DisableHitbox();
+        bossAnim = GetComponent<BossAnimationController>();
     }
 
     private void OnDestroy()
@@ -521,6 +522,9 @@ public class BossSpringIslandPattern : BossSeasonPatternBase
     private IEnumerator DashRoutine()
     {
         _currentPhase = "돌진";
+
+        bossAnim?.PlaySpringDash();
+
         laneTelegraph.Hide();
         circleTelegraph.Hide();
 
