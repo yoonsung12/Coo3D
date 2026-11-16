@@ -5,7 +5,7 @@ using UnityEngine;
 [RequireComponent(typeof(Boss))]
 public class BossAnimationController : MonoBehaviour
 {
-    [Title("Animator ¿¬°á")]
+    [Title("Animator ì—°ê²°")]
     [SerializeField] private Animator animator;
 
     private Boss boss;
@@ -61,7 +61,7 @@ public class BossAnimationController : MonoBehaviour
             return;
         }
 
-        // ±âÁ¸ Rigidbody ÀÌµ¿À» ÀĞ¾î¼­ Walk Àç»ı
+        // ê¸°ì¡´ Rigidbody ì´ë™ì„ ì½ì–´ì„œ Walk ì¬ìƒ
         Vector3 velocity = rb != null
             ? rb.linearVelocity : Vector3.zero;
 
@@ -84,7 +84,7 @@ public class BossAnimationController : MonoBehaviour
         if (!animator.HasState(0, hash))
         {
             Debug.LogWarning(
-                $"Boss Animator State ¾øÀ½: {state}", this
+                $"Boss Animator State ì—†ìŒ: {state}", this
             );
             return;
         }

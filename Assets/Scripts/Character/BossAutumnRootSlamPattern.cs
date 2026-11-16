@@ -269,6 +269,8 @@ public class BossAutumnRootSlamPattern : BossSeasonPatternBase
     private readonly List<Vector3> _patchCenters = new List<Vector3>();
     private GroundTelegraph _shadow;
     private readonly List<AutumnRoot> _roots = new List<AutumnRoot>();
+    private BossAnimationController bossAnim;
+    // 비둘킹 모델의 애니메이션을 재생하는 컴포넌트다. 없으면 애니메이션 없이 패턴만 돈다.
 
     protected override Boss.SeasonPattern Season => Boss.SeasonPattern.Autumn;
     protected override bool IsRunning => _cycleRoutine != null;
@@ -284,6 +286,7 @@ public class BossAutumnRootSlamPattern : BossSeasonPatternBase
             _visualStartLocalRotation = bossVisual.localRotation;
             _visualStartLocalScale = bossVisual.localScale;
         }
+        bossAnim = GetComponent<BossAnimationController>();
     }
 
     // 탈진 대기 중(IsRunning이 false인 동안)에 꺼져도 물리를 정리하기 위해 덧붙인다.
@@ -390,6 +393,8 @@ public class BossAutumnRootSlamPattern : BossSeasonPatternBase
         yield return ShadowFollowRoutine(airY);
 
         _currentPhase = "내려찍기";
+        bossAnim?.PlayStomp();
+        // 내려오기 시작할 때 내려찍기 애니메이션을 틀어서 착지 순간과 모션이 맞게 한다.
         Vector3 landing = _shadow != null ? GetFlat(_shadow.transform.position) : GetBossFlatPosition();
         yield return MoveBossTweenRoutine(new Vector3(landing.x, standHeightY, landing.z), slamDuration, Ease.InQuad);
 
