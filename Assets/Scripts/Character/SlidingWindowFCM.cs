@@ -26,9 +26,16 @@ public class SlidingWindowFCM
     // 버퍼에 FCM을 돌리기에 충분한 데이터가 있는지 여부.
     public bool HasEnoughData => _buffer.Count >= _nClusters;
 
+    // false면 StandardScaler를 건너뛰고 원본 값으로 클러스터링한다.
+    // 새 피처는 이미 0~1이고, Refit마다 평균/표준편차가 바뀌면 같은 클러스터 번호의 의미가 흔들려
+    // 전문가(RBFNN)가 엉뚱한 클러스터를 배우게 되므로 새 학습 경로에서는 끈다.
+    private readonly bool _useStandardization;
+
     public SlidingWindowFCM(int windowSize = 50, int nClusters = 3,
-                             float m = 2.0f, int maxIter = 50, float tol = 1e-4f)
+                             float m = 2.0f, int maxIter = 50, float tol = 1e-4f,
+                             bool useStandardization = true)
     {
+        _useStandardization = useStandardization;
         _windowSize = windowSize;
         _nClusters  = nClusters;
         _m          = m;
@@ -55,8 +62,12 @@ public class SlidingWindowFCM
 
         float[][] X = _buffer.ToArray();
 
-        FitScaler(X);
-        float[][] Xs = TransformAll(X);
+        float[][] Xs = X;
+        if (_useStandardization)
+        {
+            FitScaler(X);
+            Xs = TransformAll(X);
+        }
         RunFCM(Xs, _centers);
     }
 
@@ -65,14 +76,15 @@ public class SlidingWindowFCM
     // Refit이 한 번도 호출되지 않은 경우 균등 소속도를 반환한다.
     public float[] SoftPredict(float[] log)
     {
-        if (_centers == null || _mean == null)
+        // 표준화를 끈 경우 _mean은 끝까지 null이므로, 학습 전 여부는 _centers로만 판단한다.
+        if (_centers == null || (_useStandardization && _mean == null))
         {
             float[] uniform = new float[_nClusters];
             for (int i = 0; i < _nClusters; i++) uniform[i] = 1f / _nClusters;
             return uniform;
         }
 
-        float[] scaled = Transform(log);
+        float[] scaled = _useStandardization ? Transform(log) : log;
         return ComputeMembership(new float[][] { scaled }, _centers)[0];
     }
 

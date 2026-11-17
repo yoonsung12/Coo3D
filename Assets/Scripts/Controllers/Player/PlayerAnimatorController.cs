@@ -28,6 +28,11 @@ public class PlayerAnimatorController : MonoBehaviour
     [ReadOnly, ShowInInspector, LabelText("블라스트 반동 중")]
     private bool _isFanBlasting;
 
+    [ReadOnly, ShowInInspector, LabelText("연출 걷기 중")]
+    private bool _isScriptedWalking;
+    // 포털 입장/퇴장처럼 PlayerController를 끈 채 연출 스크립트가 CharacterController.Move()로 직접 걷게 하는 동안 true다.
+    // 이때는 PlayerController가 꺼져 있어도 실제 이동 속도로 걷기 애니메이션을 재생해야 한다.
+
     private static readonly int SpeedHash = Animator.StringToHash("Speed");
     private static readonly int IsGroundedHash = Animator.StringToHash("IsGrounded");
     private static readonly int VerticalSpeedHash = Animator.StringToHash("VerticalSpeed");
@@ -74,7 +79,9 @@ public class PlayerAnimatorController : MonoBehaviour
     private void UpdateSpeed()
     {
         Vector3 horizontal = new Vector3(_cc.velocity.x, 0f, _cc.velocity.z);
-        _currentSpeed = _playerController.enabled && !_playerController.IsMounted ? horizontal.magnitude : 0f;
+        bool usesRealSpeed = (_playerController.enabled || _isScriptedWalking) && !_playerController.IsMounted;
+        _currentSpeed = usesRealSpeed ? horizontal.magnitude : 0f;
+        // 연출 걷기 중에는 연출 스크립트가 매 프레임 Move()를 호출하므로 _cc.velocity가 실제 걷는 속도라 그대로 쓴다.
         // 컷신·포털 연출 중에는 PlayerController가 꺼져 Move()가 호출되지 않아 _cc.velocity가 마지막 값으로 남는다.
         // 그대로 쓰면 멈춰 있는데도 달리기 애니메이션이 계속 나오므로, 꺼져 있을 때는 정지로 본다.
         // 튜브 탑승 중에도 CharacterController가 꺼져 같은 문제가 생기므로 정지로 본다.
@@ -190,6 +197,12 @@ public class PlayerAnimatorController : MonoBehaviour
     }
 
     // 충전 1/2/3단계 모두 동일한 자세 사용.
+    // 연출 스크립트(EntrancePortal 등)가 PlayerController를 끈 채 캐릭터를 직접 걷게 할 때 켜고, 끝나면 끈다.
+    public void SetScriptedWalk(bool walking)
+    {
+        _isScriptedWalking = walking;
+    }
+
     public void SetFanCharge(bool active)
     {
         if (animator == null || _isDead)

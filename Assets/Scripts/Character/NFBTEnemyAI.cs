@@ -1,3 +1,4 @@
+using DG.Tweening;
 using Sirenix.OdinInspector;
 using UnityEngine;
 
@@ -6,9 +7,10 @@ using UnityEngine;
 // Phase 1: 시야로 감지하면 쫓아가서 사거리 안이면 공격
 // Phase 2: Player를 못 볼 때는 정해진 범위 안에서 좌우로 순찰
 // Phase 3: 후퇴(Evade/Recover) 중 벽/낭떠러지에 막히면 궁지몰림 발악(점프공격)
-// Phase 4: Player의 공격이 막 끝나는 순간(빈틈)을 포착하는 반격(Counter)
+// Phase 4: (제거됨) Player의 공격 끝 빈틈을 노리던 반격 돌진은 게임에서 쓰지 않기로 해 삭제했다.
 // Phase 5(현재): NPCFuzzyRL(퍼지클러스터링+RBFNN 강화학습)이 Chase/Attack, Evade/Recover, Counter
-// 세 전술 중 어느 것을 쓸지 실시간으로 학습해 선택한다. 궁지몰림만은 2D 원작과 동일하게
+// 세 전술 중 어느 것을 쓸지 실시간으로 학습해 선택한다. Counter 전술은 원거리 옵션이 켜진 적은 원거리 공격,
+// 아니면 추적/공격으로 동작한다. 궁지몰림만은 2D 원작과 동일하게
 // 학습과 무관한 강제 상태로 남겨둔다(후퇴하다 막다른 곳에 몰리면 무조건 발악).
 [RequireComponent(typeof(EnemyVision), typeof(EnemyMovement), typeof(EnemyCombat))]
 [RequireComponent(typeof(Enemy), typeof(CombatStatsTracker))]
@@ -52,6 +54,29 @@ public class NFBTEnemyAI : MonoBehaviour
     private float maxRelevantDistance = 10f;
     // 학습기 입력값(gameState)의 거리를 0~1로 정규화하는 기준 거리다.
 
+    [Title("공격 선택 학습")]
+    [InfoBox("켜면 2초 주기 전술(추적/후퇴/반격) 대신, 공격할 수 있는 순간마다 지금 쓸 수 있는 공격(쪼기/도약/원거리) 중 하나를 학습기가 고른다. 도약/원거리 옵션(후퇴 대신 도약공격, 반격 대신 원거리 공격)을 켠 비둘기용이다.")]
+    [SerializeField, LabelText("공격 선택 학습 사용")]
+    private bool useAttackSelection = false;
+    // 기본값은 꺼짐이라 이 옵션을 켜지 않은 적은 기존 전술 학습 방식을 그대로 쓴다.
+
+    [SerializeField, LabelText("빗나감 보상"), ShowIf(nameof(useAttackSelection))]
+    private float missPenalty = -0.2f;
+    // 공격이 Player에게 맞지 않았을 때 학습기에 주는 보상이다. 맞았을 때는 +1이다.
+    // 0에 가까울수록 빗나가도 덜 불리해지고, 작을수록(더 음수) 빗나가는 공격을 강하게 피하게 된다.
+
+    [SerializeField, LabelText("결정 유지 시간(초)"), ShowIf(nameof(useAttackSelection))]
+    private float decisionHoldTime = 2.5f;
+    // 학습기가 고른 공격을 이 시간 안에 시작하지 못하면(거리가 안 맞는 등) 다시 고른다.
+    // 너무 짧으면 접근하는 도중 계속 바뀌고, 너무 길면 못 쓰는 공격에 오래 매달린다.
+
+    [SerializeField, LabelText("알짱거림 원거리 가산점"), ShowIf(nameof(useAttackSelection))]
+    private float loiterRangedBonus = 0.15f;
+    // Player가 원거리 거리에서 알짱거리면 이 판단에서만 원거리 점수에 더한다.
+    // 학습 초반엔 원거리를 쏘게 해 느린 비둘기가 걸어오기만 하는 문제를 막고,
+    // Player가 원거리를 잘 피하면 학습된 원거리 점수가 내려가 이 가산점을 넘지 못해 덜 쏘게 된다.
+    // 값이 클수록 학습과 상관없이 원거리를 고집한다.
+
     [Title("후퇴(Evade/Recover) 설정")]
     [SerializeField, LabelText("안전 거리")]
     private float safeDistance = 4f;
@@ -66,15 +91,6 @@ public class NFBTEnemyAI : MonoBehaviour
     [SerializeField, LabelText("발악 지속 시간")]
     private float corneredDuration = 4f;
     // 후퇴하다 벽/낭떠러지에 막히면 이 시간 동안 Player 쪽으로 돌진하며 점프공격을 반복한다.
-
-    [Title("반격(Counter) 설정")]
-    [SerializeField, LabelText("Player SwordAttack")]
-    private SwordAttack playerSwordAttack;
-    // Player의 공격 시작/종료 타이밍을 읽기 위해 연결한다.
-
-    [SerializeField, LabelText("반격 돌진 속도 배율")]
-    private float counterRushSpeedMultiplier = 1.6f;
-    // 평소 추적 속도보다 빠르게 돌진해 반격다운 급박함을 준다.
 
     [Title("도약공격 (후퇴 대체)")]
     [InfoBox("켜면 학습기가 Evade/Recover 전술을 고를 때 도망 대신 앞으로 도약하며 공격한다. 비둘기처럼 도망가지 않는 적에서만 켠다.")]
@@ -211,9 +227,6 @@ public class NFBTEnemyAI : MonoBehaviour
     [ReadOnly, ShowInInspector, LabelText("궁지몰림 발악 중")]
     private bool _isCornered;
 
-    [ReadOnly, ShowInInspector, LabelText("반격 중")]
-    private bool _isCountering;
-
     [ReadOnly, ShowInInspector, LabelText("도약 중")]
     private bool _isLeaping;
 
@@ -230,6 +243,54 @@ public class NFBTEnemyAI : MonoBehaviour
     [ReadOnly, ShowInInspector, LabelText("현재 전술 (학습 선택)")]
     private string _activeBranch = "Chase/Attack";
 
+    // ===== 공격 선택 학습 상태(Inspector가 그릴 때만 문자열을 만든다) =====
+    [FoldoutGroup("공격 선택 학습 상태"), ShowIf(nameof(useAttackSelection)), ReadOnly, ShowInInspector, LabelText("고른 공격")]
+    private string DebugChosenAttack => _hasDecision ? NPCFuzzyRL.AttackNames[_currentDecision.action] : "(없음)";
+
+    [FoldoutGroup("공격 선택 학습 상태"), ShowIf(nameof(useAttackSelection)), ReadOnly, ShowInInspector, LabelText("공격별 Q값")]
+    private string DebugQValues => FormatAttackValues(_fuzzyRL?.LastQValues);
+
+    [FoldoutGroup("공격 선택 학습 상태"), ShowIf(nameof(useAttackSelection)), ReadOnly, ShowInInspector, LabelText("사용 가능")]
+    private string DebugAvailable => $"쪼기 {_availableAttacks[0]} / 도약 {_availableAttacks[1]} / 원거리 {_availableAttacks[2]}";
+
+    [FoldoutGroup("공격 선택 학습 상태"), ShowIf(nameof(useAttackSelection)), ReadOnly, ShowInInspector, LabelText("클러스터 소속도")]
+    private string DebugMembership
+    {
+        get
+        {
+            float[] m = _fuzzyRL?.LastMembership;
+            if (m == null || m.Length == 0) return "-";
+            return string.Join(" / ", System.Array.ConvertAll(m, v => v.ToString("F2")));
+        }
+    }
+
+    [FoldoutGroup("공격 선택 학습 상태"), ShowIf(nameof(useAttackSelection)), ReadOnly, ShowInInspector, LabelText("공격별 맞음/전체")]
+    private string DebugHitCounts =>
+        $"쪼기 {_attackHitCounts[0]}/{_attackHitCounts[0] + _attackMissCounts[0]} · 도약 {_attackHitCounts[1]}/{_attackHitCounts[1] + _attackMissCounts[1]} · 원거리 {_attackHitCounts[2]}/{_attackHitCounts[2] + _attackMissCounts[2]}";
+
+    [FoldoutGroup("공격 선택 학습 상태"), ShowIf(nameof(useAttackSelection)), ReadOnly, ShowInInspector, LabelText("결과 대기 중(쪼기/도약)")]
+    private bool DebugWaitingResult => _hasInFlight;
+
+    [FoldoutGroup("공격 선택 학습 상태"), ShowIf(nameof(useAttackSelection)), ReadOnly, ShowInInspector, LabelText("알짱거림 가산점 대기")]
+    private bool _loiterBoostPending;
+    // 알짱거림 조건이 채워져 다음 공격 판단에 원거리 가산점을 줄 예정인지 보여 준다.
+
+    private readonly float[] _loiterBonus = new float[3];
+    // ChooseAttack에 넘길 가산점 배열이다. 매번 new 하지 않도록 재사용한다([2]=원거리).
+
+    // 공격별 값을 "쪼기 0.12 / 도약 -0.05 / 원거리 0.30" 형태로 만든다. 배열이 없으면(아직 결정 전) "-"를 돌려준다.
+    private static string FormatAttackValues(float[] values)
+    {
+        if (values == null || values.Length < 3) return "-";
+        return $"{NPCFuzzyRL.AttackNames[0]} {values[0]:F2} / {NPCFuzzyRL.AttackNames[1]} {values[1]:F2} / {NPCFuzzyRL.AttackNames[2]} {values[2]:F2}";
+    }
+
+    [FoldoutGroup("공격 선택 학습 상태"), ShowIf(nameof(useAttackSelection)), Button("학습 상태 로그")]
+    private void LogAttackSelectionState()
+    {
+        Debug.Log($"[공격 선택 학습] 고른 공격: {DebugChosenAttack} | Q값: {DebugQValues} | 사용 가능: {DebugAvailable} | 소속도: {DebugMembership} | 맞음/전체: {DebugHitCounts} | 결과 대기: {_hasInFlight} | 알짱거림 가산점 대기: {_loiterBoostPending}", this);
+    }
+
     [ReadOnly, ShowInInspector, LabelText("순찰 방향 (+1 오른쪽 / -1 왼쪽)")]
     private float _patrolDir = 1f;
 
@@ -241,7 +302,6 @@ public class NFBTEnemyAI : MonoBehaviour
     private float _retreatTimer;
     private float _corneredTimer;
     private float _tacticsTimer;
-    private bool _playerWasAttacking;
     private float _leapStartTime;
     private float _lastLeapLandTime = -999f;
     // 마지막으로 도약에서 착지한 시간이다. 도약 쿨다운은 뛴 순간이 아니라 이 시간부터 센다.
@@ -252,6 +312,9 @@ public class NFBTEnemyAI : MonoBehaviour
 
     private EnemyAttackSound attackSound;
     // 공격 사운드 컴포넌트다. 없는 적은 소리 없이 동작해야 하므로 null일 수 있고, 호출은 모두 attackSound?. 로 한다.
+
+    private EnemyAttackEffect attackEffect;
+    // 공격 이펙트(스파크/먼지/트레일) 컴포넌트다. 없는 적은 이펙트 없이 동작해야 하므로 null일 수 있고, 호출은 모두 attackEffect?. 로 한다.
 
     private const float LeapMinAirTime = 0.15f;
     // 도약 직후에는 IsGrounded가 다음 물리 프레임까지 true로 남아 있어 바로 "착지"로 오판정된다.
@@ -276,7 +339,30 @@ public class NFBTEnemyAI : MonoBehaviour
     private PlayerController _player;
     // Player가 탑다운 구역(ViewModeZone)에 들어갔는지 확인하기 위해 playerTransform에서 가져온다.
 
-    private bool _rushAnimationStarted;
+    // ===== 공격 선택 학습(useAttackSelection) 상태 =====
+    private NPCFuzzyRL.AttackDecision _currentDecision;
+    private bool _hasDecision;
+    private float _decisionTime;
+    // 학습기가 고른 "아직 시작하지 않은" 공격이다. 공격이 실제로 시작되면 아래 진행 중 칸으로 옮긴다.
+
+    private NPCFuzzyRL.AttackDecision _inFlightDecision;
+    private bool _hasInFlight;
+    private int _inFlightKind;
+    private bool _inFlightHit;
+    // 진행 중인 쪼기/도약의 결정과 결과 추적이다. 쪼기와 도약은 동시에 하나뿐이라 한 칸이면 충분하다.
+    // _inFlightKind: 0=쪼기, 1=도약.
+
+    private NPCFuzzyRL.AttackDecision _pendingRangedDecision;
+    private bool _hasPendingRanged;
+    // 원거리는 백스텝~조준을 거쳐 발사되므로, 시작할 때 고른 결정을 발사 순간까지 들고 있는다.
+
+    private readonly bool[] _availableAttacks = new bool[3];
+    private readonly float[] _gameState = new float[2];
+    // 매번 new 하지 않도록 재사용하는 배열이다. ChooseAttack이 내부에서 복사본을 만들므로 재사용해도 안전하다.
+
+    private readonly int[] _attackHitCounts = new int[3];
+    private readonly int[] _attackMissCounts = new int[3];
+    // Inspector 확인용 공격별 맞음/빗나감 누적 횟수다.
 
     private void Awake()
     {
@@ -289,8 +375,11 @@ public class NFBTEnemyAI : MonoBehaviour
         _enemy = GetComponent<Enemy>();
         enemyAnim = GetComponent<EnemyAnimationController>();
         attackSound = GetComponent<EnemyAttackSound>();
+        attackEffect = GetComponent<EnemyAttackEffect>();
+        attackEffect?.SetPlayerTransform(playerTransform); // 착지 카메라 흔들림 거리 계산에 쓸 Player를 넘겨 준다.
         _combatStats = GetComponent<CombatStatsTracker>();
-        _fuzzyRL = new NPCFuzzyRL();
+        // 공격 선택 학습은 피처(공격성/선호거리/회피율)가 이미 0~1이라 FCM 표준화를 끈다.
+        _fuzzyRL = useAttackSelection ? new NPCFuzzyRL(useStandardization: false) : new NPCFuzzyRL();
 
         float startX = transform.position.x;
         _patrolLeftX = startX - patrolHalfWidth;
@@ -337,9 +426,10 @@ public class NFBTEnemyAI : MonoBehaviour
 
         // 쪼기 선딜 중에 맞으면 공격을 끊는다. 안 끊으면 경직 중에 히트박스가 켜져 Player가 맞는다.
         _combat.CancelAttack();
+        // 경직으로 끊긴 쪼기는 "빗나감"이 아니라 맞아서 못 한 것이므로 결과를 기록하지 않고 버린다.
+        // (피격 벌점 -0.5는 HandleSelfDamaged에서 이미 들어갔다. 여기서 또 빗나감을 주면 이중 벌점이 된다.)
+        if (_hasInFlight && _inFlightKind == 0) _hasInFlight = false;
         _pendingMeleeRest = false;
-        _isCountering = false;
-        _rushAnimationStarted = false;
     }
 
     // 경직 중에는 제자리에 서 있기만 한다. 바라보는 방향은 맞은 순간 그대로 둔다.
@@ -353,12 +443,26 @@ public class NFBTEnemyAI : MonoBehaviour
     private void HandlePlayerDamaged(float amount)
     {
         if (HorizontalDistance() <= _combat.AttackRange * 1.5f)
-            _fuzzyRL.OnRewardReceived(1f);
+        {
+            if (useAttackSelection)
+            {
+                // 공격 선택 학습에서는 보상을 "공격이 끝났을 때" 한 번에 준다. 여기서는 맞았다는 표시만 한다.
+                // 투사체 피해는 근접 거리 밖이라 걸러지고, 원거리 결과는 투사체 OnImpact로만 처리해 이중 계산을 막는다.
+                if (_hasInFlight) _inFlightHit = true;
+            }
+            else
+            {
+                _fuzzyRL.OnRewardReceived(1f);
+            }
+        }
     }
 
     private void Update()
     {
         if (_enemy.IsDead || playerTransform == null) return;
+
+        // 경직/도약 등으로 일찍 return되는 분기보다 앞에서 검사해야 쪼기 종료를 놓치지 않는다.
+        if (useAttackSelection) CheckMeleeInFlightEnd();
 
         // Player가 탑다운 구역에 들어가면 추적을 포기하고 순찰로 돌아간다(CLAUDE.md: 탑다운 구역에는 적을 두지 않는다).
         // 도약/원거리 공격은 공중에 떠 있는 중일 수 있어 끝까지 마치게 두고, 그 뒤 프레임부터 순찰한다.
@@ -367,7 +471,6 @@ public class NFBTEnemyAI : MonoBehaviour
         {
             _isChasing = false;
             _isCornered = false;
-            _isCountering = false;
             _pendingMeleeRest = false; // 탑다운으로 가면 휴식 상태도 풀어 복귀 후 이상한 정지를 막는다.
             _restEndTime = -999f;
             Patrol();
@@ -442,6 +545,13 @@ public class NFBTEnemyAI : MonoBehaviour
         // Player가 멀리서 알짱거리면 전술과 상관없이 원거리 공격을 먼저 한다.
         if (TryLoiterRangedAttack()) return;
 
+        if (useAttackSelection)
+        {
+            // 공격 선택 학습 경로: 2초 주기 전술 대신 공격 단위로 학습기가 고른다.
+            UpdateAttackSelection();
+            return;
+        }
+
         UpdateTactics();
 
         switch (_activeBranch)
@@ -453,10 +563,12 @@ public class NFBTEnemyAI : MonoBehaviour
                     Evade();
                 break;
             case "Counter":
+                // 반격 돌진은 게임에서 쓰지 않기로 해 제거했다.
+                // 원거리 옵션이 꺼진 적은 Counter를 골라도 그냥 추적/공격한다.
                 if (replaceCounterWithRanged)
                     RangedAttack();
                 else
-                    HandleCounterBranch();
+                    ChaseAndAttack();
                 break;
             default:
                 ChaseAndAttack();
@@ -467,6 +579,142 @@ public class NFBTEnemyAI : MonoBehaviour
     private bool IsPlayerInTopDown()
     {
         return _player != null && _player.CurrentViewMode == ViewMode.TopDown;
+    }
+
+    // 지금 쓸 수 있는 공격을 _availableAttacks에 채운다. [0]쪼기 [1]도약 [2]원거리
+    private void GetAvailableAttacks()
+    {
+        _availableAttacks[0] = true; // 쪼기는 항상 마지막 보루다.
+
+        _availableAttacks[1] = replaceEvadeWithLeap
+            && Time.time - _lastLeapLandTime >= leapCooldown
+            && HorizontalDistance() >= leapMinRange;
+
+        _availableAttacks[2] = replaceCounterWithRanged
+            && rangedProjectilePrefab != null
+            && Time.time - _lastRangedFireTime >= rangedCooldown
+            && _movement.IsGrounded;
+    }
+
+    // 공격 선택 학습 경로의 매 프레임 처리다. 공격/휴식/경직/도약/원거리 중이 아닐 때만 여기까지 온다.
+    private void UpdateAttackSelection()
+    {
+        GetAvailableAttacks();
+
+        bool needNew = !_hasDecision
+            || Time.time - _decisionTime >= decisionHoldTime
+            || !_availableAttacks[_currentDecision.action];
+        if (needNew) ChooseNewAttack();
+
+        bool wasAttacking = _combat.IsAttacking;
+        bool wasLeaping = _isLeaping;
+        bool wasRanged = _isRangedAttacking;
+
+        // 도약/원거리는 "사용 가능"일 때만 고르므로 내부 폴백(ChaseAndAttack)이 엉뚱하게 쪼기를 시작하는 일이 없다.
+        // 쪼기가 보상 칸을 잘못 차지하지 않는 것이 이 방식의 핵심이다.
+        switch (_currentDecision.action)
+        {
+            case 1: LeapAttack(); break;
+            case 2: RangedAttack(); break;
+            default: ChaseAndAttack(); break;
+        }
+
+        // 호출 전후를 비교해 "실제로 시작됐는지" 확인한다. 시작됐을 때만 결정을 진행 중 칸으로 옮긴다.
+        if (!wasAttacking && _combat.IsAttacking)
+            BeginInFlight(0);
+        else if (!wasLeaping && _isLeaping)
+            BeginInFlight(1);
+        else if (!wasRanged && _isRangedAttacking)
+        {
+            _pendingRangedDecision = _currentDecision;
+            _hasPendingRanged = true;
+            _hasDecision = false;
+        }
+    }
+
+    // 학습기에게 지금 쓸 수 있는 공격 중 하나를 고르게 한다.
+    private void ChooseNewAttack()
+    {
+        _fuzzyRL.OnPlayerActionLog(_combatStats.GetRecentFeatureVector());
+
+        _gameState[0] = Mathf.Clamp01(HorizontalDistance() / maxRelevantDistance);
+        _gameState[1] = _enemy.HealthRatio;
+
+        // 알짱거림 가산점은 이번 판단에만 쓰이고 학습(보상 기록)에는 영향이 없다.
+        float[] bonus = null;
+        if (_loiterBoostPending)
+        {
+            _loiterBonus[2] = loiterRangedBonus;
+            bonus = _loiterBonus;
+        }
+        _currentDecision = _fuzzyRL.ChooseAttack(_gameState, _availableAttacks, bonus);
+        _loiterBoostPending = false;
+        _hasDecision = true;
+        _decisionTime = Time.time;
+        _activeBranch = NPCFuzzyRL.AttackNames[_currentDecision.action]; // 기존 Inspector 표시도 갱신한다.
+    }
+
+    // 쪼기(0)/도약(1)이 시작됐을 때 결정을 진행 중 칸으로 옮긴다.
+    private void BeginInFlight(int kind)
+    {
+        _inFlightDecision = _currentDecision;
+        _inFlightKind = kind;
+        _inFlightHit = false;
+        _hasInFlight = true;
+        _hasDecision = false;
+    }
+
+    // 진행 중인 쪼기가 끝났으면(히트박스 종료) 결과를 기록한다.
+    private void CheckMeleeInFlightEnd()
+    {
+        if (_hasInFlight && _inFlightKind == 0 && !_combat.IsAttacking)
+            ResolveInFlight();
+    }
+
+    // 진행 중인 쪼기/도약의 결과(맞음/빗나감)를 학습기에 전달한다.
+    private void ResolveInFlight()
+    {
+        if (!_hasInFlight) return;
+        _hasInFlight = false;
+        ReportAttackResult(_inFlightDecision, _inFlightHit);
+    }
+
+    // 결과를 학습기·전투 통계·Inspector 카운트에 반영한다. 쪼기/도약/원거리가 함께 쓴다.
+    private void ReportAttackResult(NPCFuzzyRL.AttackDecision decision, bool hit)
+    {
+        _fuzzyRL.RecordResult(decision, hit ? 1f : missPenalty);
+        _combatStats?.RecordAttackResult(hit);
+
+        if (hit) _attackHitCounts[decision.action]++;
+        else _attackMissCounts[decision.action]++;
+    }
+
+    // 방금 발사한 투사체에 "발사 원인이 된 결정"을 붙여, 명중/빗나감이 확정되면 그 결정에 보상을 준다.
+    private void TrackRangedResult(BossProjectile projectile)
+    {
+        // 학습 모드의 원거리는 알짱거림 포함 항상 UpdateAttackSelection을 거쳐 시작되므로 결정이 항상 있다.
+        // 없으면(예외적인 경로) 학습과 무관한 발사이므로 결과를 기록하지 않는다.
+        if (!_hasPendingRanged) return;
+        NPCFuzzyRL.AttackDecision decision = _pendingRangedDecision;
+        _hasPendingRanged = false;
+
+        bool resolved = false;
+        Tween timeoutTween = null;
+
+        void Resolve(bool hit)
+        {
+            // 비둘기가 파괴/비활성되면 무시한다. 이미 처리됐으면(명중 후 타임아웃 등) 한 번만 기록한다.
+            if (resolved || this == null || !isActiveAndEnabled) return;
+            resolved = true;
+            timeoutTween?.Kill();
+            ReportAttackResult(decision, hit);
+        }
+
+        projectile.OnImpact += (position, hitTarget) => Resolve(hitTarget);
+
+        // 수명 만료로 사라지면 OnImpact가 오지 않으므로, 사거리를 다 날아갈 시간 뒤에도 미확정이면 빗나감으로 본다.
+        float timeout = rangedMaxRange / Mathf.Max(0.01f, rangedProjectileSpeed) + 1f;
+        timeoutTween = DOVirtual.DelayedCall(timeout, () => Resolve(false), false);
     }
 
     // tacticsUpdateInterval마다 최근 전투 통계를 학습기에 반영하고 전술(ActiveBranch)을 다시 계산한다.
@@ -636,6 +884,7 @@ public class NFBTEnemyAI : MonoBehaviour
         enemyAnim?.SetLeaping(true);
         enemyAnim?.PlayRush();
         attackSound?.PlayRush();
+        attackEffect?.PlayLeapStart();
     }
 
     // 패턴이 끝난 뒤 duration초 동안 쉬도록 종료 시각을 정한다. 0 이하면 휴식하지 않는다.
@@ -671,8 +920,10 @@ public class NFBTEnemyAI : MonoBehaviour
         if (landed || airTime >= LeapMaxDuration)
         {
             _isLeaping = false;
+            attackEffect?.PlayLeapLand(); // 타임아웃으로 끝나도 트레일이 꺼지도록 두 경우 모두 여기서 호출한다.
             enemyAnim?.SetLeaping(false);
             _lastLeapLandTime = Time.time;
+            if (useAttackSelection && _hasInFlight && _inFlightKind == 1) ResolveInFlight(); // 도약 결과 확정
             // 착지한 순간부터 쿨다운을 센다.
             StartRest(postPatternRestTime); // 착지 후 잠깐 서서 쉰다.
         }
@@ -731,6 +982,16 @@ public class NFBTEnemyAI : MonoBehaviour
         if (_loiterTimer < loiterDuration || !rangedReady) return false;
 
         _loiterTimer = 0f;
+
+        if (useAttackSelection)
+        {
+            // 학습 모드: 바로 쏘지 않고 원거리에 가산점을 줘서 학습기가 다시 고르게 한다.
+            // 즉시 재판단(_hasDecision=false)하고 false를 돌려 평소 흐름(UpdateAttackSelection)이 이어지게 한다.
+            _loiterBoostPending = true;
+            _hasDecision = false;
+            return false;
+        }
+
         StartRangedAttack(DirectionToPlayer());
         return _isRangedAttacking;
         // 공중이라 시작하지 못했으면(StartRangedAttack이 바로 return) 이번 프레임은 평소 전술로 움직인다.
@@ -751,6 +1012,7 @@ public class NFBTEnemyAI : MonoBehaviour
         {
             _movement.JumpMove(-dir, backstepHorizontalSpeed, backstepUpForce);
             attackSound?.PlayBackstepJump();
+            attackEffect?.PlayBackstepJump();
         }
         else
         {
@@ -780,6 +1042,7 @@ public class NFBTEnemyAI : MonoBehaviour
             _movement.Move(Vector3.zero);
             _rangedAimStartTime = Time.time;
             attackSound?.PlayBackstepLand();
+            attackEffect?.PlayBackstepLand();
             // 조준 시작과 동시에 Shot(몸을 숙이는 모션)을 재생한다. Shot 클립의 숙이는 구간(0~0.4초)이
             // rangedAimDuration(0.4초)과 같아서, 숙이는 정점에 맞춰 발사된다.
             enemyAnim?.SetMoving(false);
@@ -796,6 +1059,7 @@ public class NFBTEnemyAI : MonoBehaviour
         if (Time.time - _rangedAimStartTime < rangedAimDuration) return;
 
         attackSound?.PlayRangedFire();
+        attackEffect?.PlayRangedFire();
         FireRangedProjectile(_rangedDir);
         _lastRangedFireTime = Time.time;
         _isRangedAttacking = false;
@@ -817,6 +1081,8 @@ public class NFBTEnemyAI : MonoBehaviour
 
         BossProjectile projectile = Instantiate(rangedProjectilePrefab, spawnPos, Quaternion.identity);
         projectile.Launch(dir, rangedProjectileSpeed, rangedProjectileDamage);
+
+        if (useAttackSelection) TrackRangedResult(projectile);
     }
 
     [Button("원거리 공격 테스트")]
@@ -857,84 +1123,6 @@ public class NFBTEnemyAI : MonoBehaviour
         else
         {
             _movement.Move(dir);
-        }
-    }
-
-    // Counter 전술이 선택된 동안의 행동이다. 반격 중이 아니면 제자리에서 Player를 주시하며
-    // 공격이 막 끝나는 순간(빈틈)을 기다리고, 빈틈을 포착하면 반격 돌진으로 전환한다.
-    private void HandleCounterBranch()
-    {
-        if (!_isCountering)
-        {
-            Vector3 dir = DirectionToPlayer();
-
-            _movement.Move(Vector3.zero);
-            _movement.FaceDirection(dir);
-            _vision.SetFacingDirection(dir);
-
-            DetectCounterOpening();
-            return;
-        }
-
-        CounterAttack();
-    }
-
-    // Player의 공격이 막 끝나는 순간(빈틈)을 매 프레임 감지한다.
-    private void DetectCounterOpening()
-    {
-        bool playerIsAttackingNow = playerSwordAttack != null && playerSwordAttack.IsAttacking;
-        bool attackJustEnded = _playerWasAttacking && !playerIsAttackingNow;
-        _playerWasAttacking = playerIsAttackingNow;
-
-        if (attackJustEnded)
-            _isCountering = true;
-    }
-
-    // 반격 돌진: 사거리 밖이면 평소보다 빠르게 돌진하고, 사거리 안이면 멈춰서 공격한다.
-    // 공격을 실제로 시작하면(또는 Player를 놓치면) 반격 상태를 끝내고 다시 빈틈을 기다린다.
-    private void CounterAttack()
-    {
-        if (HorizontalDistance() > chaseAbandonRange)
-        {
-            _isCountering = false;
-            _rushAnimationStarted = false; // ① 추적 포기 시 초기화
-            return;
-        }
-
-        Vector3 dir = DirectionToPlayer();
-
-        if (HorizontalDistance() <= _combat.AttackRange)
-        {
-            _movement.Move(Vector3.zero);
-            _movement.FaceDirection(dir);
-            _vision.SetFacingDirection(dir);
-
-            enemyAnim?.SetMoving(false);
-
-            if (_combat.CanAttack)
-            {
-                _combat.StartAttack();
-                enemyAnim?.PlayAttack();
-                attackSound?.PlayMelee();
-                _pendingMeleeRest = true; // 공격이 끝나면 휴식을 시작하도록 표시한다.
-
-                _isCountering = false;
-                _rushAnimationStarted = false; // ② 공격 시작 후 초기화
-            }
-        }
-        else
-        {
-            _movement.Move(dir * counterRushSpeedMultiplier);
-            _vision.SetFacingDirection(dir);
-
-            enemyAnim?.SetMoving(false);
-
-            if (!_rushAnimationStarted)
-            {
-                enemyAnim?.PlayRush();
-                attackSound?.PlayRush();
-                _rushAnimationStarted = true;
-            }
         }
     }
 

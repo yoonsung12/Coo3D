@@ -36,6 +36,10 @@ public class EnemyCombat : MonoBehaviour
 
     private float _lastAttackTime = -999f;
 
+    public event System.Action OnHitboxEnabled;
+    // 선딜이 끝나 히트박스가 실제로 켜지는 순간(=부리가 앞으로 나가 쪼는 순간)을 알려 준다.
+    // 공격 이펙트(EnemyAttackEffect)가 이 타이밍에 스파크를 내기 위해 구독한다. 피격 경직으로 선딜 중 취소되면 호출되지 않는다.
+
     public bool CanAttack => !IsAttacking && Time.time - _lastAttackTime >= attackCooldown;
 
     public void StartAttack()
@@ -53,6 +57,7 @@ public class EnemyCombat : MonoBehaviour
         yield return new WaitForSeconds(attackDelay);
 
         attackHitbox.EnableHitbox();
+        OnHitboxEnabled?.Invoke();
         yield return new WaitForSeconds(attackDuration);
         attackHitbox.DisableHitbox();
 

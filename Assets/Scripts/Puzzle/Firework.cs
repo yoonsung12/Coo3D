@@ -42,12 +42,43 @@ public class Firework : MonoBehaviour, IIgnitable
     [SerializeField, LabelText("폭발 파티클 (선택)")]
     private ParticleSystem burstParticle;
 
+    [Title("사운드")]
+    [SerializeField, LabelText("심지 치이익")]
+    private AudioClip fuseClip;
+    // 심지가 타는 동안 반복 재생된다. 심지 시간이 클립 길이와 달라도 끊기지 않게 loop로 돌린다.
+
+    [SerializeField, LabelText("로켓 비행")]
+    private AudioClip flyClip;
+
+    [SerializeField, LabelText("얼음 명중")]
+    private AudioClip hitIceClip;
+
+    [SerializeField, LabelText("고드름 박힘")]
+    private AudioClip icicleStabClip;
+
+    [SerializeField, Range(0f, 1f), LabelText("효과음 볼륨")]
+    private float sfxVolume = 1f;
+
+    [SerializeField, LabelText("심지 소리 AudioSource (비우면 자동 생성)")]
+    private AudioSource fuseSource;
+    // 심지 소리는 중간에 멈춰야 하므로 원샷(SfxPlayer) 대신 전용 AudioSource를 쓴다.
+
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("점화됨")]
     private bool _ignited;
 
     private Sequence _sequence;
     private Tween _crushTween;
+
+    private void Awake()
+    {
+        // 사운드 설정(SFX) 볼륨이 적용되도록 믹서 그룹을 지정한 심지 전용 소스를 준비한다.
+        if (fuseSource == null) fuseSource = gameObject.AddComponent<AudioSource>();
+        fuseSource.playOnAwake = false;
+        fuseSource.loop = true;
+        fuseSource.spatialBlend = 1f;
+        fuseSource.outputAudioMixerGroup = SoundSettings.MixerGroup(SoundCategory.SFX);
+    }
 
     private void OnEnable()
     {
@@ -59,10 +90,12 @@ public class Firework : MonoBehaviour, IIgnitable
     {
         if (targetIcicle != null)
             targetIcicle.Landed -= OnIcicleLanded;
+        StopFuseSound();
     }
 
     private void OnDestroy()
     {
+        StopFuseSound();
         _sequence?.Kill();
         _crushTween?.Kill();
     }
@@ -74,6 +107,7 @@ public class Firework : MonoBehaviour, IIgnitable
         _ignited = true;
 
         if (fuseParticle != null) fuseParticle.Play();
+        PlayFuseSound();
 
         // 로켓이 맞출 위치: 고드름 콜라이더의 맨 아래 중앙이다. 아직 매달려 있을 때의 위치를 쓴다.
         Physics.SyncTransforms();
@@ -94,6 +128,8 @@ public class Firework : MonoBehaviour, IIgnitable
         _sequence.AppendCallback(() =>
         {
             if (fuseParticle != null) fuseParticle.Stop();
+            StopFuseSound();
+            SfxPlayer.PlayAt(flyClip, rocket.position, sfxVolume);
         });
         _sequence.Append(rocket.DOMove(hitPoint, rocketDuration).SetEase(rocketEase));
 
@@ -101,6 +137,7 @@ public class Firework : MonoBehaviour, IIgnitable
         _sequence.OnComplete(() =>
         {
             rocket.gameObject.SetActive(false);
+            SfxPlayer.PlayAt(hitIceClip, hitPoint, sfxVolume);
             if (burstParticle != null)
             {
                 burstParticle.transform.position = hitPoint;
@@ -114,12 +151,56 @@ public class Firework : MonoBehaviour, IIgnitable
     // 이후 고드름이 영구 발판이 되므로 발사대의 모양과 콜라이더를 모두 꺼서 겹침/오작동을 막는다.
     private void OnIcicleLanded()
     {
+        // 다른 고드름에서는 나지 않도록, 이 퍼즐 고드름의 Landed 이벤트(이미 구독 중)에서만 박히는 소리를 낸다.
+        SfxPlayer.PlayAt(icicleStabClip, targetIcicle.transform.position, sfxVolume);
+
         _crushTween?.Kill();
         _crushTween = transform.DOScaleY(0f, crushDuration).OnComplete(() =>
         {
             foreach (Renderer r in GetComponentsInChildren<Renderer>()) r.enabled = false;
             foreach (Collider c in GetComponentsInChildren<Collider>()) c.enabled = false;
         });
+    }
+
+    private void PlayFuseSound()
+    {
+        if (fuseClip == null || fuseSource == null) return;
+        fuseSource.clip = fuseClip;
+        fuseSource.volume = sfxVolume;
+        fuseSource.Play();
+    }
+
+    private void StopFuseSound()
+    {
+        if (fuseSource != null && fuseSource.isPlaying) fuseSource.Stop();
+    }
+
+    [Button("사운드 테스트 (심지)")]
+    private void TestFuseSound()
+    {
+        if (!Application.isPlaying) return;
+        PlayFuseSound();
+    }
+
+    [Button("사운드 테스트 (비행)")]
+    private void TestFlySound()
+    {
+        if (!Application.isPlaying) return;
+        SfxPlayer.PlayAt(flyClip, transform.position, sfxVolume);
+    }
+
+    [Button("사운드 테스트 (얼음 명중)")]
+    private void TestHitIceSound()
+    {
+        if (!Application.isPlaying) return;
+        SfxPlayer.PlayAt(hitIceClip, transform.position, sfxVolume);
+    }
+
+    [Button("사운드 테스트 (고드름 박힘)")]
+    private void TestIcicleStabSound()
+    {
+        if (!Application.isPlaying) return;
+        SfxPlayer.PlayAt(icicleStabClip, transform.position, sfxVolume);
     }
 
     [Button("점화 테스트")]

@@ -21,6 +21,10 @@ public class BossProjectile : MonoBehaviour
     private float lifeTime = 5f;
     // 아무것도 맞지 않고 이 시간이 지나면 자동으로 사라진다. 아레나 밖으로 날아가 계속 남는 것을 막는다.
 
+    public event System.Action<Vector3, bool> OnImpact;
+    // Player 명중 또는 장애물 충돌로 사라지기 직전에 충돌 위치와 "Player를 맞혔는지(true) / 장애물에 막혔는지(false)"와 함께 호출된다.
+    // 수명 만료로 사라질 때는 호출되지 않는다.
+
     private Rigidbody _rb;
     private Vector3 _velocity;
     private float _damage;
@@ -62,6 +66,7 @@ public class BossProjectile : MonoBehaviour
         {
             _hasHit = true;
             target.TakeDamage(_damage);
+            OnImpact?.Invoke(transform.position, true);
             Destroy(gameObject);
             return;
         }
@@ -73,6 +78,7 @@ public class BossProjectile : MonoBehaviour
         if (IsInLayerMask(other.gameObject.layer, obstacleLayers))
         {
             _hasHit = true;
+            OnImpact?.Invoke(transform.position, false);
             Destroy(gameObject);
         }
     }

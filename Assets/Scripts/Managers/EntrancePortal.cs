@@ -129,6 +129,8 @@ public class EntrancePortal : MonoBehaviour
 
     private PlayerController _player;
     private CharacterController _cc;
+    private PlayerAnimatorController _playerAnim;
+    // 연출 중 걷는 동안 걷기 애니메이션을 켜 달라고 알리기 위해 쓴다. 없으면(null) 애니메이션 처리 없이 이동만 한다.
     private Collider _triggerCollider;
     // 플레이어가 실제로 감지 범위 안에 있는지 다시 확인할 때 쓰는 이 오브젝트의 트리거 콜라이더다.
     private Tween _promptFadeTween;
@@ -153,6 +155,13 @@ public class EntrancePortal : MonoBehaviour
     {
         _promptFadeTween?.Kill();
         _turnTween?.Kill();
+    }
+
+    private void OnDisable()
+    {
+        // 걷는 도중 이 포털이 꺼지면 WalkFor가 끝까지 돌지 못하므로, 연출 걷기 표시를 여기서 꺼 둔다.
+        // 안 끄면 이후 다른 컷신에서 멈춰 있는데도 걷기 애니메이션이 남을 수 있다.
+        if (_playerAnim != null) _playerAnim.SetScriptedWalk(false);
     }
 
     // 잠긴 포털을 연다. 퍼즐 완료 이벤트(UnityEvent)에 연결해서 호출한다.
@@ -217,6 +226,7 @@ public class EntrancePortal : MonoBehaviour
 
         _player = player;
         _cc = player.GetComponent<CharacterController>();
+        _playerAnim = player.GetComponent<PlayerAnimatorController>();
     }
 
     // 돌아서기 → 걸어 들어가며 페이드 아웃 → 순간이동 → 걸어 나오며 페이드 인 순서로 진행한다.
@@ -301,6 +311,10 @@ public class EntrancePortal : MonoBehaviour
         float verticalVelocity = 0f;
         float elapsed = 0f;
 
+        // PlayerController가 꺼져 있으면 PlayerAnimatorController가 걷기 속도를 0으로 보므로,
+        // 이 구간 동안은 실제 이동 속도로 걷기 애니메이션을 재생하도록 알린다.
+        if (_playerAnim != null) _playerAnim.SetScriptedWalk(true);
+
         while (elapsed < duration)
         {
             if (descendSpeed > 0f)
@@ -316,6 +330,9 @@ public class EntrancePortal : MonoBehaviour
             elapsed += Time.deltaTime;
             yield return null;
         }
+
+        if (_playerAnim != null) _playerAnim.SetScriptedWalk(false);
+        // 걷기가 끝나면 다시 "PlayerController가 꺼져 있으면 정지" 규칙으로 돌려, 멈춰 서면 Idle로 돌아가게 한다.
     }
 
     private void SetPromptVisible(bool visible)

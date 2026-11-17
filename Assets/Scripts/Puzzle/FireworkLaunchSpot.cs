@@ -43,6 +43,14 @@ public class FireworkLaunchSpot : MonoBehaviour
     [SerializeField, LabelText("설치 팝인 Ease")]
     private Ease installPopEase = Ease.OutBack;
 
+    [Title("사운드")]
+    [SerializeField, LabelText("설치 소리")]
+    private AudioClip placeClip;
+    // 발사대를 설치하는 순간 한 번 재생된다.
+
+    [SerializeField, Range(0f, 1f), LabelText("설치 소리 볼륨")]
+    private float placeVolume = 1f;
+
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("플레이어가 범위 안에 있는지")]
     private bool _playerInRange;
@@ -149,6 +157,7 @@ public class FireworkLaunchSpot : MonoBehaviour
         if (FireworkBag.Instance == null || !FireworkBag.Instance.TryUse()) return;
 
         _installed = true;
+        SfxPlayer.PlayAt(placeClip, firework.transform.position, placeVolume);
 
         Transform fw = firework.transform;
         Vector3 fullScale = fw.localScale;
