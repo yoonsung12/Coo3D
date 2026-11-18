@@ -27,6 +27,14 @@ public class SaveManager : MonoBehaviour
     public bool TorchUnlocked { get; private set; }
     // 이 매니저는 씬을 넘어가도 살아 있으므로, 가을에서 얻은 횃불 기록이 다음 씬까지 이어진다.
 
+    [ReadOnly, ShowInInspector, LabelText("추가 최대체력")]
+    public float BonusMaxHealth { get; private set; }
+    // 자판기 MaxHP 아이템으로 늘어난 최대 체력 합계다. 씬이 바뀌어도 이 매니저가 들고 있다가 새 PlayerHealth가 시작할 때 더한다.
+
+    [ReadOnly, ShowInInspector, LabelText("추가 하트 수")]
+    public int BonusHearts { get; private set; }
+    // 자판기 MaxHP 아이템으로 늘어난 하트 개수다. 새 PlayerHealthUI가 하트를 만들 때 기본 개수에 더한다.
+
     public event Action<bool> TorchUnlockLoaded;
     // 새 게임/불러오기로 해금 기록이 바뀌면 알린다. 같은 씬에서 이어하기를 해도 ToolManager가 상태를 다시 맞출 수 있게 한다.
 
@@ -35,6 +43,9 @@ public class SaveManager : MonoBehaviour
 
     private readonly HashSet<string> _defeatedEnemies = new HashSet<string>();
     // 저장 이후 기록된 처치한 적 ID 모음이다. 씬을 다시 불러와도 Enemy가 이 목록을 보고 죽은 상태를 유지한다.
+
+    private readonly HashSet<string> _collectedCoins = new HashSet<string>();
+    // 저장 이후 기록된 먹은 씬 배치 코인 ID 모음이다. 씬을 다시 불러와도 CoinItem이 이 목록을 보고 다시 나타나지 않는다.
 
     private bool _savedOnTube;
     // 마지막 체크포인트가 튜브를 탄 채 저장됐는지 여부다.
@@ -47,6 +58,9 @@ public class SaveManager : MonoBehaviour
 
     [ReadOnly, ShowInInspector, LabelText("처치한 적 수")]
     private int DefeatedEnemyCount => _defeatedEnemies.Count;
+
+    [ReadOnly, ShowInInspector, LabelText("먹은 코인 수 (씬 배치)")]
+    private int CollectedCoinCount => _collectedCoins.Count;
 
     private Vector3 _pendingLoadPosition;
     // 세이브된 씬과 현재 씬이 달라 씬을 새로 불러와야 할 때, 씬 로드가 끝난 뒤 적용할 위치를 잠시 담아둔다.
@@ -87,6 +101,19 @@ public class SaveManager : MonoBehaviour
 
     public bool IsEnemyDefeated(string id) => _defeatedEnemies.Contains(id);
 
+    // 씬에 배치된 코인을 먹었다고 기록한다. 적과 같이 파일에는 다음 체크포인트 저장 때 함께 기록된다.
+    public void MarkCoinCollected(string id) => _collectedCoins.Add(id);
+
+    public bool IsCoinCollected(string id) => _collectedCoins.Contains(id);
+
+    // MaxHP 아이템을 먹었을 때 호출한다. 하트 1개와 그만큼의 최대 체력을 기록하고,
+    // 파일에는 다음 체크포인트 저장 때 코인과 함께 기록된다.
+    public void AddMaxHealthBonus(float amount)
+    {
+        BonusMaxHealth += amount;
+        BonusHearts++;
+    }
+
     private string GetFilePath(int slot) => $"save_slot{slot}.es3";
     // 슬롯 번호별로 별도의 ES3 파일을 사용해 슬롯끼리 데이터가 섞이지 않게 한다.
 
@@ -123,7 +150,10 @@ public class SaveManager : MonoBehaviour
         // 이전 플레이의 체크포인트/처치 기록과 코인이 새 게임에 남지 않게 비운다.
         _activatedCheckpoints.Clear();
         _defeatedEnemies.Clear();
+        _collectedCoins.Clear();
         _savedOnTube = false;
+        BonusMaxHealth = 0f;
+        BonusHearts = 0;
         if (CoinManager.Instance != null)
             CoinManager.Instance.SetCoin(0);
 
@@ -194,15 +224,27 @@ public class SaveManager : MonoBehaviour
         if (data.defeatedEnemyIds != null)
             _defeatedEnemies.UnionWith(data.defeatedEnemyIds);
 
+        // 먹은 코인 기록도 코인 개수와 같은 저장 시점으로 되돌린다. 예전 세이브에는 목록이 없어 null일 수 있다.
+        _collectedCoins.Clear();
+        if (data.collectedCoinIds != null)
+            _collectedCoins.UnionWith(data.collectedCoinIds);
+
         _savedOnTube = data.savedOnTube;
 
         // 코인은 저장 시점의 값으로 복귀한다.
         if (CoinManager.Instance != null)
             CoinManager.Instance.SetCoin(data.coinCount);
 
+        // 산 최대체력도 저장 시점으로 되돌린다. 값이 바뀌었는지는 아래에서 씬 재로드 여부를 정할 때 쓴다.
+        bool bonusChanged = !Mathf.Approximately(BonusMaxHealth, data.bonusMaxHealth) || BonusHearts != data.bonusHearts;
+        BonusMaxHealth = data.bonusMaxHealth;
+        BonusHearts = data.bonusHearts;
+
         // 세이브된 씬이 현재 씬과 같고 강제 재로드가 아니면 위치만 옮긴다.
         // 그 외에는 씬을 새로 불러와 적/오브젝트를 초기 상태로 되돌린 뒤 위치를 적용한다.
-        if (!forceReload && SceneManager.GetActiveScene().name == data.sceneName)
+        // 최대체력 보너스가 달라졌으면 같은 씬이라도 다시 불러온다. 지금 플레이어/하트 UI는 이전 보너스로 만들어져 있어,
+        // 위치만 옮기면 산 하트는 남고 쓴 코인만 돌려받는 일이 생기기 때문이다.
+        if (!forceReload && !bonusChanged && SceneManager.GetActiveScene().name == data.sceneName)
         {
             ApplyLoadedPosition(data.checkpointPosition);
         }
@@ -269,6 +311,9 @@ public class SaveManager : MonoBehaviour
             coinCount = CoinManager.Instance != null ? CoinManager.Instance.CoinCount : 0,
             activatedCheckpointIds = new List<string>(_activatedCheckpoints),
             defeatedEnemyIds = new List<string>(_defeatedEnemies),
+            collectedCoinIds = new List<string>(_collectedCoins),
+            bonusMaxHealth = BonusMaxHealth,
+            bonusHearts = BonusHearts,
             savedOnTube = _savedOnTube
         };
 

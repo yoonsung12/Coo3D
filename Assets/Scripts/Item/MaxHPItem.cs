@@ -17,5 +17,10 @@ public class MaxHPItem : BasePickupItem
 
         if (PlayerHealthUI.Instance != null)
             PlayerHealthUI.Instance.AddHeart();
+
+        // 씬이 바뀌거나 죽고 이어해도 늘어난 하트가 유지되도록 SaveManager에 기록한다.
+        // 파일에는 다음 체크포인트 저장 때 코인과 함께 기록된다.
+        if (SaveManager.Instance != null)
+            SaveManager.Instance.AddMaxHealthBonus(maxHealthAmount);
     }
 }

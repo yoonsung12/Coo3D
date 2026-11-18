@@ -116,6 +116,12 @@ public class PlayerHealth : CharacterBase
         _playerController = GetComponent<PlayerController>();
         _characterController = GetComponent<CharacterController>();
         _playerAnimator = GetComponent<PlayerAnimatorController>();
+
+        // 이전 씬에서 자판기로 늘린 최대 체력을 이어받는다. SaveManager는 DontDestroyOnLoad라 씬이 바뀌어도 값이 남아 있다.
+        // 에디터에서 이 씬을 바로 Play해 아직 SaveManager가 없으면 보너스 없이 기본값으로 시작한다.
+        if (SaveManager.Instance != null)
+            maxHealth += SaveManager.Instance.BonusMaxHealth;
+
         _currentHealth = maxHealth;
         _initialLocalPosition = transform.localPosition;
         // '체력 전체 초기화' 테스트 버튼에서 시작 위치로 되돌리기 위해 기억한다.

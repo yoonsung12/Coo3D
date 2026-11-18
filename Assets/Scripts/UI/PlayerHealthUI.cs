@@ -57,6 +57,12 @@ public class PlayerHealthUI : MonoBehaviour
     private void Awake()
     {
         Instance = this;
+
+        // 이전 씬에서 자판기로 늘린 하트 개수를 이어받는다. PlayerHealth가 이어받는 최대 체력과 짝을 이룬다.
+        // [ExecuteAlways]라 에디터에서도 Awake가 불리므로, Play 중일 때만 더해 씬에 저장된 하트 개수가 바뀌지 않게 한다.
+        if (Application.isPlaying && SaveManager.Instance != null)
+            heartCount += SaveManager.Instance.BonusHearts;
+
         BuildHearts();
     }
 

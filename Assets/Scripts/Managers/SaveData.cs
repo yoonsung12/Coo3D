@@ -33,4 +33,17 @@ public class SaveData
 
     public bool savedOnTube;
     // 물 위 튜브를 탄 채로 체크포인트가 저장됐는지 기록한다. 불러올 때 튜브를 그 근처로 옮기는 데 쓴다.
+
+    public List<string> collectedCoinIds;
+    // 저장 전에 먹은 "씬 배치 코인"의 ID 목록이다. 씬을 다시 불러와도 이 코인들은 다시 생기지 않는다.
+    // coinCount와 같은 시점에 저장되므로, 저장 이후에 먹은 코인은 죽으면 개수와 함께 되돌아온다.
+    // 예전 세이브 파일에는 없어서 null일 수 있다.
+
+    public float bonusMaxHealth;
+    // 자판기 MaxHP 아이템으로 늘어난 최대 체력 합계다. 새 씬의 PlayerHealth가 기본 최대 체력에 더한다.
+
+    public int bonusHearts;
+    // 자판기 MaxHP 아이템으로 늘어난 하트 개수다. 새 씬의 PlayerHealthUI가 기본 하트 개수에 더한다.
+    // 두 값 모두 코인과 같은 시점에 저장되므로, 저장 이후에 산 하트는 죽으면 쓴 코인과 함께 되돌아간다.
+    // 예전 세이브 파일에는 없어서 0으로 읽힌다.
 }

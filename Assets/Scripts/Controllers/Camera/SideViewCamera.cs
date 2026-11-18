@@ -172,7 +172,48 @@ public class SideViewCamera : MonoBehaviour
             _player.OnSideViewAxisChanged += HandleSideViewAxisChanged;
             _player.OnTopDownYawChanged += HandleTopDownYawChanged;
             _topDownYaw = _player.TopDownYaw;
+
+            SyncToPlayerViewState();
         }
+    }
+
+    // 구독하기 전에 이미 바뀐 플레이어 시점(탑다운/진행 축)에 카메라를 즉시 맞춘다.
+    // 사망 후 계속하기처럼 씬을 새로 불러오면, SaveManager가 sceneLoaded 시점(모든 Start보다 먼저)에 플레이어를 리스폰시킨다.
+    // 그 위치가 탑다운 구역이면 시점 변경 이벤트가 이 카메라가 구독하기 전에 발생해 놓치게 되고,
+    // 플레이어는 탑다운 조작인데 카메라는 사이드뷰로 남는다. 그래서 시작할 때 현재 상태를 한 번 읽어 맞춘다.
+    // 기본 상태(사이드뷰, +X 축)면 아무것도 하지 않아 기존 시작 동작과 같다.
+    private void SyncToPlayerViewState()
+    {
+        bool changed = false;
+
+        if (_player.SideViewAxis != Vector3.right)
+        {
+            _currentSideRotation = GetSideRotation(_player.SideViewAxis);
+            changed = true;
+        }
+
+        if (_player.CurrentViewMode == ViewMode.TopDown)
+        {
+            _topDownBlend = 1f;
+            changed = true;
+        }
+
+        if (!changed) return;
+
+        // 화면이 페이드로 가려진 사이에 일어나므로 전환 연출 없이 회전/위치를 바로 맞춘다.
+        transform.rotation = ModeRotation;
+        _unshakenCameraPosition = CalculateTargetPosition();
+        transform.position = _unshakenCameraPosition + _shakeOffset;
+        _followPosition = _unshakenCameraPosition;
+    }
+
+    // 진행 축에 맞는 사이드뷰 회전이다. 원래 사이드뷰 회전을 Y축으로 돌려 새 깊이 방향(진행 축 × 위쪽)을 바라보게 한다.
+    // 기본 축(+X)의 깊이 방향은 +Z이므로, +Z에서 새 깊이 방향까지의 각도만큼 돌리면 된다.
+    private Quaternion GetSideRotation(Vector3 axis)
+    {
+        Vector3 depthAxis = Vector3.Cross(axis, Vector3.up);
+        float yaw = Vector3.SignedAngle(Vector3.forward, depthAxis, Vector3.up);
+        return Quaternion.AngleAxis(yaw, Vector3.up) * _sideRotation;
     }
 
     // 탑다운 카메라 방향이 바뀌면 현재 각도에서 새 각도까지 가까운 쪽으로 돌린다.
@@ -194,14 +235,11 @@ public class SideViewCamera : MonoBehaviour
             .SetEase(transitionEase);
     }
 
-    // 진행 축이 바뀌면, 원래 사이드뷰 회전을 Y축으로 돌려 새 깊이 방향(진행 축 × 위쪽)을 바라보게 한다.
-    // 기본 축(+X)의 깊이 방향은 +Z이므로, +Z에서 새 깊이 방향까지의 각도만큼 돌리면 된다.
+    // 진행 축이 바뀌면, 그 축에 맞는 사이드뷰 회전(GetSideRotation)으로 카메라를 돌린다.
     private void HandleSideViewAxisChanged(Vector3 axis)
     {
-        Vector3 depthAxis = Vector3.Cross(axis, Vector3.up);
-        float yaw = Vector3.SignedAngle(Vector3.forward, depthAxis, Vector3.up);
         Quaternion from = _currentSideRotation;
-        Quaternion to = Quaternion.AngleAxis(yaw, Vector3.up) * _sideRotation;
+        Quaternion to = GetSideRotation(axis);
 
         _axisTween?.Kill();
         // 통로 입구를 오가며 축이 연달아 바뀌어도 현재 각도에서 새 목표로 자연스럽게 이어지게 이전 Tween을 끊는다.
