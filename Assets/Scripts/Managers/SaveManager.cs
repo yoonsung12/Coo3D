@@ -27,6 +27,10 @@ public class SaveManager : MonoBehaviour
     public bool TorchUnlocked { get; private set; }
     // 이 매니저는 씬을 넘어가도 살아 있으므로, 가을에서 얻은 횃불 기록이 다음 씬까지 이어진다.
 
+    [ReadOnly, ShowInInspector, LabelText("우산 획득 기록")]
+    public bool UmbrellaUnlocked { get; private set; }
+    // 여름의 우산 문 비둘기를 잡고 우산을 주웠는지 기록한다. 횃불 기록과 같은 방식으로 씬을 넘어 이어진다.
+
     [ReadOnly, ShowInInspector, LabelText("추가 최대체력")]
     public float BonusMaxHealth { get; private set; }
     // 자판기 MaxHP 아이템으로 늘어난 최대 체력 합계다. 씬이 바뀌어도 이 매니저가 들고 있다가 새 PlayerHealth가 시작할 때 더한다.
@@ -36,6 +40,9 @@ public class SaveManager : MonoBehaviour
     // 자판기 MaxHP 아이템으로 늘어난 하트 개수다. 새 PlayerHealthUI가 하트를 만들 때 기본 개수에 더한다.
 
     public event Action<bool> TorchUnlockLoaded;
+
+    public event Action<bool> UmbrellaUnlockLoaded;
+    // 횃불과 같이, 새 게임/불러오기로 우산 해금 기록이 바뀌면 ToolManager에 알린다.
     // 새 게임/불러오기로 해금 기록이 바뀌면 알린다. 같은 씬에서 이어하기를 해도 ToolManager가 상태를 다시 맞출 수 있게 한다.
 
     private readonly HashSet<string> _activatedCheckpoints = new HashSet<string>();
@@ -46,6 +53,9 @@ public class SaveManager : MonoBehaviour
 
     private readonly HashSet<string> _collectedCoins = new HashSet<string>();
     // 저장 이후 기록된 먹은 씬 배치 코인 ID 모음이다. 씬을 다시 불러와도 CoinItem이 이 목록을 보고 다시 나타나지 않는다.
+
+    private readonly HashSet<string> _solvedPuzzles = new HashSet<string>();
+    // 저장 이후 기록된 해결한 퍼즐 ID 모음이다. 씬을 다시 불러와도 퍼즐(BoxLaneGoal 등)이 이 목록을 보고 풀린 상태로 시작한다.
 
     private bool _savedOnTube;
     // 마지막 체크포인트가 튜브를 탄 채 저장됐는지 여부다.
@@ -61,6 +71,9 @@ public class SaveManager : MonoBehaviour
 
     [ReadOnly, ShowInInspector, LabelText("먹은 코인 수 (씬 배치)")]
     private int CollectedCoinCount => _collectedCoins.Count;
+
+    [ReadOnly, ShowInInspector, LabelText("해결한 퍼즐 수")]
+    private int SolvedPuzzleCount => _solvedPuzzles.Count;
 
     private Vector3 _pendingLoadPosition;
     // 세이브된 씬과 현재 씬이 달라 씬을 새로 불러와야 할 때, 씬 로드가 끝난 뒤 적용할 위치를 잠시 담아둔다.
@@ -106,6 +119,11 @@ public class SaveManager : MonoBehaviour
 
     public bool IsCoinCollected(string id) => _collectedCoins.Contains(id);
 
+    // 퍼즐을 풀었다고 기록한다. 적/코인과 같이 파일에는 다음 체크포인트 저장 때 함께 기록된다.
+    public void MarkPuzzleSolved(string id) => _solvedPuzzles.Add(id);
+
+    public bool IsPuzzleSolved(string id) => _solvedPuzzles.Contains(id);
+
     // MaxHP 아이템을 먹었을 때 호출한다. 하트 1개와 그만큼의 최대 체력을 기록하고,
     // 파일에는 다음 체크포인트 저장 때 코인과 함께 기록된다.
     public void AddMaxHealthBonus(float amount)
@@ -147,10 +165,15 @@ public class SaveManager : MonoBehaviour
         TorchUnlocked = false;
         TorchUnlockLoaded?.Invoke(TorchUnlocked);
 
+        // 우산도 새 게임에서는 얻지 않은 상태로 시작한다.
+        UmbrellaUnlocked = false;
+        UmbrellaUnlockLoaded?.Invoke(UmbrellaUnlocked);
+
         // 이전 플레이의 체크포인트/처치 기록과 코인이 새 게임에 남지 않게 비운다.
         _activatedCheckpoints.Clear();
         _defeatedEnemies.Clear();
         _collectedCoins.Clear();
+        _solvedPuzzles.Clear();
         _savedOnTube = false;
         BonusMaxHealth = 0f;
         BonusHearts = 0;
@@ -162,7 +185,8 @@ public class SaveManager : MonoBehaviour
             sceneName = sceneName,
             checkpointPosition = Vector3.zero,
             savedAtIso = DateTime.UtcNow.ToString("o"),
-            torchUnlocked = false
+            torchUnlocked = false,
+            umbrellaUnlocked = false
         };
 
         ES3.Save(saveKey, data, path);
@@ -215,6 +239,9 @@ public class SaveManager : MonoBehaviour
         TorchUnlocked = data.torchUnlocked;
         TorchUnlockLoaded?.Invoke(TorchUnlocked);
 
+        UmbrellaUnlocked = data.umbrellaUnlocked;
+        UmbrellaUnlockLoaded?.Invoke(UmbrellaUnlocked);
+
         // 체크포인트/처치 기록을 저장 시점으로 되돌린다. 예전 세이브에는 목록이 없어 null일 수 있으므로 빈 상태로 둔다.
         _activatedCheckpoints.Clear();
         if (data.activatedCheckpointIds != null)
@@ -228,6 +255,11 @@ public class SaveManager : MonoBehaviour
         _collectedCoins.Clear();
         if (data.collectedCoinIds != null)
             _collectedCoins.UnionWith(data.collectedCoinIds);
+
+        // 해결한 퍼즐 기록도 저장 시점으로 되돌린다. 예전 세이브에는 목록이 없어 null일 수 있다.
+        _solvedPuzzles.Clear();
+        if (data.solvedPuzzleIds != null)
+            _solvedPuzzles.UnionWith(data.solvedPuzzleIds);
 
         _savedOnTube = data.savedOnTube;
 
@@ -308,10 +340,12 @@ public class SaveManager : MonoBehaviour
             checkpointPosition = CheckpointManager.CurrentCheckpointPosition,
             savedAtIso = DateTime.UtcNow.ToString("o"),
             torchUnlocked = TorchUnlocked,
+            umbrellaUnlocked = UmbrellaUnlocked,
             coinCount = CoinManager.Instance != null ? CoinManager.Instance.CoinCount : 0,
             activatedCheckpointIds = new List<string>(_activatedCheckpoints),
             defeatedEnemyIds = new List<string>(_defeatedEnemies),
             collectedCoinIds = new List<string>(_collectedCoins),
+            solvedPuzzleIds = new List<string>(_solvedPuzzles),
             bonusMaxHealth = BonusMaxHealth,
             bonusHearts = BonusHearts,
             savedOnTube = _savedOnTube
@@ -322,6 +356,9 @@ public class SaveManager : MonoBehaviour
 
     // 횃불을 얻었을 때 ToolManager가 호출한다. 파일에는 다음 체크포인트 저장 때 함께 기록된다.
     public void SetTorchUnlocked(bool unlocked) => TorchUnlocked = unlocked;
+
+    // 우산을 얻었을 때 ToolManager가 호출한다. 파일에는 다음 체크포인트 저장 때 함께 기록된다.
+    public void SetUmbrellaUnlocked(bool unlocked) => UmbrellaUnlocked = unlocked;
 
     // 슬롯의 세이브 파일을 완전히 삭제한다. 세이브 삭제 UI 등에서 사용한다.
     public void DeleteSlot(int slot)

@@ -20,6 +20,10 @@ public class SaveData
     // 가을 퍼즐②에서 횃불을 얻었는지 기록한다. 이 필드가 없던 예전 세이브 파일은 false(미획득)로 읽힌다.
     // 겨울 이후 씬은 씬 설정상 처음부터 해금이라, 예전 세이브에서도 진행이 막히지 않는다.
 
+    public bool umbrellaUnlocked;
+    // 여름에서 우산 문 비둘기를 잡고 우산을 얻었는지 기록한다. 이 필드가 없던 예전 세이브 파일은 false(미획득)로 읽힌다.
+    // 가을 이후 씬은 씬 설정상 처음부터 해금이라, 예전 세이브에서도 진행이 막히지 않는다.
+
     public int coinCount;
     // 저장 시점의 보유 코인이다. 사망 후 계속하기를 하면 이 값으로 코인이 되돌아간다.
 
@@ -37,6 +41,10 @@ public class SaveData
     public List<string> collectedCoinIds;
     // 저장 전에 먹은 "씬 배치 코인"의 ID 목록이다. 씬을 다시 불러와도 이 코인들은 다시 생기지 않는다.
     // coinCount와 같은 시점에 저장되므로, 저장 이후에 먹은 코인은 죽으면 개수와 함께 되돌아온다.
+    // 예전 세이브 파일에는 없어서 null일 수 있다.
+
+    public List<string> solvedPuzzleIds;
+    // 저장 전에 해결한 퍼즐의 ID 목록이다. 씬을 다시 불러와도 이 퍼즐들은 풀린 상태로 시작한다.
     // 예전 세이브 파일에는 없어서 null일 수 있다.
 
     public float bonusMaxHealth;

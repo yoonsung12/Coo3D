@@ -6,7 +6,7 @@ using UnityEngine.InputSystem;
 // 물 위에 떠 있는 수영 튜브다. 플레이어가 Interact(Space 꾹)로 타면 튜브 구멍에 앉은 채 합쳐지고,
 // 이후 선풍기 반동(SetRecoil/SetBlast)이 플레이어 대신 튜브를 밀어 물 위를 미끄러진다.
 // 튜브는 수면 높이(Y)에 고정된 Rigidbody라서 XZ 평면으로만 움직이고, 벽에는 살짝 튕긴다.
-// 도착 지점 트리거(arrivalDockTrigger)에 들어가면 자동으로 내려준다.
+// 도착 지점 트리거(arrivalDockTrigger)에 들어가면 자동으로 내려준다. "도착하면 자동 하차"를 끄면 안내를 띄우고 Interact로 내린다.
 [RequireComponent(typeof(Rigidbody))]
 public class FloatTube : MonoBehaviour
 {
@@ -33,7 +33,37 @@ public class FloatTube : MonoBehaviour
 
     [SerializeField, LabelText("하차 위치")]
     private Transform arrivalExitPoint;
-    // 내린 뒤 플레이어가 서는 위치다. 도착 선착장 바닥 위에 둔다.
+    // 내린 뒤 플레이어가 서는 위치다. 도착 선착장 바닥 위에 둔다. 아래 "하차 구역"을 연결하면 그쪽이 우선이다.
+
+    [SerializeField, LabelText("도착하면 자동 하차")]
+    private bool autoDismountOnArrival = true;
+    // 켜면 기존처럼 도착 트리거에 닿는 순간 자동으로 내린다.
+    // 끄면 도착 트리거 안에 있는 동안 "하차 안내"가 뜨고, 플레이어가 Interact(Space 꾹)를 눌러야 내린다.
+
+    [SerializeField, LabelText("하차 안내 UI"), HideIf(nameof(autoDismountOnArrival))]
+    private CanvasGroup dismountPrompt;
+    // 수동 하차일 때 머리 위에 띄울 World Space Canvas의 CanvasGroup이다. 탑승 안내와 같은 방식으로 따라다닌다.
+
+    [SerializeField, LabelText("하차 구역 (선택)")]
+    private Collider dismountArea;
+    // 도착 쪽 땅 위를 덮는 Is Trigger 콜라이더다. 연결하면 고정 위치 대신 "튜브와 가장 가까운 이 구역의 땅"에 내려,
+    // 튜브 바로 옆에서 내린 것처럼 보인다. 비워 두면 위의 "하차 위치"에 내린다.
+
+    [SerializeField, LabelText("하차 땅 안쪽 여유"), ShowIf("@dismountArea != null || (landingSpots != null && landingSpots.Length > 0)")]
+    private float dismountInset = 0.6f;
+    // 땅 가장자리(물과 맞닿은 끝)에 딱 붙어 서면 다시 물로 떨어질 수 있어, 이만큼 땅 안쪽으로 들여서 내린다.
+    // "하차 구역"과 "오르내리는 땅 목록" 둘 다 이 값을 쓴다.
+
+    [Title("오르내리는 땅 (선택)")]
+    [SerializeField, LabelText("오르내리는 땅 목록")]
+    private Collider[] landingSpots;
+    // 선착장·섬처럼 "여기서만 타고 내린다"고 정한 땅의 (Is Trigger가 아닌) 콜라이더를 넣는다.
+    // 비워 두면 기존 방식(탑승 거리/탑승 구역, 도착 트리거)으로만 동작한다.
+    // 넣으면 1) 이 땅 위에 선 채 튜브가 그 땅 옆에 있을 때만 탈 수 있고, 2) 탑승 중 튜브가 이 땅 옆에 오면 하차 안내가 뜨고 내릴 수 있다.
+
+    [SerializeField, LabelText("땅 옆 판정 거리"), ShowIf("@landingSpots != null && landingSpots.Length > 0")]
+    private float landingDistance = 3f;
+    // 튜브 중심과 땅 가장자리 사이의 수평 거리가 이 값 이하이면 "땅 옆에 댔다"고 본다. 클수록 조금 떨어져 있어도 타고 내린다.
 
     [SerializeField, LabelText("튜브 재배치 지점들")]
     private Transform[] respawnPoints;
@@ -63,6 +93,11 @@ public class FloatTube : MonoBehaviour
     private float areaBoardMaxDistance = 9f;
     // 탑승 구역 안이어도 튜브가 이 거리(XZ)보다 멀리 떠내려가 있으면 타지 않는다.
     // 튜브가 다른 섬에 가 있는데 선착장에서 순간이동해 타는 것을 막기 위한 값이다.
+
+    [SerializeField, LabelText("탑승 구역 안에서만 탑승"), ShowIf(nameof(boardArea))]
+    private bool boardOnlyInArea;
+    // 켜면 "탑승 가능 거리"는 무시하고 탑승 구역 안에서만 탈 수 있다.
+    // 도착 쪽에서 튜브 바로 옆에 내린 뒤 다시 타고 되돌아가지 못하게 하는 한 방향 튜브에 켠다.
 
     [Title("물리")]
     [SerializeField, LabelText("물 저항 (Drag)")]
@@ -134,6 +169,14 @@ public class FloatTube : MonoBehaviour
     private Tween _boardTween;
     private Tween _tiltTween;
     private Tween _promptTween;
+    private bool _dismountPromptVisible;
+    private Tween _dismountPromptTween;
+    private bool _isInArrivalDock;
+
+    [ShowInInspector, ReadOnly, LabelText("지금 붙어 있는 땅")]
+    private Collider _dockedLanding;
+    // 매 프레임 갱신하는 "튜브 바로 옆에 있는 오르내리는 땅"이다. 없으면 null이다. 하차 안내·하차 위치에 함께 쓴다.
+    // 튜브가 도착 트리거 안에 있는지다. 수동 하차일 때 이 동안만 내릴 수 있다.
     private Transform _cameraTransform;
     // 안내가 바라볼 메인 카메라다. 매 프레임 Camera.main을 찾지 않도록 Awake에서 한 번 저장해 둔다.
     private CharacterController _playerCC;
@@ -176,6 +219,9 @@ public class FloatTube : MonoBehaviour
         if (boardPrompt != null)
             boardPrompt.alpha = 0f;
 
+        if (dismountPrompt != null)
+            dismountPrompt.alpha = 0f;
+
         if (Camera.main != null)
             _cameraTransform = Camera.main.transform;
 
@@ -214,28 +260,84 @@ public class FloatTube : MonoBehaviour
         _boardTween?.Kill();
         _tiltTween?.Kill();
         _promptTween?.Kill();
+        _dismountPromptTween?.Kill();
     }
 
     private void Update()
     {
         if (player == null) return;
 
+        // 튜브가 지금 어느 "오르내리는 땅" 옆에 있는지 먼저 갱신한다. 탑승/하차 판정이 모두 이 값을 쓴다.
+        _dockedLanding = FindDockedLanding();
+
         // 탑승 중에는 안내를 숨기고, 아니면 범위 안일 때만 보여준다.
         SetPromptVisible(!player.IsMounted && IsPlayerInRange());
+
+        // 수동 하차 튜브는 탑승한 채 도착 트리거 안이거나 오르내리는 땅 옆일 때만 하차 안내를 보여준다.
+        SetDismountPromptVisible(CanDismountHere());
+    }
+
+    private bool HasLandingSpots => landingSpots != null && landingSpots.Length > 0;
+
+    // 튜브와 가장 가까운 오르내리는 땅을 찾고, 판정 거리 안이면 돌려준다. 목록이 비었거나 모두 멀면 null이다.
+    private Collider FindDockedLanding()
+    {
+        if (!HasLandingSpots) return null;
+
+        Collider nearest = null;
+        float nearestSqr = landingDistance * landingDistance;
+        foreach (Collider spot in landingSpots)
+        {
+            if (spot == null || !spot.enabled) continue;
+
+            // ClosestPoint는 땅 콜라이더 표면에서 튜브와 가장 가까운 점이다. 높이 차이는 빼고 수평 거리만 비교한다.
+            Vector3 offset = spot.ClosestPoint(transform.position) - transform.position;
+            offset.y = 0f;
+            if (offset.sqrMagnitude <= nearestSqr)
+            {
+                nearestSqr = offset.sqrMagnitude;
+                nearest = spot;
+            }
+        }
+        return nearest;
+    }
+
+    // 플레이어 발밑 바로 아래 땅이 이 콜라이더인지 확인한다. "그 땅 위에 서 있어야 탈 수 있다"는 조건에 쓴다.
+    private bool IsPlayerStandingOn(Collider spot)
+    {
+        Vector3 origin = player.transform.position + Vector3.up * 0.5f;
+        // QueryTriggerInteraction.Ignore: 땅 위를 덮은 구역 트리거가 아니라 실제 땅 콜라이더를 맞힌다.
+        return Physics.Raycast(origin, Vector3.down, out RaycastHit hit, 1.5f, ~0, QueryTriggerInteraction.Ignore)
+            && hit.collider == spot;
     }
 
     // 플레이어가 이동한 뒤(Update) 위치를 따라가야 흔들리지 않으므로 LateUpdate에서 안내 위치를 맞춘다.
     // 보이는 동안(페이드 중 포함)만 계산한다.
     private void LateUpdate()
     {
-        if (boardPrompt == null || player == null || boardPrompt.alpha <= 0f) return;
+        if (player == null) return;
 
-        Transform promptTransform = boardPrompt.transform;
+        FollowPlayerHead(boardPrompt);
+        FollowPlayerHead(dismountPrompt);
+    }
+
+    // 안내 UI를 플레이어 머리 위에 두고 카메라 쪽을 보게 한다. 탑승 안내와 하차 안내가 같이 쓴다.
+    private void FollowPlayerHead(CanvasGroup prompt)
+    {
+        if (prompt == null || prompt.alpha <= 0f) return;
+
+        Transform promptTransform = prompt.transform;
         promptTransform.position = player.transform.position + Vector3.up * promptHeight;
 
         // 카메라와 같은 회전을 주면 사이드뷰·탑다운 어느 시점에서도 글씨가 화면 정면으로 보인다.
         if (_cameraTransform != null)
             promptTransform.rotation = _cameraTransform.rotation;
+    }
+
+    // 수동 하차 튜브에 탑승한 채 도착 트리거 안이거나, 오르내리는 땅 옆에 있으면 내릴 수 있다.
+    private bool CanDismountHere()
+    {
+        return !autoDismountOnArrival && IsMounted && (_isInArrivalDock || _dockedLanding != null);
     }
 
     private void FixedUpdate()
@@ -258,28 +360,91 @@ public class FloatTube : MonoBehaviour
 
     private void OnTriggerEnter(Collider other)
     {
-        // 탑승한 채 도착 선착장 트리거에 들어오면 자동으로 내려준다.
-        if (IsMounted && arrivalDockTrigger != null && other == arrivalDockTrigger)
-            Dismount(arrivalExitPoint != null ? arrivalExitPoint.position : player.transform.position);
+        if (arrivalDockTrigger == null || other != arrivalDockTrigger) return;
+        _isInArrivalDock = true;
+
+        // 자동 하차 튜브는 탑승한 채 도착 선착장 트리거에 들어오면 바로 내려준다.
+        // 수동 하차 튜브는 여기서 내리지 않고, 트리거 안에 있는 동안 Interact를 기다린다.
+        if (autoDismountOnArrival && IsMounted)
+            Dismount(GetDismountPosition());
+    }
+
+    private void OnTriggerExit(Collider other)
+    {
+        if (arrivalDockTrigger != null && other == arrivalDockTrigger)
+            _isInArrivalDock = false;
     }
 
     private void OnInteractPerformed(InputAction.CallbackContext ctx)
     {
-        if (player == null || player.IsMounted) return;
+        if (player == null) return;
+
+        // 탑승 중에 누르면, 도착 트리거 안일 때만 내린다(수동 하차 튜브).
+        if (player.IsMounted)
+        {
+            if (CanDismountHere())
+                Dismount(GetDismountPosition());
+            return;
+        }
+
         if (!player.IsGrounded || !IsPlayerInRange()) return;
 
         Mount();
+    }
+
+    // 내릴 위치를 정한다. 하차 구역이 있으면 튜브와 가장 가까운 구역 안의 땅, 없으면 고정 하차 위치를 쓴다.
+    private Vector3 GetDismountPosition()
+    {
+        // 오르내리는 땅 옆이면 그 땅 위, 튜브와 가장 가까운 곳에 내린다.
+        if (_dockedLanding != null)
+            return GetInsetPointOn(_dockedLanding);
+
+        if (dismountArea == null)
+            return arrivalExitPoint != null ? arrivalExitPoint.position : player.transform.position;
+
+        return GetInsetPointOn(dismountArea);
+    }
+
+    // 콜라이더(하차 구역 또는 땅) 위에서 튜브와 가장 가까운 점을 찾아 안쪽으로 조금 들이고, 실제 바닥 높이에 맞춘 위치를 돌려준다.
+    private Vector3 GetInsetPointOn(Collider area)
+    {
+        // ClosestPoint는 콜라이더 표면에서 튜브와 가장 가까운 점을 준다. 튜브는 물 위(구역 밖)라 이 점은 물과 맞닿은 땅 끝이 된다.
+        Vector3 tubePosition = transform.position;
+        Vector3 edgePoint = area.ClosestPoint(tubePosition);
+
+        // 땅 끝에 딱 붙지 않도록 튜브 반대쪽(땅 안쪽)으로 조금 들인다. 높이 차이는 무시하고 수평 방향만 쓴다.
+        Vector3 inward = edgePoint - tubePosition;
+        inward.y = 0f;
+        if (inward.sqrMagnitude > 0.0001f)
+            edgePoint += inward.normalized * dismountInset;
+
+        // 들인 점이 구역을 벗어나지 않게 다시 구역 안으로 맞춘다.
+        edgePoint = area.ClosestPoint(edgePoint);
+
+        // 구역 위에서 아래로 레이를 쏴 실제 바닥 높이에 세운다. QueryTriggerInteraction.Ignore로 구역 트리거 자신은 무시한다.
+        Vector3 rayOrigin = new Vector3(edgePoint.x, area.bounds.max.y + 1f, edgePoint.z);
+        float rayLength = area.bounds.size.y + 5f;
+        if (Physics.Raycast(rayOrigin, Vector3.down, out RaycastHit hit, rayLength, ~0, QueryTriggerInteraction.Ignore))
+            return hit.point + Vector3.up * 0.05f;
+
+        return edgePoint;
     }
 
     // 탑승할 수 있는 위치인지 확인한다. 높이 차이는 무시하고 XZ 거리만 본다.
     // 1) 튜브와 탑승 가능 거리 안이거나, 2) 탑승 구역(선착장) 안이고 튜브가 구역 탑승 최대 거리 안에 떠 있으면 탈 수 있다.
     private bool IsPlayerInRange()
     {
+        // 오르내리는 땅 목록이 있으면 기존 거리/구역 판정 대신 "튜브가 붙어 있는 그 땅 위에 서 있는지"만 본다.
+        if (HasLandingSpots)
+            return _dockedLanding != null && IsPlayerStandingOn(_dockedLanding);
+
         Vector3 offset = player.transform.position - transform.position;
         offset.y = 0f;
         float sqrDistance = offset.sqrMagnitude;
 
-        if (sqrDistance <= boardRange * boardRange) return true;
+        // 한 방향 튜브는 거리만으로는 타지 못하고, 아래의 탑승 구역 판정만 쓴다.
+        bool useRangeCheck = !(boardOnlyInArea && boardArea != null);
+        if (useRangeCheck && sqrDistance <= boardRange * boardRange) return true;
 
         return boardArea != null
             && sqrDistance <= areaBoardMaxDistance * areaBoardMaxDistance
@@ -301,6 +466,16 @@ public class FloatTube : MonoBehaviour
 
         _promptTween?.Kill();
         _promptTween = boardPrompt.DOFade(visible ? 1f : 0f, promptFadeDuration);
+    }
+
+    // 하차 안내를 탑승 안내와 같은 시간으로 페이드한다. 상태가 바뀔 때만 Tween을 새로 만든다.
+    private void SetDismountPromptVisible(bool visible)
+    {
+        if (dismountPrompt == null || _dismountPromptVisible == visible) return;
+        _dismountPromptVisible = visible;
+
+        _dismountPromptTween?.Kill();
+        _dismountPromptTween = dismountPrompt.DOFade(visible ? 1f : 0f, promptFadeDuration);
     }
 
     private void Mount()

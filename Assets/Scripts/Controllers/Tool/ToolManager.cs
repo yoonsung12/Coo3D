@@ -41,14 +41,23 @@ public class ToolManager : MonoBehaviour
     // 봄·여름·가을 씬은 꺼 둔다(횃불은 가을 퍼즐②에서 얻는다). 겨울 이후 씬은 켜 둔다.
     // 꺼져 있어도 세이브에 "횃불 획득" 기록이 있으면 해금된 상태로 시작한다.
 
+    [SerializeField, LabelText("시작할 때 우산 해금")]
+    private bool umbrellaUnlockedAtStart = true;
+    // 봄·여름 씬은 꺼 둔다(우산은 여름 Coos99 앞의 우산 문 비둘기를 잡아서 얻는다). 가을 이후 씬은 켜 둔다.
+    // 꺼져 있어도 세이브에 "우산 획득" 기록이 있으면 해금된 상태로 시작한다.
+
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("횃불 해금됨")]
     public bool IsTorchUnlocked => _torchUnlocked;
+
+    [ReadOnly, ShowInInspector, LabelText("우산 해금됨")]
+    public bool IsUmbrellaUnlocked => _umbrellaUnlocked;
 
     public event Action OnUnlockStateChanged;
     // 해금 상태가 바뀌면 알린다. WeaponWheelUI가 잠긴 슬롯 색을 다시 칠하는 데 사용한다.
 
     private bool _torchUnlocked;
+    private bool _umbrellaUnlocked;
 
     [ReadOnly, ShowInInspector, LabelText("현재 장착 도구")]
     private string _activeToolName => _activeTool != null ? _activeTool.GetType().Name : "없음 (공격 모드)";
@@ -77,14 +86,23 @@ public class ToolManager : MonoBehaviour
         bool savedUnlock = SaveManager.Instance != null && SaveManager.Instance.TorchUnlocked;
         _torchUnlocked = torchUnlockedAtStart || savedUnlock;
 
+        bool savedUmbrellaUnlock = SaveManager.Instance != null && SaveManager.Instance.UmbrellaUnlocked;
+        _umbrellaUnlocked = umbrellaUnlockedAtStart || savedUmbrellaUnlock;
+
         if (SaveManager.Instance != null)
+        {
             SaveManager.Instance.TorchUnlockLoaded += HandleTorchUnlockLoaded;
+            SaveManager.Instance.UmbrellaUnlockLoaded += HandleUmbrellaUnlockLoaded;
+        }
     }
 
     private void OnDestroy()
     {
         if (SaveManager.Instance != null)
+        {
             SaveManager.Instance.TorchUnlockLoaded -= HandleTorchUnlockLoaded;
+            SaveManager.Instance.UmbrellaUnlockLoaded -= HandleUmbrellaUnlockLoaded;
+        }
     }
 
     private void OnEnable()
@@ -119,7 +137,9 @@ public class ToolManager : MonoBehaviour
                 SelectTool(fanTool);
                 break;
             case WeaponSlot.Umbrella:
-                SelectTool(umbrellaTool);
+                // 아직 얻지 못한 우산은 장착하지 않는다. 휠에서도 회색으로 막혀 있지만 한 번 더 확인한다.
+                if (_umbrellaUnlocked)
+                    SelectTool(umbrellaTool);
                 break;
             case WeaponSlot.Torch:
                 // 아직 얻지 못한 횃불은 장착하지 않는다. 휠에서도 회색으로 막혀 있지만 한 번 더 확인한다.
@@ -230,8 +250,13 @@ public class ToolManager : MonoBehaviour
         _activeTool = null;
     }
 
-    // 웨폰 휠이 슬롯을 강조/선택할 수 있는지 묻는다. 지금 잠글 수 있는 도구는 횃불뿐이다.
-    public bool IsSlotUnlocked(WeaponSlot slot) => slot != WeaponSlot.Torch || _torchUnlocked;
+    // 웨폰 휠이 슬롯을 강조/선택할 수 있는지 묻는다. 잠글 수 있는 도구는 횃불과 우산이다.
+    public bool IsSlotUnlocked(WeaponSlot slot)
+    {
+        if (slot == WeaponSlot.Torch) return _torchUnlocked;
+        if (slot == WeaponSlot.Umbrella) return _umbrellaUnlocked;
+        return true;
+    }
 
     // 횃불을 얻었을 때 호출한다(TorchUnlockItem). 세이브 매니저에도 기록해 두어
     // 다음 체크포인트 저장 때 함께 저장되고, 씬을 넘어가도 유지되게 한다.
@@ -261,6 +286,45 @@ public class ToolManager : MonoBehaviour
             UnequipCurrent();
 
         OnUnlockStateChanged?.Invoke();
+    }
+
+    // 우산을 얻었을 때 호출한다(UmbrellaUnlockItem). 횃불과 같은 방식으로 세이브 매니저에도 기록한다.
+    public void UnlockUmbrella()
+    {
+        if (_umbrellaUnlocked) return;
+
+        _umbrellaUnlocked = true;
+        if (SaveManager.Instance != null)
+            SaveManager.Instance.SetUmbrellaUnlocked(true);
+
+        OnUnlockStateChanged?.Invoke();
+    }
+
+    private void HandleUmbrellaUnlockLoaded(bool savedUnlock)
+    {
+        SetUmbrellaUnlockedInternal(umbrellaUnlockedAtStart || savedUnlock);
+    }
+
+    private void SetUmbrellaUnlockedInternal(bool unlocked)
+    {
+        _umbrellaUnlocked = unlocked;
+
+        // 잠기는데 우산을 들고 있었다면 내려놓게 한다.
+        if (!_umbrellaUnlocked && _activeTool == umbrellaTool)
+            UnequipCurrent();
+
+        OnUnlockStateChanged?.Invoke();
+    }
+
+    [Button("우산 해금 테스트")]
+    private void TestUnlockUmbrella() => UnlockUmbrella();
+
+    [Button("우산 잠금 테스트")]
+    private void TestLockUmbrella()
+    {
+        if (SaveManager.Instance != null)
+            SaveManager.Instance.SetUmbrellaUnlocked(false);
+        SetUmbrellaUnlockedInternal(false);
     }
 
     [Button("횃불 해금 테스트")]

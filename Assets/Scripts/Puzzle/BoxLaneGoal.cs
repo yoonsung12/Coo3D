@@ -84,6 +84,15 @@ public class BoxLaneGoal : MonoBehaviour
         }
     }
 
+    // 세이브에 이미 푼 퍼즐로 기록돼 있으면(사망 후 씬 재로드, 이어하기) 풀린 상태로 바로 시작한다.
+    // Awake가 아니라 Start에서 하는 이유: SideViewLaneZone.Awake가 활성 상태를 초기값으로 덮어써서,
+    // Awake 순서에 따라 여기서 켠 라인이 다시 꺼질 수 있기 때문이다.
+    private void Start()
+    {
+        if (SaveManager.Instance != null && SaveManager.Instance.IsPuzzleSolved(SaveManager.GetObjectId(gameObject)))
+            ApplySolvedState();
+    }
+
     private void OnDestroy()
     {
         _snapSequence?.Kill();
@@ -102,6 +111,10 @@ public class BoxLaneGoal : MonoBehaviour
     private void Solve()
     {
         _isSolved = true;
+
+        // 해결 기록을 남겨 두면, 곧이어 TransferPlayer에서 체크포인트를 저장할 때 파일에도 함께 기록된다.
+        if (SaveManager.Instance != null)
+            SaveManager.Instance.MarkPuzzleSolved(SaveManager.GetObjectId(gameObject));
 
         // 리스폰 연출 중이었다면 멈추고, 이후 방치 시간이 지나도 처음 자리로 돌아가지 않게 한다.
         _boxRespawner?.Lock();
@@ -131,6 +144,27 @@ public class BoxLaneGoal : MonoBehaviour
             });
 
         // 상자가 자리를 잡자마자 사이드뷰 라인을 켠다. 이후 이 라인 안에서는 항상 사이드뷰가 유지된다.
+        laneZone.Activate();
+    }
+
+    // 불러오기 직후 호출된다. Solve()와 같은 최종 상태를 연출·플레이어 이동 없이 즉시 적용한다.
+    // 플레이어 위치는 SaveManager가 저장된 체크포인트(이동 지점)로 이미 옮겨 준다.
+    private void ApplySolvedState()
+    {
+        if (targetBox == null || laneZone == null) return;
+
+        _isSolved = true;
+        _boxRespawner?.Lock();
+
+        targetBox.linearVelocity = Vector3.zero;
+        targetBox.angularVelocity = Vector3.zero;
+        targetBox.isKinematic = true;
+
+        // 높이는 상자의 처음 높이(바닥 위)를, X는 목표 지점, Z는 사이드뷰 라인을 쓴다. Solve()의 스냅 위치와 같은 기준이다.
+        Vector3 snapPosition = new Vector3(transform.position.x, _boxStartPosition.y, laneZone.LaneZ);
+        targetBox.transform.SetPositionAndRotation(snapPosition, Quaternion.Euler(snapEuler));
+        targetBox.transform.localScale = _boxStartScale;
+
         laneZone.Activate();
     }
 
@@ -164,6 +198,19 @@ public class BoxLaneGoal : MonoBehaviour
             _playerHealth.Respawn(transferPoint.position);
 
         player.SetViewMode(ViewMode.SideView, laneZone.LaneZ);
+
+        SaveTransferCheckpoint();
+    }
+
+    // 순간이동은 CharacterController를 끈 채 이뤄지므로, 이동 지점이 체크포인트 구역 안이어도 OnTriggerEnter가 오지 않는다.
+    // 그래서 정답 후 이동한 자리를 여기서 직접 체크포인트로 등록해, 이후 죽어도 퍼즐 앞(처음 위치)으로 돌아가지 않게 한다.
+    // 이 자리는 활성화된 SideViewLaneZone 안이라, 리스폰 직후 탑다운으로 판정돼도 라인의 OnTriggerStay가 사이드뷰로 되돌려 준다.
+    private void SaveTransferCheckpoint()
+    {
+        CheckpointManager.SetCheckpoint(transferPoint.position, gameObject.scene.name);
+
+        if (SaveManager.Instance != null)
+            SaveManager.Instance.SaveCheckpoint();
     }
 
     [Button("정답 처리 테스트")]
