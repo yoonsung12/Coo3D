@@ -150,7 +150,9 @@ public class FloatTube : MonoBehaviour
 
     [Title("런타임 상태 (읽기 전용)")]
     [ShowInInspector, ReadOnly, LabelText("탑승 중")]
-    public bool IsMounted => player != null && player.IsMounted;
+    public bool IsMounted => player != null && player.IsMounted && player.MountedTube == this;
+    // 씬에 튜브가 여러 개면 "플레이어가 어느 튜브든 탔는지"가 아니라 "이 튜브에 탔는지"를 봐야 한다.
+    // 그러지 않으면 다른 튜브에 타는 순간, 이 튜브가 자기가 탑승 중이라고 착각해 엉뚱한 곳에 내려 버린다.
 
     [ShowInInspector, ReadOnly, LabelText("현재 속도")]
     private float CurrentSpeed => _rigidbody != null
@@ -379,8 +381,11 @@ public class FloatTube : MonoBehaviour
     {
         if (player == null) return;
 
+        // Interact 이벤트는 씬의 모든 튜브가 동시에 받는다. 플레이어가 다른 튜브에 타 있으면 이 튜브는 관여하지 않는다.
+        if (player.IsMounted && !IsMounted) return;
+
         // 탑승 중에 누르면, 도착 트리거 안일 때만 내린다(수동 하차 튜브).
-        if (player.IsMounted)
+        if (IsMounted)
         {
             if (CanDismountHere())
                 Dismount(GetDismountPosition());
@@ -524,7 +529,8 @@ public class FloatTube : MonoBehaviour
     // 장애물에 부딪혀 뒤집혔을 때 호출한다. 그 자리에서 내려 낙사 연출로 복귀 지점까지 보내고, 튜브는 처음 자리로 되돌린다.
     public void Capsize(Vector3 recoverPosition)
     {
-        if (player != null && player.IsMounted)
+        // 이 튜브에 탄 경우에만 플레이어를 내린다. 다른 튜브에 탄 플레이어까지 전복시키지 않기 위해서다.
+        if (IsMounted)
         {
             player.Dismount(player.transform.position);
             player.GetComponent<FallDeathHandler>()?.HandleFall(recoverPosition);
