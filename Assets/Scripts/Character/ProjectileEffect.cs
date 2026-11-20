@@ -46,6 +46,9 @@ public class ProjectileEffect : MonoBehaviour
     {
         if (flightFeathers == null) return;
         flightFeathers.transform.SetParent(null, true);
+        flightFeathers.transform.localScale = Vector3.one;
+        // 날개 루트 스케일이 (37, 206, 63)처럼 커서, 떼어 내면 그 스케일이 깃털에 그대로 옮겨 붙는다.
+        // Scaling Mode가 Local이라 깃털이 수백 m짜리 기둥처럼 커지므로, 비행 중과 같은 크기(1)로 되돌린다.
         var main = flightFeathers.main;
         main.stopAction = ParticleSystemStopAction.Destroy; // 입자가 다 사라지면 스스로 삭제한다.
         flightFeathers.Stop(true, ParticleSystemStopBehavior.StopEmitting);

@@ -53,12 +53,9 @@ public class ScenePortal : MonoBehaviour
         // 스폰 ID를 정적 변수에 저장해 씬 전환 후 SceneSpawnPoint가 읽을 수 있게 한다.
         SceneTransitionData.PendingSpawnId = targetSpawnId;
 
-        // 현재 체력을 이어받도록 기록한다. 새 씬에서 체력이 초기화되지 않고 그대로 유지된다.
-        if (PlayerHealth.Instance != null)
-        {
-            SceneTransitionData.HasPendingHealth = true;
-            SceneTransitionData.PendingHealth = PlayerHealth.Instance.CurrentHealth;
-        }
+        // 맵을 넘어가면 체력을 전부 회복시키기 위해 현재 체력을 기록하지 않는다.
+        // 기록이 없으면 새 씬의 PlayerHealth.Awake()가 최대 체력(자판기 보너스 포함)으로 시작한다.
+        SceneTransitionData.HasPendingHealth = false;
 
         // 새 씬의 SeasonGaugeManager가 게이지/디버프를 초기화하지 않고 이어가도록 신호를 보낸다.
         SceneTransitionData.PreserveSeasonState = true;

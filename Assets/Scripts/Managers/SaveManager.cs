@@ -334,10 +334,36 @@ public class SaveManager : MonoBehaviour
     // 지정한 슬롯에 현재 체크포인트 상태를 저장한다.
     public void SaveToSlot(int slot)
     {
+        string sceneName = CheckpointManager.HasCheckpoint ? CheckpointManager.CurrentCheckpointScene : SceneManager.GetActiveScene().name;
+        WriteSlot(slot, sceneName, CheckpointManager.CurrentCheckpointPosition);
+    }
+
+    // 파우즈 메뉴의 수동 저장에서 호출한다. 플레이어가 땅에 서 있으면 "지금 서 있는 자리"를 저장해,
+    // 이어하기 때 마지막 체크포인트가 아니라 저장한 그 위치에서 시작하게 한다.
+    // 공중(점프/낙하 중)이나 튜브 위에서는 이어하자마자 떨어질 수 있으므로 기존처럼 마지막 체크포인트를 저장한다.
+    public void SaveToSlotAtPlayerPosition(int slot)
+    {
+        PlayerHealth player = PlayerHealth.Instance;
+        PlayerController controller = player != null ? player.GetComponent<PlayerController>() : null;
+
+        bool canSaveHere = controller != null && controller.IsGrounded && !controller.IsMounted;
+        if (!canSaveHere)
+        {
+            SaveToSlot(slot);
+            return;
+        }
+
+        // 체크포인트(CheckpointManager)는 건드리지 않는다. 저장 위치는 세이브 파일에만 기록된다.
+        WriteSlot(slot, player.gameObject.scene.name, player.transform.position);
+    }
+
+    // 세이브 파일 한 개를 실제로 기록한다. 위치/씬 이름만 호출하는 쪽에서 정하고, 나머지 진행 상황은 공통으로 담는다.
+    private void WriteSlot(int slot, string sceneName, Vector3 position)
+    {
         var data = new SaveData
         {
-            sceneName = CheckpointManager.HasCheckpoint ? CheckpointManager.CurrentCheckpointScene : SceneManager.GetActiveScene().name,
-            checkpointPosition = CheckpointManager.CurrentCheckpointPosition,
+            sceneName = sceneName,
+            checkpointPosition = position,
             savedAtIso = DateTime.UtcNow.ToString("o"),
             torchUnlocked = TorchUnlocked,
             umbrellaUnlocked = UmbrellaUnlocked,

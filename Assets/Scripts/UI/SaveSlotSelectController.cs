@@ -222,7 +222,8 @@ public class SaveSlotSelectController : MonoBehaviour
 
     private void SaveToSlotAndRefresh(int slot)
     {
-        SaveManager.Instance.SaveToSlot(slot);
+        SaveManager.Instance.SaveToSlotAtPlayerPosition(slot);
+        // 파우즈 메뉴 저장은 땅 위라면 지금 서 있는 자리를 저장한다(공중/튜브 위면 마지막 체크포인트).
         RefreshSlots();
     }
 
