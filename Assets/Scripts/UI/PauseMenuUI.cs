@@ -22,6 +22,10 @@ public class PauseMenuUI : MonoBehaviour
     [SerializeField, LabelText("저장하기 버튼")]
     private Button saveButton;
 
+    [SerializeField, LabelText("체크포인트로 이동 버튼")]
+    private Button checkpointButton;
+    // 지형에 끼는 등 진행이 막혔을 때 마지막 체크포인트로 돌아가기 위한 버튼이다. 비워두면 이 기능 없이 동작한다.
+
     [SerializeField, LabelText("사운드 설정 버튼")]
     private Button soundButton;
 
@@ -59,6 +63,18 @@ public class PauseMenuUI : MonoBehaviour
     [SerializeField, LabelText("타이틀 씬 이름")]
     private string titleSceneName = "Title";
 
+    [SerializeField, LabelText("사이드뷰 카메라")]
+    private SideViewCamera sideViewCamera;
+    // 체크포인트로 순간이동한 직후 카메라를 바로 옮기기 위해 연결한다. 비워두면 카메라가 평소처럼 Lerp로 따라간다.
+
+    [Title("체크포인트 이동 연출")]
+    [SerializeField, LabelText("페이드 아웃 시간")]
+    private float checkpointFadeOutDuration = 0.3f;
+
+    [SerializeField, LabelText("페이드 인 시간")]
+    private float checkpointFadeInDuration = 0.3f;
+    // 화면이 완전히 어두워진 뒤 옮겨야 순간이동이 보이지 않는다. 값이 클수록 천천히 어두워지고 밝아진다.
+
     [Title("연출 설정")]
     [SerializeField, LabelText("열림 시간")]
     private float openDuration = 0.2f;
@@ -88,6 +104,8 @@ public class PauseMenuUI : MonoBehaviour
 
         resumeButton.onClick.AddListener(Resume);
         saveButton.onClick.AddListener(HandleSaveClicked);
+        if (checkpointButton != null)
+            checkpointButton.onClick.AddListener(HandleCheckpointClicked);
         soundButton.onClick.AddListener(HandleSoundClicked);
         exitToTitleButton.onClick.AddListener(HandleExitToTitleClicked);
         quitButton.onClick.AddListener(HandleQuitClicked);
@@ -182,6 +200,51 @@ public class PauseMenuUI : MonoBehaviour
         saveSlotSelectController.Open(SaveSlotSelectController.Mode.SaveInGame);
     }
 
+    // 확인 팝업을 한 번 거친 뒤 마지막 체크포인트로 이동한다. 실수로 눌러 먼 곳으로 돌아가는 일을 막기 위해서다.
+    private void HandleCheckpointClicked()
+    {
+        exitConfirmPopup.Show("마지막 체크포인트로 이동하시겠습니까?", MoveToCheckpoint);
+    }
+
+    // 파우즈를 닫고, 화면을 어둡게 한 뒤 체크포인트로 옮기고 다시 밝힌다. 체력·디버프·게이지는 그대로 둔다.
+    private void MoveToCheckpoint()
+    {
+        PlayerHealth health = PlayerHealth.Instance;
+        if (health == null) return;
+
+        PlayerController controller = health.GetComponent<PlayerController>();
+        // 엘리베이터·포털 연출, 컷신, 사망 중에는 PlayerController가 꺼져 있다.
+        // 그 도중에 순간이동하면 진행 중인 연출 코루틴과 위치가 꼬이므로 이동하지 않고 메뉴만 닫는다.
+        if (controller == null || !controller.enabled)
+        {
+            Resume();
+            return;
+        }
+
+        Resume();
+
+        controller.enabled = false;
+        // 화면이 어두워지는 동안 움직이지 않도록 잠시 조작을 끈다.
+
+        System.Action teleport = () =>
+        {
+            // 순간이동은 반드시 Respawn()을 거쳐야 CharacterController, 튜브 탑승, 시점(사이드뷰/탑다운)이 함께 정리된다.
+            health.Respawn(CheckpointManager.CurrentCheckpointPosition);
+            if (sideViewCamera != null)
+                sideViewCamera.SnapToTarget();
+
+            controller.enabled = true;
+
+            if (ScreenFader.Instance != null)
+                ScreenFader.Instance.FadeIn(null, checkpointFadeInDuration);
+        };
+
+        if (ScreenFader.Instance != null)
+            ScreenFader.Instance.FadeOut(() => teleport(), checkpointFadeOutDuration);
+        else
+            teleport();
+    }
+
     // 파우즈 메뉴 위에 사운드 설정 화면을 연다.
     private void HandleSoundClicked()
     {
@@ -224,4 +287,11 @@ public class PauseMenuUI : MonoBehaviour
 
     [Button("파우즈 닫기 테스트")]
     private void TestResume() => Resume();
+
+    [Button("체크포인트 이동 테스트")]
+    private void TestMoveToCheckpoint()
+    {
+        if (!Application.isPlaying) return;
+        MoveToCheckpoint();
+    }
 }

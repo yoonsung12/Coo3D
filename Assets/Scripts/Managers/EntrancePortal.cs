@@ -2,6 +2,7 @@ using System.Collections;
 using DG.Tweening;
 using Sirenix.OdinInspector;
 using UnityEngine;
+using UnityEngine.Events;
 using UnityEngine.InputSystem;
 
 // 지하철 입구처럼 "↑ 키를 눌러 입장"하는 같은 씬 안의 이동 포털이다.
@@ -31,9 +32,19 @@ public class EntrancePortal : MonoBehaviour
     [Title("입장 방식")]
     [SerializeField, LabelText("잠긴 상태로 시작")]
     private bool startLocked;
-    // 켜면 Unlock()이 호출되기 전까지 이 포털로 들어갈 수 없다(안내문도 뜨지 않는다).
+    // 켜면 Unlock()이 호출되기 전까지 이 포털로 들어갈 수 없다(입장 안내문도 뜨지 않는다).
     // 발전기를 돌려 불을 켜야 열리는 계단처럼, 퍼즐을 푼 뒤에만 쓰는 포털에 켠다.
     // 다른 오브젝트의 이벤트(예: TurbineGenerator의 "작동 시 이벤트")에 Unlock()을 연결해서 연다.
+
+    [SerializeField, LabelText("잠겼을 때 안내문 Canvas Group"), ShowIf(nameof(startLocked))]
+    private CanvasGroup lockedPromptCanvasGroup;
+    // 잠긴 동안 범위 안에 들어오면 띄울 안내문(예: "막힌 듯하다")의 World Space Canvas를 연결한다.
+    // 비워두면 기존처럼 잠긴 동안 아무 안내도 띄우지 않는다.
+
+    [SerializeField, LabelText("잠금 해제 저장"), ShowIf(nameof(startLocked))]
+    private bool saveUnlock;
+    // 켜면 Unlock() 때 SaveManager에 기록해 두어, 이어하기나 사망 후 재로드에도 열린 상태로 시작한다.
+    // 꺼 두면 씬을 다시 불러올 때마다 잠긴 상태로 돌아간다.
 
     [SerializeField, LabelText("도착하면 자동 입장")]
     private bool autoEnter;
@@ -44,6 +55,11 @@ public class EntrancePortal : MonoBehaviour
     private float enterDescendSpeed;
     // 0보다 크면 들어가며 걷는 동안 중력 대신 이 속도(초당)로 일정하게 내려가, 에스컬레이터를 타고 내려가는 모습이 된다.
     // 경사에 맞추려면 "걷는 속도 × (계단 높이 ÷ 계단 가로 길이)"를 넣는다. 0이면 기존처럼 바닥을 따라 걷는다.
+
+    [SerializeField, LabelText("도착 시 이벤트")]
+    private UnityEvent onArrived;
+    // 이 포털을 타고 도착 지점에 걸어 나온 직후 호출된다.
+    // 예: 지하 엘리베이터의 이 이벤트에 지상 엘리베이터 포털의 Unlock()을 연결하면, 한 번 올라온 뒤부터 지상에서도 탈 수 있다.
 
     [Title("입장 연출")]
     [SerializeField, LabelText("들어갈 방향")]
@@ -134,6 +150,8 @@ public class EntrancePortal : MonoBehaviour
     private Collider _triggerCollider;
     // 플레이어가 실제로 감지 범위 안에 있는지 다시 확인할 때 쓰는 이 오브젝트의 트리거 콜라이더다.
     private Tween _promptFadeTween;
+    private Tween _lockedPromptFadeTween;
+    // "막힌 듯하다" 안내문 페이드 Tween이다. 입장 안내문과 따로 저장해야 서로의 페이드를 끊지 않는다.
     private Tween _turnTween;
 
     private void Awake()
@@ -145,15 +163,27 @@ public class EntrancePortal : MonoBehaviour
 
         if (promptCanvasGroup != null)
             promptCanvasGroup.alpha = 0f;
+        if (lockedPromptCanvasGroup != null)
+            lockedPromptCanvasGroup.alpha = 0f;
 
         if (inputActionAsset != null)
             _moveAction = inputActionAsset.FindActionMap("Player", throwIfNotFound: true).FindAction("Move", throwIfNotFound: true);
         // Move 액션의 Enable/Disable은 PlayerController가 관리하므로 여기서는 값만 읽는다.
     }
 
+    // 세이브에 이미 열린 포털로 기록돼 있으면(이어하기, 사망 후 재로드) 열린 상태로 시작한다.
+    // SaveManager.Instance가 Awake 순서에 따라 아직 없을 수 있어 Start에서 확인한다.
+    private void Start()
+    {
+        if (saveUnlock && !_isUnlocked && SaveManager.Instance != null
+            && SaveManager.Instance.IsPuzzleSolved(SaveManager.GetObjectId(gameObject)))
+            _isUnlocked = true;
+    }
+
     private void OnDestroy()
     {
         _promptFadeTween?.Kill();
+        _lockedPromptFadeTween?.Kill();
         _turnTween?.Kill();
     }
 
@@ -167,7 +197,16 @@ public class EntrancePortal : MonoBehaviour
     // 잠긴 포털을 연다. 퍼즐 완료 이벤트(UnityEvent)에 연결해서 호출한다.
     public void Unlock()
     {
+        if (_isUnlocked) return;
         _isUnlocked = true;
+
+        // 열리기 전에 떠 있던 "막힌 듯하다" 안내문을 치우고, 범위 판정을 처음부터 다시 하게 해
+        // 플레이어가 이미 앞에 서 있다면 다음 프레임에 입장 안내문이 바로 뜨게 한다.
+        if (_playerInRange) SetLockedPromptVisible(false);
+        _playerInRange = false;
+
+        if (saveUnlock && SaveManager.Instance != null)
+            SaveManager.Instance.MarkPuzzleSolved(SaveManager.GetObjectId(gameObject));
     }
 
     [Button("잠금 해제 테스트")]
@@ -180,12 +219,22 @@ public class EntrancePortal : MonoBehaviour
     private void Update()
     {
         if (_isEntering) return;
-        if (!_isUnlocked) return;
-        // 잠겨 있는 동안은 안내문도 띄우지 않고 입장도 받지 않는다.
+        if (!_isUnlocked)
+        {
+            UpdateLockedPrompt();
+            return;
+        }
+        // 잠겨 있는 동안은 입장을 받지 않는다. "막힌 듯하다" 안내문이 연결돼 있으면 그것만 띄운다.
 
-        if (_player != null && !_player.enabled) return;
+        if (_player != null && !_player.enabled)
+        {
+            _wasUpPressed = true;
+            return;
+        }
         // 다른 컷신(예: 열선 가로등 얼음벽 연출)이 플레이어 조작을 잠근 동안에는 입장하지 않는다.
         // 두 연출이 같은 화면 페이드를 동시에 쓰면 한쪽 연출이 끝나지 못하고 멈추기 때문이다.
+        // 이때 ↑를 "누르고 있던 상태"로 기록해 두어, 다른 포털을 타고 이 포털 범위로 걸어 나온 직후
+        // ↑를 계속 누르고 있어도 바로 다시 입장하지 않고, 손을 뗐다 다시 눌러야 입장하게 한다.
 
         // 자동 입장은 키 입력과 안내문 없이, 몸통 중심이 트리거 안에 들어온 순간 바로 연출을 시작한다.
         // 순간이동 뒤에는 트리거 밖이므로 다시 시작되지 않는다.
@@ -267,6 +316,9 @@ public class EntrancePortal : MonoBehaviour
         // 걸어 나오며 Z가 바뀐 경우(예: 엘리베이터에서 카메라 쪽으로 걸어 나옴) 멈춘 위치를 사이드뷰 라인으로 삼는다.
         // 이 호출이 없으면 라인이 도착 지점 Z로 남아, 조작이 돌아오자마자 그쪽으로 다시 끌려간다.
 
+        onArrived?.Invoke();
+        // 도착을 알려 다른 포털을 열거나(Unlock) 하는 연결된 동작을 실행한다.
+
         // 입장 직후 다음 목표를 몰라 헤매지 않게, 보여줄 지점이 있으면 카메라가 한 바퀴 비춰 준다.
         // 이 동안 플레이어는 계속 비활성 상태라 조작할 수 없다.
         if (arrivalFocusPoint != null && sideViewCamera != null && !(showFocusOnlyOnce && _hasShownFocus))
@@ -341,6 +393,27 @@ public class EntrancePortal : MonoBehaviour
 
         _promptFadeTween?.Kill();
         _promptFadeTween = promptCanvasGroup.DOFade(visible ? 1f : 0f, promptFadeDuration);
+    }
+
+    // 잠긴 동안 범위 안/밖이 바뀔 때만 "막힌 듯하다" 안내문을 켜고 끈다. 입장 안내문과 같은 방식으로 실제 위치를 매 프레임 확인한다.
+    private void UpdateLockedPrompt()
+    {
+        if (lockedPromptCanvasGroup == null) return;
+        if (_player != null && !_player.enabled) return;
+
+        bool inRange = IsPlayerInsideTrigger();
+        if (inRange == _playerInRange) return;
+
+        _playerInRange = inRange;
+        SetLockedPromptVisible(inRange);
+    }
+
+    private void SetLockedPromptVisible(bool visible)
+    {
+        if (lockedPromptCanvasGroup == null) return;
+
+        _lockedPromptFadeTween?.Kill();
+        _lockedPromptFadeTween = lockedPromptCanvasGroup.DOFade(visible ? 1f : 0f, promptFadeDuration);
     }
 
     [Button("입장 테스트 (Play Mode, 범위 안에서)")]

@@ -160,6 +160,7 @@ public class WindZoneVolume : MonoBehaviour
         {
             Vector3 velocity = windDirection.normalized * (windStrength * _strengthMultiplier);
             _playerInZone.SetWindZone(velocity);
+            _umbrellaInZone?.MarkRidingWind();
         }
         else
         {

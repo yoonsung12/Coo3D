@@ -57,8 +57,9 @@ public class ScenePortal : MonoBehaviour
         // 기록이 없으면 새 씬의 PlayerHealth.Awake()가 최대 체력(자판기 보너스 포함)으로 시작한다.
         SceneTransitionData.HasPendingHealth = false;
 
-        // 새 씬의 SeasonGaugeManager가 게이지/디버프를 초기화하지 않고 이어가도록 신호를 보낸다.
-        SceneTransitionData.PreserveSeasonState = true;
+        // 맵을 넘어가면 체력처럼 계절 게이지와 걸려 있던 디버프도 전부 초기화한다.
+        // false면 새 씬의 SeasonGaugeManager.Awake()가 게이지/디버프/디버프 타이머를 리셋한다.
+        SceneTransitionData.PreserveSeasonState = false;
 
         // ScreenFader는 DontDestroyOnLoad 싱글턴이라 씬 전환 후에도 같은 인스턴스가 유지되므로,
         // 여기서 검게 덮은 화면이 씬 로드 동안 자연스럽게 이어진다.
