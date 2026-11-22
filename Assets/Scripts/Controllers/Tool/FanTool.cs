@@ -28,12 +28,20 @@ public class FanTool : BaseTool
     [Title("충전 블라스트 설정")]
     [SerializeField, LabelText("최대 충전 시간")]
     private float maxChargeTime = 2f;
-    // 이 시간까지 충전하면 3단계 블라스트가 발동된다.
+    // 충전 시간이 이 값에서 더 늘지 않는다. 블라스트 밀림 세기(최소~최대)가 이 시간을 기준으로 커진다.
 
     [SerializeField, LabelText("1단계 최소 충전 시간")]
     private float minChargeTime = 0.4f;
     // 이 시간보다 짧게 누르고 떼면 블라스트가 나가지 않고 취소된다.
     // Shift+X를 짧게 연타해 1단계 블라스트를 연속으로 쏘는 것을 막기 위한 값이다. 커질수록 1단계까지 오래 눌러야 한다.
+
+    [SerializeField, LabelText("2단계 진입 시간")]
+    private float level2ChargeTime = 1.0f;
+    // 충전을 이 시간 이상 하면 2단계가 된다. 1단계는 "최소 충전 시간 ~ 이 값" 동안 유지된다.
+
+    [SerializeField, LabelText("3단계 진입 시간")]
+    private float level3ChargeTime = 1.6f;
+    // 충전을 이 시간 이상 하면 3단계가 된다. 최대 충전 시간보다 크면 3단계에 도달하지 못하므로 그 이하로 둔다.
 
     [SerializeField, LabelText("충전 중 이동속도 배율")]
     private float chargeSlowMultiplier = 0.3f;
@@ -393,10 +401,10 @@ public class FanTool : BaseTool
         // 최소 충전 시간 전에는 0(아직 단계 없음)을 돌려준다. 이때는 차징 소리·이펙트·반동이 나오지 않고, 떼도 블라스트가 나가지 않는다.
         if (_chargeTime < minChargeTime) return 0;
 
-        // 그 뒤로는 충전 진행도를 0.33/0.66 기준으로 1/2/3단계로 나눈다.
-        float ratio = _chargeTime / maxChargeTime;
-        if (ratio < 0.33f) return 1;
-        if (ratio < 0.66f) return 2;
+        // 그 뒤로는 Inspector의 2/3단계 진입 시간(초)으로 단계를 나눈다.
+        // 예전에는 최대 충전 시간의 33%/66%로 나눴는데, 최소 충전 시간이 생기면서 1단계 구간이 너무 짧아져 초 단위로 바꿨다.
+        if (_chargeTime < level2ChargeTime) return 1;
+        if (_chargeTime < level3ChargeTime) return 2;
         return 3;
     }
 

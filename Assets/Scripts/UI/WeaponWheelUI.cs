@@ -214,7 +214,22 @@ public class WeaponWheelUI : MonoBehaviour
         // 휠 자신이 멈춘 경우는 여기 올 수 없다(이미 열려 있으면 Z를 새로 누를 수 없음).
         if (Time.timeScale == 0f) return;
 
+        // 카메라 주목 연출(우산 비둘기 등)·순간이동·낙사처럼 플레이어 조작을 잠근 동안에도 열지 않는다.
+        // 이런 연출들은 모두 PlayerController를 꺼서 조작을 잠그므로, 그 상태를 그대로 기준으로 쓴다.
+        if (IsPlayerControlLocked()) return;
+
         OpenWheel();
+    }
+
+    private PlayerController _playerController;
+    // 조작 잠금 여부를 확인할 플레이어다. 처음 필요할 때 PlayerHealth.Instance에서 한 번만 찾아 둔다.
+
+    private bool IsPlayerControlLocked()
+    {
+        if (_playerController == null && PlayerHealth.Instance != null)
+            _playerController = PlayerHealth.Instance.GetComponent<PlayerController>();
+
+        return _playerController != null && !_playerController.enabled;
     }
 
     // Z 키를 뗐을 때 선택된 슬롯으로 전환하고 시간을 재개한다.
