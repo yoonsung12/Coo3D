@@ -114,8 +114,10 @@ public class DarkZone : MonoBehaviour
         // 플레이어가 그냥 통과해야 하므로 트리거로 강제한다.
 
         if (skyLight != null) _originalLightIntensity = skyLight.intensity;
-        _originalAmbientProbe = RenderSettings.ambientProbe;
-        _originalReflectionIntensity = RenderSettings.reflectionIntensity;
+        // 환경광·반사광 원본은 여기서 저장하지 않고, 처음 어두워지기 직전(Darken)에 저장한다.
+        // 구운 조명 데이터가 없는 씬은 환경광을 Skybox로부터 실행 중에 계산하는데,
+        // 빌드에서는 Awake 시점에 이 계산이 끝나지 않아 0(검정)이 저장되고,
+        // 전원을 켜 "원래 값"으로 되돌릴 때 맵 전체가 새까매지는 문제가 있었다.
 
         _originalSkybox = RenderSettings.skybox;
         if (_originalSkybox != null && _originalSkybox.HasProperty(ExposureId))
@@ -238,11 +240,28 @@ public class DarkZone : MonoBehaviour
     {
         if (_isDark) return;
 
+        // 완전히 밝은 상태에서 어두워지기 시작할 때만 원본을 저장한다.
+        // 어두워지는 중이거나 덜 밝아진 상태에서 저장하면 어두운 값이 원본으로 굳어버리기 때문이다.
+        if (_currentAmbientScale >= 1f)
+            CaptureOriginalAmbient();
+
         _isDark = true;
         FadeTo(darkLightIntensity, darkAmbientScale, darkenDuration);
     }
 
-    // 하늘 조명과 환경광을 씬 시작 때의 원래 값으로 서서히 되돌린다.
+    // 지금 엔진이 쓰고 있는 환경광·반사광을 "원래 밝기"로 저장한다.
+    // 플레이어가 구역에 걸어 들어온 시점에는 엔진의 환경광 계산이 이미 끝나 있으므로 올바른 값이 저장된다.
+    private void CaptureOriginalAmbient()
+    {
+        _originalAmbientProbe = RenderSettings.ambientProbe;
+        _originalReflectionIntensity = RenderSettings.reflectionIntensity;
+
+        // 빌드에서 원인이 맞았는지 Player.log로 확인하기 위한 임시 로그다. 확인되면 지운다.
+        float dc = _originalAmbientProbe[0, 0] + _originalAmbientProbe[1, 0] + _originalAmbientProbe[2, 0];
+        Debug.Log($"[DarkZone] 원본 환경광 저장: DC={dc:F3}, 반사광={_originalReflectionIntensity:F3}");
+    }
+
+    // 하늘 조명과 환경광을 저장해 둔 원래 값으로 서서히 되돌린다.
     private void Brighten()
     {
         if (!_isDark) return;

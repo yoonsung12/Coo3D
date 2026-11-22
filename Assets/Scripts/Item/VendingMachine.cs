@@ -31,6 +31,13 @@ public class VendingMachine : MonoBehaviour
     private float promptFadeDuration = 0.2f;
     // 값이 클수록 프롬프트가 더 천천히 나타나고 사라진다.
 
+    [SerializeField, LabelText("네온 간판 (선택)")]
+    private VendingMachineSign sign;
+    // 플레이어가 범위에 들어오면 켜지고 나가면 꺼질 간판이다. 비워두면 기존과 동일하게 동작한다.
+
+    public int CoinCost => coinCost;
+    // 간판 등 다른 스크립트가 실제 가격을 표시할 수 있도록 읽기 전용으로 공개한다.
+
     private Tween _promptFadeTween;
 
     [Title("런타임 상태 (읽기 전용)")]
@@ -72,6 +79,7 @@ public class VendingMachine : MonoBehaviour
         {
             _playerInRange = true;
             SetPromptVisible(true);
+            if (sign != null) sign.SetLit(true);
         }
     }
 
@@ -81,6 +89,7 @@ public class VendingMachine : MonoBehaviour
         {
             _playerInRange = false;
             SetPromptVisible(false);
+            if (sign != null) sign.SetLit(false);
         }
     }
 
