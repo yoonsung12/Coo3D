@@ -27,6 +27,11 @@ public class BoxLaneGoal : MonoBehaviour
     private Transform transferPoint;
     // 정답 후 플레이어가 옮겨질 위치(사이드뷰 라인 위, 바닥 높이)다. 반드시 사이드뷰 라인 구역 안에 둔다.
 
+    [SerializeField, LabelText("정답 후 끌 탑다운 구역")]
+    private ViewModeZone topDownZoneToDisable;
+    // 퍼즐을 푼 뒤에는 다시 탑다운으로 바뀌지 않도록 이 구역 오브젝트를 꺼 버린다. 비워 두면 아무것도 끄지 않는다.
+    // 구역이 꺼지면 사이드뷰 라인 오른쪽 출구도 "탑다운 구역과 겹칠 때만" 탑다운으로 바꾸므로 함께 사이드뷰로 유지된다.
+
     [Title("페이드 이동 연출")]
     [SerializeField, LabelText("페이드 아웃 시간")]
     private float fadeOutDuration = 0.4f;
@@ -145,6 +150,16 @@ public class BoxLaneGoal : MonoBehaviour
 
         // 상자가 자리를 잡자마자 사이드뷰 라인을 켠다. 이후 이 라인 안에서는 항상 사이드뷰가 유지된다.
         laneZone.Activate();
+
+        // 탑다운 구역도 바로 끈다. 플레이어는 잠시 뒤 MovePlayerToLane에서 사이드뷰로 바뀐다.
+        DisableTopDownZone();
+    }
+
+    // 퍼즐을 푼 뒤 이 씬에서 다시 탑다운으로 바뀌지 않도록 연결된 탑다운 구역을 끈다.
+    private void DisableTopDownZone()
+    {
+        if (topDownZoneToDisable != null)
+            topDownZoneToDisable.gameObject.SetActive(false);
     }
 
     // 불러오기 직후 호출된다. Solve()와 같은 최종 상태를 연출·플레이어 이동 없이 즉시 적용한다.
@@ -166,6 +181,12 @@ public class BoxLaneGoal : MonoBehaviour
         targetBox.transform.localScale = _boxStartScale;
 
         laneZone.Activate();
+
+        // 이어하기 리스폰은 Start보다 먼저 일어나 이미 탑다운으로 판정됐을 수 있다.
+        // 구역을 끈 뒤 현재 위치 기준으로 시점을 다시 맞춰 사이드뷰로 돌려놓는다.
+        DisableTopDownZone();
+        if (player != null)
+            player.SyncViewModeToPosition();
     }
 
     // 화면을 덮은 상태에서 플레이어를 이동 지점으로 옮기고 사이드뷰로 바꾼 뒤 다시 화면을 연다.

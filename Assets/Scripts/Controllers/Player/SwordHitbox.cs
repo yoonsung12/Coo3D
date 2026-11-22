@@ -11,8 +11,6 @@ public class SwordHitbox : MonoBehaviour
     private float damage = 20f;
     [SerializeField, LabelText("타격 레이어")]
     private LayerMask hitLayers;
-    [SerializeField, LabelText("PillowDurability (선택)")]
-    private PillowDurability pillowDurability;
 
     [BoxGroup("전방 판정 범위")]
     [SerializeField, LabelText("앞 거리 (m)"), Min(0.1f)]
@@ -119,10 +117,7 @@ public class SwordHitbox : MonoBehaviour
             // TakeDamage로 대상이 파괴되기 전에 접촉 위치를 구한다.
             Vector3 hitPoint = GetVFXHitPoint(other);
             Vector3 hitNormal = GetVFXHitNormal(hitPoint);
-            float multiplier = pillowDurability != null
-                ? pillowDurability.GetDamageMultiplier() : 1f;
-
-            target.TakeDamage(damage * multiplier);
+            target.TakeDamage(damage);
             PlayPillowHitVFX(hitPoint, hitNormal);
             PlayHitSound(hitPoint);
             TriggerHitFeedback();

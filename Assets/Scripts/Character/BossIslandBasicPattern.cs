@@ -35,6 +35,13 @@ public class BossIslandBasicPattern : MonoBehaviour
     // 한 공격이 끝난 뒤 다음 공격을 고르기까지 걷는 시간이다. 길수록 보스가 느긋해진다.
 
     [TabGroup("설정", "스케줄")]
+    [SerializeField, LabelText("전투 시작 대기 시간")]
+    private float startDelay = 2f;
+    // 씬에 들어와 화면이 밝아진 뒤, 보스가 걷거나 공격하기 시작할 때까지 기다리는 시간이다.
+    // 씬 로드 직후 프레임이 크게 끊기면 공격 타이머가 순식간에 지나가 화면이 보이기도 전에 맞는 문제를 막는다.
+    // 값이 클수록 플레이어가 자리를 잡을 여유가 길어진다.
+
+    [TabGroup("설정", "스케줄")]
     [SerializeField, LabelText("밀치기(날개 쓸기) 거리")]
     private float sweepRange = 3.5f;
     // 평면 거리가 이 값 이하로 바짝 붙었고 쿨타임이 끝났으면 날개 쓸기로 밀쳐낸다.
@@ -113,6 +120,14 @@ public class BossIslandBasicPattern : MonoBehaviour
     [ReadOnly, ShowInInspector, LabelText("밀치기 남은 쿨타임")]
     private float SweepCooldownRemaining => Mathf.Max(0f, _nextSweepTime - Time.time);
 
+    [FoldoutGroup("런타임 상태")]
+    [ReadOnly, ShowInInspector, LabelText("전투 시작까지 남은 시간")]
+    private float _startDelayRemaining;
+    // 0이 되기 전까지는 걷지도 공격하지도 않는다.
+
+    private const float MaxStartDelayStep = 0.1f;
+    // 로드 직후 끊긴 프레임 하나가 대기 시간을 한꺼번에 소모하지 않도록, 한 프레임에 줄어드는 양을 이 값으로 제한한다.
+
     private float _nextSweepTime;
     // 이 시각(Time.time) 이후부터 다시 날개 쓸기를 쓸 수 있다.
 
@@ -135,7 +150,21 @@ public class BossIslandBasicPattern : MonoBehaviour
         _boss = GetComponent<Boss>();
         _rb = GetComponent<Rigidbody>();
         _timer = cycleInterval;
+        _startDelayRemaining = startDelay;
         bossAnim = GetComponent<BossAnimationController>();
+    }
+
+    // 전투 시작 대기 중인지 확인하고, 화면이 보이는 동안에만 대기 시간을 줄인다. Update에서만 호출한다.
+    // 포탈 진입, 사망 후 재시작, 이어하기 모두 ScreenFader로 화면을 덮었다가 걷어내므로 같은 방식으로 처리된다.
+    private bool TickStartDelay()
+    {
+        if (_startDelayRemaining <= 0f) return false;
+
+        // 화면이 아직 검게 덮여 있으면(로딩 중·페이드 인 전) 시간을 세지 않는다.
+        if (ScreenFader.Instance != null && ScreenFader.Instance.IsScreenCovered) return true;
+
+        _startDelayRemaining -= Mathf.Min(Time.deltaTime, MaxStartDelayStep);
+        return _startDelayRemaining > 0f;
     }
 
     private void OnEnable()
@@ -161,6 +190,13 @@ public class BossIslandBasicPattern : MonoBehaviour
 
         _flatDistance = (GetPlayerFlat() - GetBossFlat()).magnitude;
 
+        // 전투 시작 대기 중에는 플레이어를 바라보기만 하고 공격 타이머는 세지 않는다.
+        if (TickStartDelay())
+        {
+            FacePlayer();
+            return;
+        }
+
         if (!_boss.CanBasicAttack || _isAttacking || _isReturning) return;
 
         // 공격 중에는 방향을 고정하므로, 회전은 공격이 아닐 때만 한다.
@@ -178,8 +214,9 @@ public class BossIslandBasicPattern : MonoBehaviour
 
     private void FixedUpdate()
     {
+        // 전투 시작 대기 중(_startDelayRemaining > 0)에는 걸어서 다가오지도 않는다.
         bool canWalk = !_boss.IsDead && _boss.CanBasicAttack && !_isAttacking
-                       && playerController != null && !_rb.isKinematic;
+                       && playerController != null && !_rb.isKinematic && _startDelayRemaining <= 0f;
 
         if (!canWalk)
         {

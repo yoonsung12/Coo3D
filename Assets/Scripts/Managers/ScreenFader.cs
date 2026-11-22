@@ -26,6 +26,10 @@ public class ScreenFader : MonoBehaviour
     private Tween _fadeTween;
     // 페이드 중 다시 호출되는 경우를 대비해 현재 실행 중인 Tween을 저장해 둔다.
 
+    // 화면이 아직 절반 넘게 검게 덮여 있는지 알려준다(로딩 중이거나 페이드 인이 덜 된 상태).
+    // 보스처럼 "플레이어가 화면을 볼 수 있을 때부터" 행동을 시작해야 하는 스크립트가 읽기만 한다.
+    public bool IsScreenCovered => fadePanel != null && fadePanel.alpha > 0.5f;
+
     // Title.unity를 거치지 않고(예: SampleScene을 바로 열어 Play) 다른 씬에서 곧바로 Play해도
     // 페이드가 항상 동작하도록, 첫 씬이 로드되기 전에 Resources의 프리팹으로 인스턴스를 미리 만들어 둔다.
     // Title에 배치된 기존 ScreenFader는 그대로 두어도 되는데, Awake()의 중복 생성 방지 로직이

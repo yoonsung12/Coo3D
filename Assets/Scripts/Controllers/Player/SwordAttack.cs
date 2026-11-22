@@ -190,7 +190,7 @@ public class SwordAttack : MonoBehaviour
     // NFBTEnemyAI의 Counter(반격) 분기가 Player의 공격 시작/종료 타이밍을 읽기 위해 사용하는 프로퍼티다.
     public bool IsAttacking => _isAttacking;
 
-    // 공격이 실제로 시작될 때마다 발행된다. PillowDurability가 이 이벤트를 구독해 내구도를 소모한다.
+    // 공격이 실제로 시작될 때마다 발행된다. 공격 시작 타이밍이 필요한 스크립트가 구독한다.
     public event Action OnAttackFired;
 
     // 0 = 아래→위 (Swing 0), 1 = 위→아래 (Swing 1)

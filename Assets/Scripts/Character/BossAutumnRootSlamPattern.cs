@@ -244,6 +244,17 @@ public class BossAutumnRootSlamPattern : BossSeasonPatternBase
     [SerializeField, LabelText("쓰러질 때 카메라 흔들림 세기")]
     private float collapseShakeStrength = 0.5f;
 
+    [TabGroup("설정", "피 연출")]
+    [SerializeField, LabelText("피 방울 프리팹 (선택)")]
+    private ParticleSystem bloodBurstPrefab;
+    // 뿌리에 찔렸을 때만 한 번 생성해 "명중했다"를 눈으로 구분하게 한다. 빗나가면 생성하지 않는다.
+    // 비워 두면 피 연출 없이 기존과 똑같이 동작한다. 프리팹은 재생이 끝나면 스스로 삭제된다(Stop Action: Destroy).
+
+    [TabGroup("설정", "피 연출")]
+    [SerializeField, LabelText("피 위치 높이 보정")]
+    private float bloodHeightOffset = -0.5f;
+    // 보스 중심(Rigidbody 위치)에서 위아래로 옮길 거리다. 음수면 아래쪽 — 뿌리가 꽂히는 몸통 아래에서 튀게 한다.
+
     [FoldoutGroup("런타임 상태")]
     [ReadOnly, ShowInInspector, LabelText("현재 단계")]
     private string _currentPhase = "대기";
@@ -539,6 +550,8 @@ public class BossAutumnRootSlamPattern : BossSeasonPatternBase
         if (audioSource != null && impaleClip != null) audioSource.PlayOneShot(impaleClip, impaleVolume);
         if (sideViewCamera != null) sideViewCamera.Shake(impaleShakeDuration, impaleShakeStrength);
 
+        SpawnBlood();
+
         if (bossVisual != null)
         {
             _poseSequence?.Kill();
@@ -547,6 +560,17 @@ public class BossAutumnRootSlamPattern : BossSeasonPatternBase
                 .Join(bossVisual.DOPunchRotation(new Vector3(0f, 0f, 15f), 0.35f, 8, 0.6f))
                 .SetLink(gameObject);
         }
+    }
+
+    // 찔린 순간 보스 몸통 아래쪽에서 작은 피 방울을 살짝 튀긴다. 명중했을 때만 호출되므로 빗나가면 빨간색이 전혀 나오지 않는다.
+    // 따로 정리하지 않아도 되도록 프리팹의 Stop Action을 Destroy로 두어 재생이 끝나면 스스로 사라지게 한다.
+    private void SpawnBlood()
+    {
+        if (bloodBurstPrefab == null) return;
+
+        Vector3 position = _rb.position + Vector3.up * bloodHeightOffset;
+        ParticleSystem blood = Instantiate(bloodBurstPrefab, position, Quaternion.identity);
+        blood.Play();
     }
 
     // 빗나갔을 때: 착지점에 충격파 범위를 잠깐 보여주고, 안에 있던 플레이어에게 피해를 준다.

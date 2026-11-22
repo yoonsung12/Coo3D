@@ -67,6 +67,9 @@ public class Firework : MonoBehaviour, IIgnitable
     [ReadOnly, ShowInInspector, LabelText("점화됨")]
     private bool _ignited;
 
+    public bool IsIgnited => _ignited;
+    // IgniteInteractPrompt가 이미 불이 붙은 발사대에는 점화 안내를 띄우지 않기 위해 읽는다.
+
     private Sequence _sequence;
     private Tween _crushTween;
 

@@ -30,6 +30,11 @@ public class FanTool : BaseTool
     private float maxChargeTime = 2f;
     // 이 시간까지 충전하면 3단계 블라스트가 발동된다.
 
+    [SerializeField, LabelText("1단계 최소 충전 시간")]
+    private float minChargeTime = 0.4f;
+    // 이 시간보다 짧게 누르고 떼면 블라스트가 나가지 않고 취소된다.
+    // Shift+X를 짧게 연타해 1단계 블라스트를 연속으로 쏘는 것을 막기 위한 값이다. 커질수록 1단계까지 오래 눌러야 한다.
+
     [SerializeField, LabelText("충전 중 이동속도 배율")]
     private float chargeSlowMultiplier = 0.3f;
     // 충전 중 플레이어 이동속도를 줄여 신중하게 조준하도록 유도한다.
@@ -213,7 +218,8 @@ public class FanTool : BaseTool
     // ToolManager에서 바람 버튼을 뗄 때 호출한다.
     public void OnBlowRelease()
     {
-        if (_state == FanState.Charging)
+        // 최소 충전 시간(1단계)에 도달하지 못했으면 블라스트 없이 취소만 한다.
+        if (_state == FanState.Charging && GetFanLevel() > 0)
             Blast();
 
         StopUsing();
@@ -350,6 +356,8 @@ public class FanTool : BaseTool
     private float GetChargeRecoilByLevel()
     {
         int level = GetFanLevel();
+        // 1단계에 도달하기 전에는 뒤로 밀지 않는다.
+        if (level == 0) return 0f;
         if (level == 1) return chargeRecoilLevel1;
         if (level == 2) return chargeRecoilLevel2;
         return chargeRecoilLevel3;
@@ -382,7 +390,10 @@ public class FanTool : BaseTool
 
     private int GetFanLevel()
     {
-        // 충전 진행도를 0.33/0.66 기준으로 1/2/3단계로 나눈다.
+        // 최소 충전 시간 전에는 0(아직 단계 없음)을 돌려준다. 이때는 차징 소리·이펙트·반동이 나오지 않고, 떼도 블라스트가 나가지 않는다.
+        if (_chargeTime < minChargeTime) return 0;
+
+        // 그 뒤로는 충전 진행도를 0.33/0.66 기준으로 1/2/3단계로 나눈다.
         float ratio = _chargeTime / maxChargeTime;
         if (ratio < 0.33f) return 1;
         if (ratio < 0.66f) return 2;

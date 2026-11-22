@@ -6,6 +6,10 @@ using UnityEngine;
 // 디버프를 발동한다. 동률이면 해당 계절들 중 랜덤으로 하나를 선택한다.
 // SeasonManager와 마찬가지로 씬에 반드시 하나만 존재해야 하며, AddGauge 등은 static으로
 // 노출해 다른 스크립트(낙하물 등)가 Inspector 참조 없이 바로 호출할 수 있게 한다.
+// 게이지/디버프 값은 static이라 씬이 바뀌어도 남는다. Awake에서 이를 초기화하는데,
+// SeasonGaugeUI.OnEnable 등이 그보다 먼저 실행되면 이전 맵의 디버프를 읽어 화면에 남겨 버린다.
+// 그래서 실행 순서를 앞당겨 다른 스크립트보다 항상 먼저 초기화되게 한다.
+[DefaultExecutionOrder(-100)]
 public class SeasonGaugeManager : MonoBehaviour
 {
     [Title("게이지 데이터")]

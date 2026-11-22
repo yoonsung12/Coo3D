@@ -19,6 +19,22 @@ public class IgniteInteractPrompt : MonoBehaviour
     [SerializeField, LabelText("프롬프트 페이드 시간")]
     private float promptFadeDuration = 0.2f;
 
+    [Title("문구 바꾸기 (선택)")]
+    [SerializeField, LabelText("횃불 꺼져 있어도 안내")]
+    private bool showWhenTorchUnlit;
+    // 끄면 기존처럼 켜진 횃불을 들고 있을 때만 프롬프트가 뜬다(가을 도화선, 보스 뿌리).
+    // 켜면 범위 안에서는 항상 뜨고, 횃불 상태에 따라 아래 두 문구 중 하나를 보여준다(겨울 폭죽).
+
+    [SerializeField, LabelText("프롬프트 텍스트"), ShowIf(nameof(showWhenTorchUnlit))]
+    private Text promptText;
+    // 문구를 바꿔 끼울 UI Text다. 프로젝트의 다른 프롬프트처럼 한글이 나오는 UI Text를 쓴다.
+
+    [SerializeField, LabelText("횃불 없을 때 문구"), ShowIf(nameof(showWhenTorchUnlit))]
+    private string unlitMessage = "횃불로 점화";
+
+    [SerializeField, LabelText("횃불 켜졌을 때 문구"), ShowIf(nameof(showWhenTorchUnlit))]
+    private string litMessage = "X: 불 붙이기";
+
     [Title("클릭 유도 아이콘")]
     [SerializeField, LabelText("마우스 아이콘 Image")]
     private Image mouseIconImage;
@@ -53,10 +69,15 @@ public class IgniteInteractPrompt : MonoBehaviour
     private bool _isPromptVisible;
     private FuseLine _fuseLine;
     // 이 프롬프트가 안내하는 도화선이다. 도화선 밑에 있지 않으면 null이고, 그때는 기존처럼 범위와 횃불만 본다.
+    private Firework _firework;
+    // 이 프롬프트가 안내하는 불꽃놀이 발사대다. 이미 불이 붙었으면 더 안내하지 않는다.
+    private bool _lastTorchLit;
+    // 문구를 매 프레임 다시 쓰지 않도록, 마지막으로 반영한 횃불 상태를 기억한다.
 
     private void Awake()
     {
         _fuseLine = GetComponentInParent<FuseLine>();
+        _firework = GetComponentInParent<Firework>();
 
         _triggerCollider = GetComponent<SphereCollider>();
         _triggerCollider.isTrigger = true;
@@ -93,9 +114,18 @@ public class IgniteInteractPrompt : MonoBehaviour
         // 매 프레임 확인해야, 범위 안에 서 있는 상태에서 나중에 횃불을 켜도 바로 반응한다.
         // 도화선은 안 탄 상태(Unlit)에서만 불이 붙으므로 그때만 안내한다.
         // 타는 중이거나 다 타면 숨기고, 은행에 꺼져 복구가 끝나면 다시 붙여야 하니 다시 보여준다.
-        bool canIgnite = _fuseLine == null || _fuseLine.CurrentState == FuseLine.FuseState.Unlit;
-        bool shouldShow = _playerInRange && TorchTool.IsTorchLit && canIgnite;
+        bool canIgnite = (_fuseLine == null || _fuseLine.CurrentState == FuseLine.FuseState.Unlit)
+                         && (_firework == null || !_firework.IsIgnited);
+        bool torchOk = showWhenTorchUnlit || TorchTool.IsTorchLit;
+        bool shouldShow = _playerInRange && torchOk && canIgnite;
+
+        // 보이는 동안 횃불을 켜거나 끄면 문구만 바로 바꿔 준다.
+        if (shouldShow && showWhenTorchUnlit && TorchTool.IsTorchLit != _lastTorchLit)
+            RefreshMessage();
+
         if (shouldShow == _isPromptVisible) return;
+
+        if (shouldShow) RefreshMessage();
 
         _isPromptVisible = shouldShow;
         SetPromptVisible(shouldShow);
@@ -111,6 +141,14 @@ public class IgniteInteractPrompt : MonoBehaviour
     {
         if (other.GetComponent<PlayerController>() != null)
             _playerInRange = false;
+    }
+
+    // 켜진 횃불을 들고 있으면 "X: 불 붙이기", 아니면 "횃불로 점화"를 보여준다. 옵션이 꺼져 있으면 문구를 건드리지 않는다.
+    private void RefreshMessage()
+    {
+        _lastTorchLit = TorchTool.IsTorchLit;
+        if (!showWhenTorchUnlit || promptText == null) return;
+        promptText.text = _lastTorchLit ? litMessage : unlitMessage;
     }
 
     // "불붙이기" 프롬프트를 DOTween 페이드로 보여주거나 숨긴다.
