@@ -142,6 +142,9 @@ public class PauseMenuUI : MonoBehaviour
         // 사운드 설정 화면도 같은 Esc(Cancel)로 닫히므로 가이드북과 같은 방식으로 무시한다.
         if (SoundSettingsUI.IsOpen || SoundSettingsUI.LastClosedFrame == Time.frameCount) return;
 
+        // 게임 클리어 화면이 떠 있는 동안에는 파우즈 메뉴가 겹쳐 열리지 않도록 ESC를 무시한다.
+        if (GameClearUI.IsShowing) return;
+
         // 무기 휠이 열려 있는 동안에는 ESC를 무시한다.
         // 두 UI가 동시에 Time.timeScale을 제어하면 한쪽을 닫을 때 시간이 잘못 풀리는 문제가 생길 수 있다.
         if (weaponWheelUI != null && weaponWheelUI.IsOpen) return;

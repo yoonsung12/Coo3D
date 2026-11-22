@@ -231,6 +231,12 @@ public class BossSummerIslandPattern : BossSeasonPatternBase
     // 줄마다 이어서 비워 두는 칸 수다(맨 바깥 칸 제외). 2칸이면 틈 폭이 약 2.7m다.
 
     [TabGroup("설정", "견제")]
+    [SerializeField, LabelText("[흐름] 구멍 개수"), Min(1)]
+    private int flowHoleCount = 3;
+    // 한 줄에 빠져나갈 구멍(틈 묶음)을 몇 군데 만들지 정한다. 클수록 피할 길이 많아져 쉬워진다.
+    // 구멍 하나의 폭은 위의 '틈 개수'를 따른다. 1이면 예전처럼 한 군데만 뚫린다.
+
+    [TabGroup("설정", "견제")]
     [SerializeField, LabelText("[흐름] 이동 속도")]
     private float flowSpeed = 4f;
     // 기둥이 흐르는 속도(m/s)다. 빠를수록 피하기 어렵다.
@@ -244,6 +250,12 @@ public class BossSummerIslandPattern : BossSeasonPatternBase
     [SerializeField, LabelText("[포위] 틈 개수")]
     private int ringGapCount = 3;
     // 원에서 이어서 비워 두는 칸 수다. 틈 각도는 회차 내내 같다. 모일수록 틈이 좁아지니 일찍 빠져나가야 한다.
+
+    [TabGroup("설정", "견제")]
+    [SerializeField, LabelText("[포위] 구멍 개수"), Min(1)]
+    private int ringHoleCount = 3;
+    // 원 둘레에 구멍(틈 묶음)을 몇 군데 만들지 정한다. 원 둘레에 거의 고르게 나눠 배치한다.
+    // 구멍 하나의 폭은 위의 '틈 개수'를 따른다. 1이면 예전처럼 한 군데만 뚫린다.
 
     [TabGroup("설정", "견제")]
     [SerializeField, LabelText("[포위] 시작 반지름")]
@@ -618,8 +630,11 @@ public class BossSummerIslandPattern : BossSeasonPatternBase
         }
         _pillars.Clear();
 
-        foreach (AudioSource sound in _pillarSounds)
+        // FadeOutPillarSound()가 _pillarSounds에서 항목을 지우므로 foreach로 돌면 예외가 나서 사이클 코루틴이 죽는다.
+        // 뒤에서부터 돌면 지워진 항목이 아직 안 본 앞쪽 인덱스에 영향을 주지 않는다.
+        for (int i = _pillarSounds.Count - 1; i >= 0; i--)
         {
+            AudioSource sound = _pillarSounds[i];
             if (sound == null) continue;
             if (immediate) Destroy(sound.gameObject);
             else FadeOutPillarSound(sound);
@@ -697,7 +712,7 @@ public class BossSummerIslandPattern : BossSeasonPatternBase
         List<float> entryDepths = new List<float>();
         for (int r = 0; r < rows; r++)
         {
-            HashSet<int> gaps = PickFlowGapSlots(slotCount, flowGapCount, gapLimit);
+            HashSet<int> gaps = PickFlowGapSlots(slotCount, flowGapCount, flowHoleCount, gapLimit, islandLateralHalf * FlowGapFallbackRatio);
             for (int i = 0; i < slotCount; i++)
             {
                 if (gaps.Contains(i)) continue;
@@ -804,7 +819,7 @@ public class BossSummerIslandPattern : BossSeasonPatternBase
     {
         Vector3 center = GetPlayerFlatPosition(); // 시작 시점의 플레이어 위치를 중심으로 고정한다.
         int count = Mathf.Max(3, ringPillarCount);
-        HashSet<int> gaps = PickGapSlots(count, ringGapCount, false);
+        HashSet<int> gaps = PickRingGapSlots(count, ringGapCount, ringHoleCount);
 
         List<float> angles = new List<float>(); // 기둥별 각도(라디안)
         List<Vector3> startPositions = new List<Vector3>();
@@ -902,45 +917,113 @@ public class BossSummerIslandPattern : BossSeasonPatternBase
         _pillars.RemoveAll(p => p == null || group.Contains(p));
     }
 
-    // 틈 칸을 "이어 붙은" gapCount칸으로 고른다. 기둥이 촘촘한 벽이라, 칸을 흩어 빼면 사람이 지나갈 폭이 안 나오기 때문이다.
-    // excludeEdges가 true면 맨 바깥 칸(0, 마지막)은 제외한다(옆으로 돌아 나가는 길 방지).
-    // 원형(excludeEdges false)은 끝 칸과 첫 칸이 이어져 있으므로 인덱스를 한 바퀴 돌려 감는다.
-    private static HashSet<int> PickGapSlots(int slotCount, int gapCount, bool excludeEdges)
-    {
-        HashSet<int> gaps = new HashSet<int>();
-        int min = excludeEdges ? 1 : 0;
-        int max = excludeEdges ? slotCount - 1 : slotCount; // 배타적 상한
-        gapCount = Mathf.Clamp(gapCount, 0, max - min);
-        if (gapCount == 0) return gaps;
+    private const float FlowGapFallbackRatio = 0.9f;
+    // 안쪽 범위에 구멍이 다 안 들어갈 때(섬의 짧은 쪽으로 줄이 늘어설 때) 넓혀서 찾는 섬 반지름 비율이다.
+    // 1보다 작게 두어 구멍이 물 위에 생기지 않게 한다.
 
-        int start = excludeEdges ? Random.Range(min, max - gapCount + 1) : Random.Range(0, slotCount);
-        for (int i = 0; i < gapCount; i++)
-            gaps.Add(excludeEdges ? start + i : (start + i) % slotCount);
-        return gaps;
-    }
+    private const int FlowHoleAttempts = 20;
+    // 흐름 구멍 배치를 다시 뽑아 볼 최대 횟수다. 칸 수가 20여 개라 이 정도면 충분하고, 회차 시작 때 한 번만 계산해 부담이 없다.
 
-    // 흐르는 줄의 틈을 고른다. 틈 칸 전체가 섬 안쪽(중앙에서 limit 이내)에 들어오는 시작 칸 중에서 무작위로 고른다.
-    // 그래야 섬 위에 서 있는 플레이어가 물로 뛰어들지 않고도 반드시 빠져나갈 길이 생긴다.
-    private HashSet<int> PickFlowGapSlots(int slotCount, int gapCount, float limit)
+    private const int HoleSeparationSlots = 2;
+    // 구멍과 구멍 사이에 최소로 남길 기둥 수다. 0~1이면 두 구멍이 거의 붙어 하나처럼 보인다.
+
+    // 흐르는 줄의 틈을 고른다. 폭 gapCount칸짜리 구멍을 holeCount개, 서로 겹치지 않게 무작위로 고른다.
+    // 먼저 섬 안쪽(중앙에서 limit 이내)에서 고르고, 모자라면 fallbackLimit까지 넓혀서 마저 고른다.
+    // 그래야 섬 위에 서 있는 플레이어가 물로 뛰어들지 않고도 빠져나갈 길이 여러 군데 생긴다.
+    private HashSet<int> PickFlowGapSlots(int slotCount, int gapCount, int holeCount, float limit, float fallbackLimit)
     {
         gapCount = Mathf.Clamp(gapCount, 0, slotCount - 2);
         HashSet<int> gaps = new HashSet<int>();
         if (gapCount == 0) return gaps;
 
-        List<int> validStarts = new List<int>();
+        // 무작위로 고르다 보면 앞 구멍이 애매한 자리를 차지해 다음 구멍이 못 들어갈 때가 있다.
+        // 그래서 몇 번 다시 뽑아 보고, 구멍을 가장 많이 만든 배치를 쓴다(다 들어가면 바로 멈춘다).
+        List<int> chosenStarts = PickBestFlowHoles(slotCount, gapCount, holeCount, limit);
+
+        // 안쪽 범위가 좁아 다 못 넣었으면(섬의 짧은 쪽으로 줄이 늘어설 때), 넓힌 범위에서 처음부터 다시 배치한다.
+        // 안쪽에서 고른 구멍을 그대로 두고 덧붙이면, 그 구멍들이 자리를 막아 더 못 넣는 경우가 있기 때문이다.
+        if (chosenStarts.Count < holeCount)
+        {
+            List<int> widened = PickBestFlowHoles(slotCount, gapCount, holeCount, Mathf.Max(limit, fallbackLimit));
+            if (widened.Count > chosenStarts.Count) chosenStarts = widened;
+        }
+
+        // 섬이 너무 작아 조건에 맞는 칸이 하나도 없으면 가운데에 하나 둔다(예전 동작과 같다).
+        if (chosenStarts.Count == 0)
+            chosenStarts.Add(Mathf.Clamp((slotCount - gapCount) / 2, 1, slotCount - 1 - gapCount));
+
+        foreach (int start in chosenStarts)
+        {
+            for (int i = 0; i < gapCount; i++) gaps.Add(start + i);
+        }
+        return gaps;
+    }
+
+    // limit 안에서 구멍 배치를 FlowHoleAttempts번까지 뽑아 보고, 구멍이 가장 많은 배치의 시작 칸 목록을 돌려준다.
+    private List<int> PickBestFlowHoles(int slotCount, int gapCount, int holeCount, float limit)
+    {
+        List<int> best = new List<int>();
+        for (int attempt = 0; attempt < FlowHoleAttempts && best.Count < holeCount; attempt++)
+        {
+            List<int> trial = new List<int>();
+            AddFlowHoles(trial, slotCount, gapCount, holeCount, limit);
+            if (trial.Count > best.Count) best = trial;
+        }
+        return best;
+    }
+
+    // limit 안에 들어오는 시작 칸을 무작위 순서로 훑으며, 이미 고른 구멍과 겹치지 않는 것을 holeCount개까지 채운다.
+    private void AddFlowHoles(List<int> chosenStarts, int slotCount, int gapCount, int holeCount, float limit)
+    {
+        List<int> candidates = new List<int>();
         for (int start = 1; start + gapCount - 1 <= slotCount - 2; start++)
         {
             float first = SlotLateral(start, slotCount);
             float last = SlotLateral(start + gapCount - 1, slotCount);
-            if (Mathf.Abs(first) <= limit && Mathf.Abs(last) <= limit) validStarts.Add(start);
+            if (Mathf.Abs(first) <= limit && Mathf.Abs(last) <= limit) candidates.Add(start);
         }
 
-        // 섬이 너무 작아 조건에 맞는 칸이 없으면 가운데에 둔다.
-        int chosen = validStarts.Count > 0
-            ? validStarts[Random.Range(0, validStarts.Count)]
-            : Mathf.Clamp((slotCount - gapCount) / 2, 1, slotCount - 1 - gapCount);
+        // 무작위 순서로 섞어서 매번 다른 자리에 구멍이 나게 한다.
+        for (int i = candidates.Count - 1; i > 0; i--)
+        {
+            int j = Random.Range(0, i + 1);
+            (candidates[i], candidates[j]) = (candidates[j], candidates[i]);
+        }
 
-        for (int i = 0; i < gapCount; i++) gaps.Add(chosen + i);
+        foreach (int start in candidates)
+        {
+            if (chosenStarts.Count >= holeCount) return;
+
+            bool tooClose = false;
+            foreach (int other in chosenStarts)
+            {
+                // 두 구멍 사이에 기둥이 HoleSeparationSlots개 이상 남아야 한다.
+                if (Mathf.Abs(start - other) < gapCount + HoleSeparationSlots) { tooClose = true; break; }
+            }
+            if (!tooClose) chosenStarts.Add(start);
+        }
+    }
+
+    // 포위 원의 틈을 고른다. 폭 gapCount칸짜리 구멍 holeCount개를 원 둘레에 거의 고르게 나눠 놓는다.
+    // 각 구멍은 자기 구간 안에서 조금씩 흔들려, 매번 정확히 같은 각도가 되지 않게 한다.
+    private static HashSet<int> PickRingGapSlots(int slotCount, int gapCount, int holeCount)
+    {
+        HashSet<int> gaps = new HashSet<int>();
+        holeCount = Mathf.Max(1, holeCount);
+        gapCount = Mathf.Clamp(gapCount, 0, slotCount / holeCount);
+        if (gapCount == 0) return gaps;
+
+        float sector = (float)slotCount / holeCount; // 구멍 하나가 차지하는 원 둘레 구간(칸 수)
+        int baseOffset = Random.Range(0, slotCount);
+        // 구간 안에서 흔들 수 있는 폭이다. 구멍 사이 기둥이 HoleSeparationSlots개 아래로 줄지 않게 제한한다.
+        int jitter = Mathf.Max(0, Mathf.FloorToInt((sector - gapCount - HoleSeparationSlots) * 0.5f));
+
+        for (int h = 0; h < holeCount; h++)
+        {
+            int start = baseOffset + Mathf.RoundToInt(h * sector) + Random.Range(-jitter, jitter + 1);
+            for (int i = 0; i < gapCount; i++)
+                gaps.Add(((start + i) % slotCount + slotCount) % slotCount);
+        }
         return gaps;
     }
 

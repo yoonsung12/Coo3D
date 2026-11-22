@@ -39,6 +39,18 @@ public class SaveManager : MonoBehaviour
     public int BonusHearts { get; private set; }
     // 자판기 MaxHP 아이템으로 늘어난 하트 개수다. 새 PlayerHealthUI가 하트를 만들 때 기본 개수에 더한다.
 
+    [Title("통계 (게임 클리어 화면용)")]
+    [SerializeField, LabelText("타이틀 씬 이름")]
+    private string titleSceneName = "Title";
+    // 이 이름의 씬에 있는 동안은 플레이 시간을 쌓지 않는다.
+
+    [ReadOnly, ShowInInspector, LabelText("누적 플레이 시간(초)")]
+    public float PlayTimeSeconds { get; private set; }
+    // 파우즈/게임오버/가이드북은 timeScale 0이므로 그 시간은 포함되지 않는다.
+
+    [ReadOnly, ShowInInspector, LabelText("누적 사망 횟수")]
+    public int DeathCount { get; private set; }
+
     public event Action<bool> TorchUnlockLoaded;
 
     public event Action<bool> UmbrellaUnlockLoaded;
@@ -90,6 +102,19 @@ public class SaveManager : MonoBehaviour
         Instance = this;
         DontDestroyOnLoad(gameObject);
     }
+
+    private void Update()
+    {
+        // timeScale이 0이면(일시정지, 게임오버, 가이드북) 시간을 쌓지 않는다.
+        // 타이머 자체는 timeScale의 영향을 받지 않도록 unscaledDeltaTime을 쓴다.
+        if (Time.timeScale <= 0f) return;
+        if (SceneManager.GetActiveScene().name == titleSceneName) return;
+
+        PlayTimeSeconds += Time.unscaledDeltaTime;
+    }
+
+    // 플레이어가 사망할 때마다 PlayerHealth.Die()가 호출한다.
+    public void AddDeath() => DeathCount++;
 
     // 오브젝트를 구분하는 고유 ID를 만든다. "씬이름/부모경로/오브젝트이름" 형태다.
     // 씬에 직접 배치된 오브젝트는 로드할 때마다 같은 ID가 나오므로, 저장 이후에도 같은 적/체크포인트로 식별할 수 있다.
@@ -177,6 +202,8 @@ public class SaveManager : MonoBehaviour
         _savedOnTube = false;
         BonusMaxHealth = 0f;
         BonusHearts = 0;
+        PlayTimeSeconds = 0f;
+        DeathCount = 0;
         if (CoinManager.Instance != null)
             CoinManager.Instance.SetCoin(0);
 
@@ -262,6 +289,15 @@ public class SaveManager : MonoBehaviour
             _solvedPuzzles.UnionWith(data.solvedPuzzleIds);
 
         _savedOnTube = data.savedOnTube;
+
+        // 통계는 타이틀에서 불러올 때(forceReload == false)만 복원한다.
+        // 사망 후 계속하기(forceReload == true)에서 복원하면 방금 센 사망 횟수와 흘러간 플레이 시간이
+        // 저장 시점 값으로 되돌려져 버리므로, 이때는 메모리의 현재 값을 그대로 유지한다.
+        if (!forceReload)
+        {
+            PlayTimeSeconds = data.playTimeSeconds;
+            DeathCount = data.deathCount;
+        }
 
         // 코인은 저장 시점의 값으로 복귀한다.
         if (CoinManager.Instance != null)
@@ -374,7 +410,9 @@ public class SaveManager : MonoBehaviour
             solvedPuzzleIds = new List<string>(_solvedPuzzles),
             bonusMaxHealth = BonusMaxHealth,
             bonusHearts = BonusHearts,
-            savedOnTube = _savedOnTube
+            savedOnTube = _savedOnTube,
+            playTimeSeconds = PlayTimeSeconds,
+            deathCount = DeathCount
         };
 
         ES3.Save(saveKey, data, GetFilePath(slot));

@@ -73,7 +73,9 @@ public class FallZone : MonoBehaviour
         }
 
         var enemy = other.GetComponentInParent<Enemy>();
-        if (enemy != null)
+        // 보스는 낙사로 죽이지 않는다. 쓰러짐 연출(collapseDropY)로 몸이 일부러 아래로 내려가면서
+        // 이 구역에 닿을 수 있고, 섬 밖으로 밀려나도 BossIslandBasicPattern의 복귀 점프로 돌아오기 때문이다.
+        if (enemy != null && !(enemy is Boss))
             enemy.TakeDamage(float.MaxValue);
     }
 

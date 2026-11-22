@@ -205,6 +205,40 @@ public class BossSpringIslandPattern : BossSeasonPatternBase
     [SerializeField, LabelText("바위 충돌 카메라 흔들림 (세기)")]
     private float crashShakeStrength = 0.6f;
 
+    [TabGroup("설정", "쓰러짐")]
+    [SerializeField, LabelText("쓰러지는 회전값")]
+    private Vector3 collapseEuler = new Vector3(0f, 0f, 90f);
+    // 바위에 박혀 그로기에 빠질 때 보스 시각 오브젝트를 옆으로 눕히는 값이다. 가을 패턴 쓰러짐과 같은 기본값이다.
+
+    [TabGroup("설정", "쓰러짐")]
+    [SerializeField, LabelText("쓰러질 때 내려가는 높이")]
+    private float collapseDropY = 0.6f;
+    // 누운 몸이 바닥에 붙어 보이도록 보스 루트를 이만큼 낮춘다.
+
+    [TabGroup("설정", "쓰러짐")]
+    [SerializeField, LabelText("쓰러지는 시간")]
+    private float collapseDuration = 0.5f;
+    // 눕는 데 걸리는 시간이자, 일어나는 데 걸리는 시간이다.
+
+    [TabGroup("설정", "쓰러짐")]
+    [SerializeField, LabelText("기절 시간")]
+    private float stunDuration = 4f;
+    // 이 시간 동안 보스가 누운 채 무적이 풀려 공격받을 수 있다. 길수록 플레이어가 때릴 시간이 늘어난다.
+
+    [TabGroup("설정", "쓰러짐")]
+    [SerializeField, LabelText("쓰러질 때 카메라 흔들림 시간")]
+    private float collapseShakeDuration = 0.4f;
+
+    [TabGroup("설정", "쓰러짐")]
+    [SerializeField, LabelText("쓰러질 때 카메라 흔들림 세기")]
+    private float collapseShakeStrength = 0.5f;
+
+    [TabGroup("설정", "쓰러짐")]
+    [SerializeField, LabelText("바위 반동 거리")]
+    private float crashRecoilDistance = 1.5f;
+    // 바위에 부딪힌 뒤 바위 반대쪽으로 튕겨 나가며 쓰러지는 거리다.
+    // 튕긴 지점이 보스 걷기 영역 밖이면 영역 안쪽으로 당겨서 멈춘다. 그래야 일어난 뒤 복귀 점프로 위치가 휙 바뀌지 않는다.
+
     [FoldoutGroup("런타임 상태")]
     [ReadOnly, ShowInInspector, LabelText("현재 단계")]
     private string _currentPhase = "대기";
@@ -230,6 +264,8 @@ public class BossSpringIslandPattern : BossSeasonPatternBase
     private Coroutine _cycleRoutine;
     private Tween _spinTween;
     private Tween _punchTween;
+    private Sequence _poseSequence;
+    // 쓰러지기/일어나기 연출이다. 도중에 다른 계절 패턴에 밀려 중단될 수 있어 저장해 두고 Kill한다.
     private Quaternion _visualStartLocalRotation;
     private readonly List<BossSpringWave> _waves = new List<BossSpringWave>();
     private readonly List<GroundTelegraph> _rockTelegraphs = new List<GroundTelegraph>();
@@ -240,6 +276,13 @@ public class BossSpringIslandPattern : BossSeasonPatternBase
     private IslandRock _warningRock; // 현재 경고 연출 중인 바위(없으면 null)
     private Vector3 _planEnd; // 돌진 도착 지점(지면 높이, 보스 중심 Y는 standHeightY)
     private BossAnimationController bossAnim;
+    private BossIslandBasicPattern _basicPattern;
+    // 쓰러질 위치가 보스 걷기 영역 안인지 확인하는 데 쓴다(영역 판정을 한 곳에서만 관리하기 위해 재사용).
+    private Animator _animator;
+    // 보스 모델의 Animator다. 쓰러질 때 Idle 자세를 즉시 적용하는 데 쓴다.
+    private Transform _bodyBone;
+    // 모델 뼈대의 루트 본(몸통)이다. 애니메이션 때문에 몸통이 루트에서 얼마나 떨어져 보이는지 재는 데 쓴다.
+    private static readonly int IdleStateHash = Animator.StringToHash("Base Layer.Idle");
     protected override Boss.SeasonPattern Season => Boss.SeasonPattern.Spring;
     protected override bool IsRunning => _cycleRoutine != null;
 
@@ -252,6 +295,14 @@ public class BossSpringIslandPattern : BossSeasonPatternBase
         if (dashHitbox != null)
             dashHitbox.DisableHitbox();
         bossAnim = GetComponent<BossAnimationController>();
+        _basicPattern = GetComponent<BossIslandBasicPattern>();
+
+        if (bossVisual != null)
+        {
+            _animator = bossVisual.GetComponentInChildren<Animator>();
+            SkinnedMeshRenderer body = bossVisual.GetComponentInChildren<SkinnedMeshRenderer>();
+            if (body != null) _bodyBone = body.rootBone;
+        }
     }
 
     private void OnDestroy()
@@ -322,7 +373,10 @@ public class BossSpringIslandPattern : BossSeasonPatternBase
             if (_planRock != null)
             {
                 CrashIntoRock();
-                break; // 파훼 -> 사이클 종료
+                // 파훼 -> 누운 채 기절했다가 일어난 뒤 사이클 종료.
+                // 사이클 코루틴 안에서 기다리므로, 기절 중 다음 계절 패턴이 발동하면 Abort()가 함께 정리한다.
+                yield return StunRoutine();
+                break;
             }
 
             yield return LandRoutine();
@@ -567,7 +621,122 @@ public class BossSpringIslandPattern : BossSeasonPatternBase
 
         _activeRock = null; // 부서진 바위는 IsBroken이라 다음 추첨에서 자동으로 빠진다.
         _planRock = null;
-        _boss.NotifyPatternSolved();
+        // 무방비 시간을 "기절 + 일어나는 시간"과 맞춘다. 다 일어서기 전에 기본 패턴(걷기/공격)이 시작되지 않게 하기 위해서다.
+        _boss.NotifyPatternSolved(stunDuration + collapseDuration);
+    }
+
+    // 바위에 박힌 뒤: 옆으로 쓰러져 기절 시간만큼 누워 있다가 일어선다.
+    private IEnumerator StunRoutine()
+    {
+        _currentPhase = "기절";
+        CollapseBoss();
+
+        yield return new WaitForSeconds(stunDuration);
+
+        _currentPhase = "복구";
+        yield return StandUpRoutine();
+    }
+
+    // 높이는 Kinematic Rigidbody 루트로 낮추고, 눕는 회전은 시각 오브젝트에만 준다.
+    // 루트 자체를 눕히면 BoxCollider까지 옆으로 누워 바닥/발판과 겹칠 수 있기 때문이다.
+    private void CollapseBoss()
+    {
+        if (_spinTween != null) _spinTween.Kill();
+        _poseSequence?.Kill();
+
+        // 순서가 중요하다: 방향 맞추기 -> 몸통 위치로 루트 옮기기 -> 쓰러질 지점 계산.
+        if (bossVisual != null) AlignRootToVisualFacing();
+        SnapRootToVisibleBody();
+
+        // 높이 낮추기와 반동 이동을 DOMove 하나로 처리한다. DOMoveY와 따로 돌리면 둘 다 MovePosition을 호출해 서로 덮어쓴다.
+        Vector3 landing = GetCollapseLandingFlat();
+        Vector3 collapseTarget = new Vector3(landing.x, standHeightY - collapseDropY, landing.z);
+        _poseSequence = DOTween.Sequence()
+            .Append(_rb.DOMove(collapseTarget, collapseDuration).SetEase(Ease.OutQuad))
+            .SetLink(gameObject);
+
+        if (bossVisual != null)
+        {
+            // 이제 루트와 시각 오브젝트 방향이 같으므로 여름/가을/겨울과 똑같이 "처음 회전" 기준으로 눕히고 일으킨다.
+            _poseSequence.Join(bossVisual.DOLocalRotateQuaternion(_visualStartLocalRotation * Quaternion.Euler(collapseEuler), collapseDuration)
+                .SetEase(Ease.InQuad));
+        }
+
+        if (sideViewCamera != null) sideViewCamera.Shake(collapseShakeDuration, collapseShakeStrength);
+    }
+
+    // 돌진 전조는 시각 오브젝트만 돌진 방향으로 돌리고 루트는 그대로 둔다.
+    // 이 상태로 눕혔다 일으키면 일어날 때 시각 오브젝트가 루트 방향으로 돌아가며 크게 회전해, 다른 자리에 선 것처럼 보인다.
+    // 그래서 쓰러지기 직전에 루트를 시각 오브젝트가 보는 수평 방향으로 돌리고, 시각 오브젝트는 루트 기준 처음 회전으로 되돌린다.
+    // 두 회전을 합친 결과가 같아서 화면상 변화는 없다. 루트는 Kinematic이라 회전해도 물리 충돌에 영향이 없다.
+    private void AlignRootToVisualFacing()
+    {
+        Vector3 facing = bossVisual.rotation * Quaternion.Inverse(_visualStartLocalRotation) * Vector3.forward;
+        facing.y = 0f;
+        if (facing.sqrMagnitude < 0.0001f) return;
+
+        Quaternion rootRotation = Quaternion.LookRotation(facing.normalized, Vector3.up);
+        _rb.rotation = rootRotation;
+        transform.rotation = rootRotation; // _rb.rotation은 다음 물리 주기에 반영되므로 이번 프레임에도 바로 맞춘다.
+        bossVisual.localRotation = _visualStartLocalRotation;
+    }
+
+    // Spring_Dash 애니메이션은 몸통 뼈대를 루트보다 약 3.9m 앞으로 내민 채 끝난다(루트 모션 없이 뼈대만 이동).
+    // 그대로 두면 보이는 몸통(바위에 박힌 위치)과 콜라이더(루트)가 어긋나 때려도 안 맞고,
+    // 나중에 Idle로 돌아가는 순간 몸통이 루트 쪽으로 순간이동해 다른 자리에 일어선 것처럼 보인다.
+    // 그래서 Idle로 즉시 바꾼 뒤, 몸통이 원래 보이던 자리에 그대로 있도록 루트를 그만큼 옮긴다.
+    private void SnapRootToVisibleBody()
+    {
+        bossAnim?.EndAction(); // 행동 중 표시를 풀고 Idle로 돌린다(내부적으로 짧은 CrossFade).
+        if (_animator == null || _bodyBone == null) return;
+
+        Vector3 before = _bodyBone.position;
+        // CrossFade를 기다리지 않고 이번 프레임에 Idle 자세를 바로 적용해, 몸통 위치 차이를 정확히 잰다.
+        _animator.Play(IdleStateHash, 0, 0f);
+        _animator.Update(0f);
+        Vector3 after = _bodyBone.position;
+
+        Vector3 shift = new Vector3(before.x - after.x, 0f, before.z - after.z);
+        _rb.position += shift;
+        transform.position += shift; // _rb.position은 다음 물리 주기에 반영되므로 이번 프레임에도 바로 맞춘다.
+    }
+
+    // 쓰러질 지점(XZ)을 구한다: 돌진 반대 방향(바위에서 튕겨 나오는 쪽)으로 crashRecoilDistance만큼 물러난 뒤,
+    // 걷기 영역 밖이면 섬 중앙 쪽으로 당긴다. 그대로 두면 일어난 직후 복귀 점프가 일어난다.
+    private Vector3 GetCollapseLandingFlat()
+    {
+        Vector3 bossFlat = new Vector3(_rb.position.x, 0f, _rb.position.z);
+        // AlignRootToVisualFacing 이후라 루트 정면이 곧 돌진 방향이다.
+        Vector3 away = -new Vector3(transform.forward.x, 0f, transform.forward.z).normalized;
+        Vector3 target = bossFlat + away * crashRecoilDistance;
+
+        if (_basicPattern == null || _basicPattern.IsInsideWalkArea(target)) return target;
+
+        // 섬 중앙 쪽으로 조금씩 당기며 영역 안에 처음 들어오는 지점을 찾는다(20단계면 0.05 간격이라 충분히 촘촘하다).
+        Vector3 center = GetCenterPosition();
+        Vector3 centerFlat = new Vector3(center.x, 0f, center.z);
+        for (int i = 1; i <= 20; i++)
+        {
+            Vector3 candidate = Vector3.Lerp(target, centerFlat, i / 20f);
+            if (_basicPattern.IsInsideWalkArea(candidate)) return candidate;
+        }
+        return centerFlat;
+    }
+
+    private IEnumerator StandUpRoutine()
+    {
+        _poseSequence?.Kill();
+        bool finished = false;
+        _poseSequence = DOTween.Sequence()
+            .Append(_rb.DOMoveY(standHeightY, collapseDuration).SetEase(Ease.OutQuad))
+            .OnComplete(() => finished = true)
+            .SetLink(gameObject);
+
+        if (bossVisual != null)
+            _poseSequence.Join(bossVisual.DOLocalRotateQuaternion(_visualStartLocalRotation, collapseDuration).SetEase(Ease.OutQuad));
+
+        // OnComplete 플래그로 기다린다(가을 패턴과 같은 방식, WaitForCompletion은 이 프로젝트에서 불안정했다).
+        while (!finished && _poseSequence != null && _poseSequence.IsActive()) yield return null;
     }
 
     // 발판 착지: 쿵 연출 + 파도 생성 + 잠깐 멈춤. 다음 돌진은 이 발판에서 시작한다.
@@ -751,6 +920,8 @@ public class BossSpringIslandPattern : BossSeasonPatternBase
     {
         if (_spinTween != null) _spinTween.Kill();
         if (_punchTween != null) _punchTween.Kill();
+        _poseSequence?.Kill();
+        // 쓰러짐 연출 중에 중단돼도 트윈이 남아 다음 패턴의 보스 이동과 겹치지 않게 한다.
     }
 
     [Button("랜덤 바위 즉시 솟기 (테스트)")]

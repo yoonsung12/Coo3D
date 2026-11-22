@@ -209,12 +209,21 @@ public class WeaponWheelUI : MonoBehaviour
         // 두 UI가 동시에 Time.timeScale을 제어하면 어느 한쪽을 닫을 때 시간이 잘못 풀릴 수 있기 때문이다.
         if (PauseMenuUI.IsPaused) return;
 
+        // 게임오버/게임 클리어/가이드북처럼 다른 화면이 시간을 멈춘 상태에서도 열지 않는다.
+        // 휠이 열렸다 닫히면 timeScale을 1로 되돌리므로, 멈춰 있어야 할 게임이 뒤에서 다시 흐르게 된다.
+        // 휠 자신이 멈춘 경우는 여기 올 수 없다(이미 열려 있으면 Z를 새로 누를 수 없음).
+        if (Time.timeScale == 0f) return;
+
         OpenWheel();
     }
 
     // Z 키를 뗐을 때 선택된 슬롯으로 전환하고 시간을 재개한다.
     private void OnWheelCanceled(InputAction.CallbackContext ctx)
     {
+        // 위 조건에 막혀 휠이 열리지 않았다면 닫을 것도 없다.
+        // 이 검사가 없으면 CloseWheel이 timeScale을 1로 되돌려, 파우즈/게임오버 중 Z를 뗄 때 게임이 풀려 버린다.
+        if (!_isOpen) return;
+
         CloseWheel();
     }
 

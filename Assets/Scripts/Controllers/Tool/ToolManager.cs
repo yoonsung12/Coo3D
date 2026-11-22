@@ -212,14 +212,12 @@ public class ToolManager : MonoBehaviour
         }
     }
 
-    // 도구를 전환한다. 같은 도구를 다시 선택하면 해제된다.
+    // 도구를 전환한다. 이미 들고 있는 도구를 다시 선택하면 그대로 유지한다.
+    // 예전에는 해제(배게로 전환)됐는데, 휠에서 같은 방향을 한 번 더 고르면 의도치 않게 배게로 바뀌어 헷갈렸다.
+    // 배게(공격)로 돌아가려면 휠에서 ↑(공격)을 고르면 된다.
     private void SelectTool(BaseTool newTool)
     {
-        if (_activeTool == newTool)
-        {
-            UnequipCurrent();
-            return;
-        }
+        if (_activeTool == newTool) return;
 
         UnequipCurrent();
 

@@ -296,6 +296,10 @@ public class PlayerHealth : CharacterBase
         if (_playerController != null)
             _playerController.enabled = false;
 
+        // 클리어 화면의 "쓰러진 횟수" 통계를 위해 사망을 기록한다. 타이틀을 거치지 않은 에디터 실행에는 SaveManager가 없다.
+        if (SaveManager.Instance != null)
+            SaveManager.Instance.AddDeath();
+
         OnDeath?.Invoke();
         // GameOverUI가 이 이벤트를 구독해 화면을 띄우고 Time.timeScale을 0으로 멈춘다.
         // 리스폰은 더 이상 여기서 자동으로 일어나지 않고, GameOverUI의 계속하기 버튼이
