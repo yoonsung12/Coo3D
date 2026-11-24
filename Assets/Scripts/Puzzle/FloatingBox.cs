@@ -52,6 +52,7 @@ public class FloatingBox : MonoBehaviour
 
     private Vector3 _bounceOffset;
     // DOTween이 흔드는 출렁임 값이다. Transform을 직접 흔들면 MovePosition과 서로 싸우므로, 이 값을 이동 목표에 더하기만 한다.
+    // 이동 목표에 더해지므로 충돌체도 같이 흔들린다. 그래서 탑승 중에는 출렁임을 재생하지 않는다.
 
     private void Awake()
     {
@@ -105,9 +106,11 @@ public class FloatingBox : MonoBehaviour
         Vector3 pos = _rb.position;
         pos.y = _floatY + _bounceOffset.y;
         _rb.MovePosition(pos);
-        // 출렁임 값은 보이는 위치에만 더한다.
+        // 출렁임 값은 상자 위치(충돌체 포함)에 더해진다. 그래서 출렁임은 아무도 타고 있지 않을 때만 재생한다.
 
-        if (_floatY > previousY + 0.001f)
+        // 플레이어가 타고 있으면 출렁임을 재생하지 않는다. 충돌체가 발밑으로 파고들면
+        // CharacterController가 겹침을 풀면서 플레이어가 위로 툭 밀려나 "살짝 점프"처럼 보이기 때문이다.
+        if (_floatY > previousY + 0.001f && _riderInTrigger == null)
             PlayRiseBounce();
 
         if (_riderInTrigger != null)
@@ -130,6 +133,9 @@ public class FloatingBox : MonoBehaviour
         if (player == null) return;
 
         _riderInTrigger = player;
+
+        _bounceTween?.Kill();
+        // 올라타는 순간 진행 중이던 출렁임도 멈춘다. OnKill에서 출렁임 값이 0으로 돌아간다.
     }
 
     private void OnTriggerExit(Collider other)

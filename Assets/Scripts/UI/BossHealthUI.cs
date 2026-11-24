@@ -37,12 +37,29 @@ public class BossHealthUI : MonoBehaviour
     [SerializeField, LabelText("마커 기울기(도)")]
     private float markerTiltDegrees = 15f;
 
+    [Title("무적 표시")]
+    [SerializeField, LabelText("무적일 때 게이지 색")]
+    private Color invincibleColor = new Color(0.55f, 0.55f, 0.55f, 1f);
+    // 계절 패턴 중(Boss.IsInvincible) 게이지를 이 색으로 바꿔 "지금은 때려도 안 닳는다"는 걸 보여 준다.
+
+    [SerializeField, LabelText("색 전환 시간")]
+    private float colorTweenDuration = 0.3f;
+
     private Tween _fillTween;
+    private Tween _colorTween;
+    // 게이지 색 전환 Tween. 무적이 빠르게 켜졌다 꺼져도 겹치지 않게 저장해 두고 끊는다.
+    private Color _normalColor;
+    // 무적이 풀리면 되돌아갈 원래 게이지 색이다. Awake에서 Image의 현재 색을 기억해 둔다.
+    private bool _isInvincibleShown;
+    // 지금 게이지가 무적 색으로 표시돼 있는지 여부다.
 
     private void Awake()
     {
         if (fillImage != null)
+        {
             fillImage.fillAmount = 1f;
+            _normalColor = fillImage.color;
+        }
 
         BuildThresholdMarkers();
     }
@@ -94,6 +111,21 @@ public class BossHealthUI : MonoBehaviour
     private void OnDestroy()
     {
         _fillTween?.Kill();
+        _colorTween?.Kill();
+    }
+
+    private void Update()
+    {
+        if (boss == null || fillImage == null) return;
+
+        // 매 프레임 bool 하나만 비교하고, 무적 상태가 바뀐 순간에만 색 Tween을 만든다.
+        // Boss는 무적을 켜고 끄는 경로가 여러 곳이라 이벤트 대신 상태를 직접 본다.
+        bool invincible = boss.IsInvincible;
+        if (invincible == _isInvincibleShown) return;
+
+        _isInvincibleShown = invincible;
+        _colorTween?.Kill();
+        _colorTween = fillImage.DOColor(invincible ? invincibleColor : _normalColor, colorTweenDuration);
     }
 
     private void HandleDamageTaken(float amount) => SetFill(boss.HealthRatio);

@@ -154,6 +154,8 @@ public class PlayerController : MonoBehaviour
     private Vector3 _windVelocity;
     private Vector3 _platformVelocity;
     // FloatingBox 위에 올라탔을 때 그 발판의 상승/하강 속도를 담는다 (Y 성분만 사용).
+    private bool _onPlatform;
+    // FloatingBox 탑승 영역 안에 있는지 여부다. 발판이 잠깐 멈춰 속도가 0이어도 "타고 있음"을 알기 위해 따로 둔다.
     private float _verticalVelocity;
 
     private Vector3 _groundNormal = Vector3.up;
@@ -695,6 +697,14 @@ public class PlayerController : MonoBehaviour
         }
     }
 
+    // 낙사 복귀(FallDeathHandler)처럼 조작이 꺼진 동안 쌓인 선풍기 반동을 지울 때 호출한다.
+    // 조작이 꺼져 있으면 DecayRecoil이 돌지 않아 반동이 그대로 남고, 복귀 후 다시 켜지는 순간 한꺼번에 밀려나기 때문이다.
+    public void ClearFanRecoil()
+    {
+        _recoilVelocity = Vector3.zero;
+        _blastVelocity = Vector3.zero;
+    }
+
     // FloatTube가 호출한다. 플레이어를 튜브의 좌석(seat)에 앉힌다.
     public void MountTo(FloatTube tube, Transform seat)
     {
@@ -768,12 +778,14 @@ public class PlayerController : MonoBehaviour
     public void SetPlatformVelocity(Vector3 velocity)
     {
         _platformVelocity = velocity;
+        _onPlatform = true;
     }
 
     // FloatingBox에서 벗어났을 때 발판 속도를 초기화한다.
     public void ClearPlatformVelocity()
     {
         _platformVelocity = Vector3.zero;
+        _onPlatform = false;
     }
 
     // 선풍기 차징 중 이동속도를 제한하기 위한 배율을 설정한다.
@@ -847,10 +859,20 @@ public class PlayerController : MonoBehaviour
     {
         // 뜨는 상자 위에 있는 동안은 상자의 상승/하강 속도를 그대로 수직 속도에 반영해
         // 플레이어가 상자와 함께 오르내리게 한다.
+        // 플레이어가 직접 점프해 올라가는 중이면 점프를 끊지 않도록 건너뛴다.
+        if (!_onPlatform || _isPlayerJumpRising) return;
+
         if (_platformVelocity.y != 0f)
         {
             _verticalVelocity = _platformVelocity.y;
             EndPlayerJump();
+        }
+        else if (_verticalVelocity > 0f)
+        {
+            // 빗방울마다 수위가 조금씩 올라 상자는 짧게 올랐다 멈추기를 반복한다.
+            // 상자가 멈춘 프레임에 직전 상승 속도가 남아 있으면 플레이어만 혼자 더 솟아 "살짝 점프"처럼 보이므로 지운다.
+            // 이후에는 Update의 접지 처리가 플레이어를 상자 위에 붙여 둔다.
+            _verticalVelocity = 0f;
         }
     }
 }

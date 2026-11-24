@@ -35,6 +35,13 @@ public class BossSummerIslandPattern : BossSeasonPatternBase
     // 피뢰침이 놓일 후보 발판이다. 봄 패턴(BossSpringIslandPattern)과 같은 발판들을 연결한다.
 
     [FoldoutGroup("연결")]
+    [SerializeField, LabelText("발판별 안내 화살표 (선택)")]
+    private GameObject[] platformGuideArrows;
+    // 위 "발판 목록"과 같은 순서로, 섬 가장자리에서 그 발판을 가리키는 화살표를 연결한다.
+    // 그 발판에 충전 안 된 피뢰침이 꽂혀 있는 동안만 켜진다. 피뢰침이 바깥 발판에 있어 잘 안 보인다는 문제를 돕기 위한 표시다.
+    // 비워 두면 화살표 없이 기존처럼 동작한다.
+
+    [FoldoutGroup("연결")]
     [SerializeField, LabelText("원 예고 프리팹")]
     private GroundTelegraph circleTelegraphPrefab;
     // 피뢰침 솟음 예고와 낙뢰 예고에 쓴다. 사용 후 파괴한다.
@@ -326,6 +333,9 @@ public class BossSummerIslandPattern : BossSeasonPatternBase
     [ReadOnly, ShowInInspector, LabelText("피뢰침 발판")]
     private string _rodPlatformNames = "-";
 
+    private int[] _rodPlatformIndex;
+    // 피뢰침 i가 이번 사이클에 놓인 발판 번호다(-1이면 아직 없음). 매 사이클 배치가 섞이므로 화살표를 켤 발판을 찾는 데 쓴다.
+
     [FoldoutGroup("런타임 상태")]
     [ReadOnly, ShowInInspector, LabelText("충전된 피뢰침 수")]
     private int _chargedCount;
@@ -386,6 +396,9 @@ public class BossSummerIslandPattern : BossSeasonPatternBase
             _visualStartLocalRotation = bossVisual.localRotation;
         }
         bossAnim = GetComponent<BossAnimationController>();
+
+        // 안내 화살표는 피뢰침이 꽂혔을 때만 보여야 하므로 시작할 때 모두 꺼 둔다.
+        UpdatePlatformGuideArrows();
     }
 
     // 탈진 대기 중(IsRunning이 false인 동안)에 꺼져도 피뢰침과 물리를 정리하기 위해 덧붙인다.
@@ -493,11 +506,14 @@ public class BossSummerIslandPattern : BossSeasonPatternBase
 
         Vector3 center = GetCenterFlat();
         System.Text.StringBuilder names = new System.Text.StringBuilder();
+        if (_rodPlatformIndex == null || _rodPlatformIndex.Length != rodCount)
+            _rodPlatformIndex = new int[rodCount];
         for (int i = 0; i < rodCount; i++)
         {
             Transform platform = platforms[best[i]];
             names.Append(i > 0 ? ", " : "").Append(platform.name);
             if (rods[i] == null || rods[i].IsRisen) continue; // 솟아 있는 피뢰침은 옮기지 않는다.
+            _rodPlatformIndex[i] = best[i]; // 안내 화살표를 켤 발판을 찾기 위해 기억해 둔다.
 
             Vector3 outward = platform.position - center;
             outward.y = 0f;
@@ -561,6 +577,7 @@ public class BossSummerIslandPattern : BossSeasonPatternBase
 
             rod.Rise();
             RemoveRodTelegraphAt(rod.FootprintCenter);
+            UpdatePlatformGuideArrows(); // 방금 꽂힌 피뢰침의 발판 쪽 화살표를 켠다.
 
             bool isLast = i == rods.Length - 1;
             if (!isLast && rodDropInterval > 0f) yield return new WaitForSeconds(rodDropInterval);
@@ -1105,6 +1122,7 @@ public class BossSummerIslandPattern : BossSeasonPatternBase
 
             rod.Charge();
             _chargedCount = CountCharged();
+            UpdatePlatformGuideArrows(); // 충전된 피뢰침의 화살표는 끈다.
             SpawnBolt(strikePoint + Vector3.up * boltHeight, rod.TopPosition); // 피뢰침에 번개가 꽂히는 모습이다.
         }
     }
@@ -1246,6 +1264,32 @@ public class BossSummerIslandPattern : BossSeasonPatternBase
         return n;
     }
 
+    // 발판마다 "충전 안 된 피뢰침이 꽂혀 있는가"를 보고 안내 화살표를 켜고 끈다.
+    // 피뢰침이 솟거나 충전되거나 리셋될 때만 부르므로 매 프레임 돌지 않는다.
+    private void UpdatePlatformGuideArrows()
+    {
+        if (platformGuideArrows == null) return;
+
+        for (int p = 0; p < platformGuideArrows.Length; p++)
+        {
+            GameObject arrow = platformGuideArrows[p];
+            if (arrow == null) continue;
+
+            bool show = false;
+            if (rods != null && _rodPlatformIndex != null)
+            {
+                for (int i = 0; i < rods.Length && i < _rodPlatformIndex.Length; i++)
+                {
+                    LightningRod rod = rods[i];
+                    if (rod == null || !rod.IsRisen || rod.IsCharged) continue;
+                    if (_rodPlatformIndex[i] == p) { show = true; break; }
+                }
+            }
+
+            if (arrow.activeSelf != show) arrow.SetActive(show);
+        }
+    }
+
     private void ResetRods(bool sink)
     {
         if (rods == null) return;
@@ -1255,6 +1299,7 @@ public class BossSummerIslandPattern : BossSeasonPatternBase
             rod.ResetRod();
             if (sink) rod.Sink();
         }
+        UpdatePlatformGuideArrows(); // 리셋된 피뢰침의 안내 화살표도 함께 끈다.
     }
 
     private void ResetVisualPose()

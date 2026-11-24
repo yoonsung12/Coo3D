@@ -133,6 +133,12 @@ public class BossWinterIslandPattern : BossSeasonPatternBase
     [SerializeField, LabelText("겹친 플레이어 밀어내는 속도")]
     private float rockPushSpeed = 10f;
 
+    [TabGroup("설정", "준비")]
+    [SerializeField, LabelText("첫 칼바람 전 대기 시간")]
+    private float firstSwingDelay = 3f;
+    // 바위가 솟은 뒤 1타 전조가 시작되기까지 기다리는 시간(초)이다.
+    // 바위가 솟자마자 전조가 시작되면 "바위 뒤에 숨는다"는 걸 알아채고 달려갈 틈이 없어서 둔다. 0이면 예전처럼 바로 시작한다.
+
     [TabGroup("설정", "회차")]
     [SerializeField, LabelText("칼바람 회차")]
     private WindSwing[] swings =
@@ -290,6 +296,13 @@ public class BossWinterIslandPattern : BossSeasonPatternBase
 
         _currentPhase = "바위 솟음";
         yield return RiseRocksRoutine();
+
+        // 바위가 다 솟은 뒤 숨을 곳을 찾을 시간을 준다.
+        if (firstSwingDelay > 0f)
+        {
+            _currentPhase = "첫 칼바람 대기";
+            yield return new WaitForSeconds(firstSwingDelay);
+        }
 
         for (int i = 0; i < swings.Length; i++)
         {

@@ -48,6 +48,12 @@ public class BossAutumnRootSlamPattern : BossSeasonPatternBase
     private AudioSource audioSource;
 
     [FoldoutGroup("연결")]
+    [SerializeField, LabelText("명중 횟수 표시 (선택)")]
+    private BossHitCounter hitCounter;
+    // 보스 머리 위에 "몇 번 맞혀야 하는지"를 칸으로 보여 주는 표시다. 패턴 시작에 나타나고, 찔릴 때마다 한 칸씩 채워진다.
+    // 비워 두면 표시 없이 기존처럼 동작한다.
+
+    [FoldoutGroup("연결")]
     [SerializeField, LabelText("착지 소리 (선택)")]
     private AudioClip stompClip;
 
@@ -340,6 +346,7 @@ public class BossAutumnRootSlamPattern : BossSeasonPatternBase
         _singleRound = false;
         _currentPhase = "대기";
         _hitCount = 0;
+        if (hitCounter != null) hitCounter.Hide();
     }
 
     private IEnumerator AutumnCycleRoutine()
@@ -349,6 +356,9 @@ public class BossAutumnRootSlamPattern : BossSeasonPatternBase
         _rb.isKinematic = true; // 패턴 동안 지형에 막히거나 떨어지지 않도록 고정한다.
 
         _hitCount = 0;
+
+        // 필요한 명중 횟수를 보스 머리 위에 빈 칸으로 보여 준다.
+        if (hitCounter != null) hitCounter.Show(requiredHits);
 
         _currentPhase = "중앙 이동";
         yield return MoveBossRoutine(GetStandPosition(), entryDuration);
@@ -378,6 +388,7 @@ public class BossAutumnRootSlamPattern : BossSeasonPatternBase
             RestorePhysics();
             _currentPhase = "대기";
             _hitCount = 0;
+            if (hitCounter != null) hitCounter.Hide();
             _cycleRoutine = null;
             yield break;
         }
@@ -546,6 +557,7 @@ public class BossAutumnRootSlamPattern : BossSeasonPatternBase
     private void OnImpaled()
     {
         _hitCount++;
+        if (hitCounter != null) hitCounter.SetHits(_hitCount); // 머리 위 칸을 하나 채운다.
 
         if (audioSource != null && impaleClip != null) audioSource.PlayOneShot(impaleClip, impaleVolume);
         if (sideViewCamera != null) sideViewCamera.Shake(impaleShakeDuration, impaleShakeStrength);
@@ -635,6 +647,7 @@ public class BossAutumnRootSlamPattern : BossSeasonPatternBase
     {
         CleanupVisuals();
         CollapseBoss();
+        if (hitCounter != null) hitCounter.Hide(1.2f); // 마지막 칸이 채워지는 모습을 잠깐 보여 준 뒤 사라진다.
 
         yield return new WaitForSeconds(stunDuration);
 

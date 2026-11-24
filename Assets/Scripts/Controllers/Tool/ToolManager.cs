@@ -248,6 +248,18 @@ public class ToolManager : MonoBehaviour
         _activeTool = null;
     }
 
+    // 낙사 복귀(FallDeathHandler)가 호출한다. 선풍기를 쓰는 중이면 블라스트 없이 차징/바람을 취소하고,
+    // 누름 상태도 풀어서 버튼을 계속 누르고 있어도 다시 눌러야만 선풍기가 작동하게 한다.
+    // 우산·횃불 등 다른 도구는 건드리지 않는다.
+    public void CancelFanUse()
+    {
+        if (!_isAttackHeld || _activeTool is not FanTool) return;
+
+        _isAttackHeld = false;
+        _activeTool.StopUsing();
+        _activeTool.HideVisual();
+    }
+
     // 웨폰 휠이 슬롯을 강조/선택할 수 있는지 묻는다. 잠글 수 있는 도구는 횃불과 우산이다.
     public bool IsSlotUnlocked(WeaponSlot slot)
     {

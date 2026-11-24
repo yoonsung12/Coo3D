@@ -53,11 +53,14 @@ public class FallDeathHandler : MonoBehaviour
     private PlayerHealth _playerHealth;
     private PlayerController _playerController;
     private CharacterController _characterController;
+    private ToolManager _toolManager;
+    // 연출 중에도 ToolManager는 계속 돌아가서 선풍기 차징 반동이 쌓일 수 있다. 빠질 때와 복귀할 때 선풍기 사용을 취소하는 데 쓴다.
 
     private void Awake()
     {
         _playerHealth = GetComponent<PlayerHealth>();
         _playerController = GetComponent<PlayerController>();
+        _toolManager = GetComponent<ToolManager>();
         _characterController = GetComponent<CharacterController>();
 
         if (sideViewCamera == null && Camera.main != null)
@@ -75,14 +78,27 @@ public class FallDeathHandler : MonoBehaviour
         // 체력이 0이 되어 이미 사망 처리(게임오버)가 시작됐다면 여기서 또 옮기면 위치가 꼬인다.
         if (_playerHealth.CurrentHealth <= 0f) return;
 
+        // 빠지는 순간 차징 중이던 선풍기를 취소한다. 그대로 두면 연출 중에도 차징 소리·반동이 계속 이어진다.
+        _toolManager?.CancelFanUse();
+
         // 페이더가 없는 예외 상황에서는 연출 없이 기존처럼 바로 옮긴다.
         if (ScreenFader.Instance == null)
         {
             _playerHealth.Respawn(recoverPosition);
+            ClearFanForceAfterRespawn();
             return;
         }
 
         StartCoroutine(FallRoutine(recoverPosition, extraHoldDuration));
+    }
+
+    // 복귀 직후 호출한다. 연출 중 PlayerController가 꺼져 있는 동안에는 반동이 줄어들지 않으므로,
+    // 그 사이 다시 누른 선풍기 차징이나 손을 뗀 블라스트로 쌓인 힘을 모두 지운다.
+    // 이게 없으면 복귀하자마자 남은 힘에 밀려 다시 물/구덩이로 떨어질 수 있다.
+    private void ClearFanForceAfterRespawn()
+    {
+        _toolManager?.CancelFanUse();
+        _playerController?.ClearFanRecoil();
     }
 
     // 빠진 자리 비추기 + 가라앉기 + 페이드 아웃 → 복귀 → 페이드 인 순서로 진행한다.
@@ -120,6 +136,7 @@ public class FallDeathHandler : MonoBehaviour
 
         // 순간이동은 반드시 Respawn()을 거쳐야 CharacterController 처리와 시점(사이드뷰/탑다운) 갱신이 함께 된다.
         _playerHealth.Respawn(recoverPosition);
+        ClearFanForceAfterRespawn();
 
         // 붙잡아 둔 카메라를 풀고 복귀 지점으로 바로 옮긴다. 그러지 않으면 화면이 밝아질 때 카메라가 쓸려 오는 모습이 보인다.
         if (sideViewCamera != null)
@@ -134,6 +151,8 @@ public class FallDeathHandler : MonoBehaviour
         ScreenFader.Instance.FadeIn(() => fadedIn = true, fadeInDuration);
         yield return new WaitUntil(() => fadedIn);
 
+        // 페이드 인 동안에도 조작은 꺼져 있으므로, 조작을 되돌려 주기 직전에 한 번 더 지운다.
+        ClearFanForceAfterRespawn();
         if (_playerController != null)
             _playerController.enabled = true;
         _playerHealth.SetDamageImmune(false);
