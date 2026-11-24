@@ -94,6 +94,25 @@ public class BossWinterIslandPattern : BossSeasonPatternBase
     [SerializeField, LabelText("바람 소리 (선택)")]
     private AudioClip windClip;
 
+    [FoldoutGroup("연결")]
+    [SerializeField, LabelText("바람 반복 재생 AudioSource (선택)")]
+    private AudioSource windLoopSource;
+    // 회차마다 바람 지속 시간(2~3초)이 달라서, 소리를 한 번만 내면 바람과 길이가 맞지 않는다.
+    // 여기에 반복(Loop)용 AudioSource를 연결하면 바람이 부는 동안만 반복 재생하고, 바람이 멈추면 서서히 꺼진다.
+    // 비워두면 예전처럼 위 AudioSource로 한 번만 재생한다.
+
+    [FoldoutGroup("연결")]
+    [SerializeField, LabelText("바람 소리 볼륨"), Range(0f, 1f)]
+    private float windVolume = 1f;
+
+    [FoldoutGroup("연결")]
+    [SerializeField, LabelText("바람 소리 꺼지는 시간")]
+    private float windFadeOutDuration = 0.4f;
+    // 바람이 멈춘 뒤 소리가 0이 되기까지의 시간이다. 짧을수록 뚝 끊기는 느낌이 난다.
+
+    private Tween _windSoundTween;
+    // 바람 소리 페이드 Tween. 새 회차가 시작되면 이전 페이드를 끊고 다시 재생한다.
+
     [TabGroup("설정", "준비")]
     [SerializeField, LabelText("보스 서 있는 높이(중심 Y)")]
     private float standHeightY = 1f;
@@ -235,6 +254,7 @@ public class BossWinterIslandPattern : BossSeasonPatternBase
     private void OnDestroy()
     {
         _poseSequence?.Kill();
+        _windSoundTween?.Kill();
     }
 
     protected override void StartCycle()
@@ -565,7 +585,7 @@ public class BossWinterIslandPattern : BossSeasonPatternBase
     private void PlayWindEffects(WindSwing swing)
     {
         if (sideViewCamera != null) sideViewCamera.Shake(windShakeDuration, swing.shakeStrength);
-        if (audioSource != null && windClip != null) audioSource.PlayOneShot(windClip);
+        PlayWindSound();
 
         if (windParticles != null)
         {
@@ -585,8 +605,39 @@ public class BossWinterIslandPattern : BossSeasonPatternBase
             Quaternion.LookRotation(_windDirection, Vector3.up));
     }
 
+    // 바람이 부는 동안만 소리를 반복 재생한다. 반복용 AudioSource가 없으면 예전처럼 한 번만 낸다.
+    private void PlayWindSound()
+    {
+        if (windClip == null) return;
+
+        if (windLoopSource != null)
+        {
+            _windSoundTween?.Kill();
+            windLoopSource.clip = windClip;
+            windLoopSource.loop = true;
+            windLoopSource.volume = windVolume;
+            windLoopSource.Play();
+        }
+        else if (audioSource != null)
+        {
+            audioSource.PlayOneShot(windClip, windVolume);
+        }
+    }
+
+    // 바람이 멈추면 반복 소리를 서서히 줄인 뒤 멈춘다.
+    private void FadeOutWindSound()
+    {
+        if (windLoopSource == null || !windLoopSource.isPlaying) return;
+
+        _windSoundTween?.Kill();
+        _windSoundTween = windLoopSource.DOFade(0f, windFadeOutDuration)
+            .OnComplete(() => windLoopSource.Stop())
+            .SetLink(gameObject);
+    }
+
     private void StopWindEffects()
     {
+        FadeOutWindSound();
         if (windParticles != null) windParticles.Stop();
     }
 
@@ -686,6 +737,7 @@ public class BossWinterIslandPattern : BossSeasonPatternBase
     {
         if (fanTelegraph != null) fanTelegraph.HideImmediate();
         if (windParticles != null) windParticles.Stop();
+        FadeOutWindSound(); // 패턴이 중간에 끊겨도 바람 소리가 계속 남지 않게 한다.
         if (_targetMarker != null)
         {
             Destroy(_targetMarker.gameObject);

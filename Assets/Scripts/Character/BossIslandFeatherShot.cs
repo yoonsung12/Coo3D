@@ -81,6 +81,18 @@ public class BossIslandFeatherShot : MonoBehaviour
     [SerializeField, LabelText("준비 자세 젖힘 각도 (X)")]
     private float windupTiltX = -15f;
 
+    [Title("사운드")]
+    [SerializeField, LabelText("AudioSource (비우면 같은 오브젝트)")]
+    private AudioSource audioSource;
+    // 보스에 붙은 효과음(SFX 믹서) AudioSource를 같이 쓴다. 비워두면 Awake에서 같은 오브젝트에서 찾는다.
+
+    [SerializeField, LabelText("발사 소리 (선택)")]
+    private AudioClip fireClip;
+    // 깃털 3발을 쏘는 순간 한 번 재생된다(3발이 동시에 나가므로 소리는 한 번).
+
+    [SerializeField, LabelText("발사 소리 볼륨"), Range(0f, 1f)]
+    private float fireVolume = 0.9f;
+
     private Coroutine _routine;
     private Sequence _poseSequence;
     private readonly GroundTelegraph[] _lanes = new GroundTelegraph[3];
@@ -100,6 +112,7 @@ public class BossIslandFeatherShot : MonoBehaviour
             _startLocalScale = bossVisual.localScale;
         }
         bossAnim = GetComponent<BossAnimationController>();
+        if (audioSource == null) audioSource = GetComponent<AudioSource>();
     }
 
     private void OnDisable()
@@ -168,6 +181,7 @@ public class BossIslandFeatherShot : MonoBehaviour
         bossAnim?.PlayShoot();
         DestroyLanes();
         Fire(dir, angles);
+        if (audioSource != null && fireClip != null) audioSource.PlayOneShot(fireClip, fireVolume);
 
         if (bossVisual != null)
         {

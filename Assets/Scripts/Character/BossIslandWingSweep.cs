@@ -76,6 +76,25 @@ public class BossIslandWingSweep : MonoBehaviour
     [SerializeField, LabelText("날개 편 자세 배율")]
     private Vector3 wingsOpenScaleMul = new Vector3(1.3f, 1f, 1.3f);
 
+    [Title("사운드")]
+    [SerializeField, LabelText("AudioSource (비우면 같은 오브젝트)")]
+    private AudioSource audioSource;
+    // 보스에 붙은 효과음(SFX 믹서) AudioSource를 같이 쓴다. 비워두면 Awake에서 같은 오브젝트에서 찾는다.
+
+    [SerializeField, LabelText("준비 소리 (선택)")]
+    private AudioClip windupClip;
+    // 몸을 낮추며 힘을 모을 때(날개 젖힘) 한 번 재생된다.
+
+    [SerializeField, LabelText("준비 소리 볼륨"), Range(0f, 1f)]
+    private float windupVolume = 0.8f;
+
+    [SerializeField, LabelText("휘두르는 소리 (선택)")]
+    private AudioClip sweepClip;
+    // 날개를 휘둘러 판정이 나는 순간 재생된다.
+
+    [SerializeField, LabelText("휘두르는 소리 볼륨"), Range(0f, 1f)]
+    private float sweepVolume = 1f;
+
     private Coroutine _routine;
     private Sequence _poseSequence;
     private GroundTelegraph _telegraph;
@@ -93,6 +112,13 @@ public class BossIslandWingSweep : MonoBehaviour
             _startLocalScale = bossVisual.localScale;
         }
         bossAnim = GetComponent<BossAnimationController>();
+        if (audioSource == null) audioSource = GetComponent<AudioSource>();
+    }
+
+    // 소리가 연결돼 있을 때만 재생한다. 비어 있으면 아무 일도 없다.
+    private void PlaySfx(AudioClip clip, float volume)
+    {
+        if (audioSource != null && clip != null) audioSource.PlayOneShot(clip, volume);
     }
 
     private void OnDisable()
@@ -129,6 +155,7 @@ public class BossIslandWingSweep : MonoBehaviour
     private IEnumerator SweepRoutine(Action onFinished)
     {
         // 준비: 몸을 낮추고 눌러 힘을 모으는 느낌을 준다.
+        PlaySfx(windupClip, windupVolume);
         if (bossVisual != null)
         {
             _poseSequence?.Kill();
@@ -152,6 +179,7 @@ public class BossIslandWingSweep : MonoBehaviour
 
         // 휘두르기: 한 바퀴 돌며 날개를 편다. 판정은 이 순간 한 번만 한다.
         bossAnim?.PlayWing();
+        PlaySfx(sweepClip, sweepVolume);
         DestroyTelegraph();
         if (bossVisual != null)
         {

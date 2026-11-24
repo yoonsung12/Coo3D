@@ -84,6 +84,22 @@ public class BossIslandDoublePeck : MonoBehaviour
     [SerializeField, LabelText("쪼기 시 앞으로 내미는 거리")]
     private float jabForward = 0.5f;
 
+    [Title("사운드")]
+    [SerializeField, LabelText("AudioSource (비우면 같은 오브젝트)")]
+    private AudioSource audioSource;
+    // 보스에 붙은 효과음(SFX 믹서) AudioSource를 같이 쓴다. 비워두면 Awake에서 같은 오브젝트에서 찾는다.
+
+    [SerializeField, LabelText("쪼기 소리 (선택)")]
+    private AudioClip peckClip;
+    // 쪼기 한 번마다 재생된다(두 번 쪼므로 두 번 난다).
+
+    [SerializeField, LabelText("쪼기 소리 볼륨"), Range(0f, 1f)]
+    private float peckVolume = 0.8f;
+
+    [SerializeField, LabelText("두 번째 쪼기 볼륨 배율")]
+    private float secondPeckVolumeMul = 1.25f;
+    // 두 번째 쪼기가 더 멀리 닿는 강한 공격이라 소리도 조금 더 크게 낸다. 1이면 같은 크기다.
+
     private Coroutine _routine;
     private Sequence _poseSequence;
     private GroundTelegraph _telegraph;
@@ -105,6 +121,13 @@ public class BossIslandDoublePeck : MonoBehaviour
             _startLocalScale = bossVisual.localScale;
         }
         bossAnim = GetComponent<BossAnimationController>();
+        if (audioSource == null) audioSource = GetComponent<AudioSource>();
+    }
+
+    // 소리가 연결돼 있을 때만 재생한다. PlayOneShot 볼륨은 1을 넘으면 잘리므로 1로 제한한다.
+    private void PlaySfx(AudioClip clip, float volume)
+    {
+        if (audioSource != null && clip != null) audioSource.PlayOneShot(clip, Mathf.Min(volume, 1f));
     }
 
     private void OnDisable()
@@ -166,8 +189,10 @@ public class BossIslandDoublePeck : MonoBehaviour
 
         // 쪼기 두 번. 각 쪼기는 한 번씩만 맞는다.
         bossAnim?.PlayPeck();
+        PlaySfx(peckClip, peckVolume);
         yield return PeckOnce(dir, firstLength);
         yield return new WaitForSeconds(peckInterval);
+        PlaySfx(peckClip, peckVolume * secondPeckVolumeMul);
         yield return PeckOnce(dir, firstLength + extraLength);
 
         DestroyTelegraph();

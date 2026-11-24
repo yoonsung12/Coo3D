@@ -71,6 +71,16 @@ public class BossSpringWave : MonoBehaviour
     [SerializeField, LabelText("사라지는 시간")]
     private float disappearDuration = 0.4f;
 
+    [Title("사운드")]
+    [SerializeField, LabelText("파도 소리 AudioSource (선택)")]
+    private AudioSource waveLoopSource;
+    // 프리팹에 붙인 반복(Loop) AudioSource를 연결한다. 3D 소리라 파도가 카메라(플레이어)에 가까워질수록 커진다.
+    // 비워두면 소리 없이 동작한다.
+
+    [SerializeField, LabelText("파도 소리 볼륨"), Range(0f, 1f)]
+    private float waveLoopVolume = 0.8f;
+    // 파도가 다 솟았을 때의 볼륨이다. 나타날 때 0에서 이 값까지 올라가고, 사라질 때 0으로 내려간다.
+
     [Title("런타임 상태 (읽기 전용)")]
     [ReadOnly, ShowInInspector, LabelText("플레이어 휩쓸림 중")]
     private bool _caught;
@@ -93,6 +103,8 @@ public class BossSpringWave : MonoBehaviour
     private MaterialPropertyBlock _block;
     private Tween _appearTween;
     private Tween _fadeTween;
+    private Tween _soundTween;
+    // 파도 소리 페이드 Tween. 나타날 때/사라질 때 겹치지 않게 저장해 두고 새로 시작하기 전에 끊는다.
     private readonly Collider[] _overlapBuffer = new Collider[16];
 
     // 패턴이 파도를 만든 직후 호출한다. spawnPosition은 파도 중심선의 시작점(지면 높이), travelDir은 XZ 진행 방향이다.
@@ -120,6 +132,16 @@ public class BossSpringWave : MonoBehaviour
         visual.localScale = new Vector3(length, 0.01f, thickness);
         visual.localPosition = new Vector3(0f, 0.005f, 0f);
         _appearTween = DOTween.To(() => 0f, SetVisualHeight01, 1f, appearDuration).SetEase(Ease.OutQuad);
+
+        // 파도가 솟는 동안 밀려오는 물소리도 0에서 서서히 커진다.
+        if (waveLoopSource != null && waveLoopSource.clip != null)
+        {
+            waveLoopSource.loop = true;
+            waveLoopSource.volume = 0f;
+            waveLoopSource.Play();
+            _soundTween?.Kill();
+            _soundTween = waveLoopSource.DOFade(waveLoopVolume, appearDuration);
+        }
 
         _initialized = true;
     }
@@ -157,6 +179,7 @@ public class BossSpringWave : MonoBehaviour
         ReleasePlayer();
         if (_appearTween != null) _appearTween.Kill();
         if (_fadeTween != null) _fadeTween.Kill();
+        _soundTween?.Kill();
     }
 
     private void OnDestroy()
@@ -164,6 +187,7 @@ public class BossSpringWave : MonoBehaviour
         ReleasePlayer();
         if (_appearTween != null) _appearTween.Kill();
         if (_fadeTween != null) _fadeTween.Kill();
+        _soundTween?.Kill();
     }
 
     private void SetVisualHeight01(float t)
@@ -243,6 +267,13 @@ public class BossSpringWave : MonoBehaviour
         _visualEnded = true;
         if (foamParticles != null) foamParticles.Stop(); // 이미 나온 입자는 자연스럽게 사라지게 둔다.
         if (_appearTween != null) _appearTween.Kill();
+
+        // 파도가 사라지는 동안 물소리도 같이 줄인다. 오브젝트가 파괴되면 소리도 함께 끝난다.
+        if (waveLoopSource != null && waveLoopSource.isPlaying)
+        {
+            _soundTween?.Kill();
+            _soundTween = waveLoopSource.DOFade(0f, disappearDuration);
+        }
 
         // 투명해지면서 납작해진다.
         float startHeight = visual.localScale.y;

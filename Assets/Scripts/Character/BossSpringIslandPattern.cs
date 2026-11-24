@@ -75,6 +75,24 @@ public class BossSpringIslandPattern : BossSeasonPatternBase
     [SerializeField, LabelText("착지음 (선택)")]
     private AudioClip landingClip;
 
+    [FoldoutGroup("연결")]
+    [SerializeField, LabelText("돌진 소리 (선택)")]
+    private AudioClip dashClip;
+    // 돌진을 시작하는 순간 한 번 재생된다. 비워두면 소리 없이 돌진한다.
+
+    [FoldoutGroup("연결")]
+    [SerializeField, LabelText("돌진 소리 볼륨"), Range(0f, 1f)]
+    private float dashVolume = 1f;
+
+    [FoldoutGroup("연결")]
+    [SerializeField, LabelText("파도 생성 소리 (선택)")]
+    private AudioClip waveSpawnClip;
+    // 착지한 발판에서 파도가 솟아오를 때 한 번 재생된다. 파도가 밀려오는 반복음은 파도 프리팹(BossSpringWave)이 따로 낸다.
+
+    [FoldoutGroup("연결")]
+    [SerializeField, LabelText("파도 생성 소리 볼륨"), Range(0f, 1f)]
+    private float waveSpawnVolume = 1f;
+
     [TabGroup("설정", "돌진")]
     [SerializeField, LabelText("보스 서 있는 높이(중심 Y)")]
     private float standHeightY = 1f;
@@ -578,6 +596,8 @@ public class BossSpringIslandPattern : BossSeasonPatternBase
         _currentPhase = "돌진";
 
         bossAnim?.PlaySpringDash();
+        if (audioSource != null && dashClip != null) audioSource.PlayOneShot(dashClip, dashVolume);
+        // 돌진 시작 소리. 판정/이동과 상관없는 연출이라 여기서 한 번만 낸다.
 
         laneTelegraph.Hide();
         circleTelegraph.Hide();
@@ -771,6 +791,9 @@ public class BossSpringIslandPattern : BossSeasonPatternBase
         Vector3 spawn = new Vector3(platformPosition.x, 0f, platformPosition.z) + dir * waveSpawnInset;
         BossSpringWave wave = Instantiate(wavePrefab);
         wave.Initialize(spawn, dir, playerController, rocks, GetDistanceToIslandEdge(spawn, dir) + waveEdgeMargin);
+
+        // 파도가 실제로 만들어졌을 때만 솟아오르는 소리를 낸다(방향을 못 구해 파도가 없으면 소리도 없다).
+        if (audioSource != null && waveSpawnClip != null) audioSource.PlayOneShot(waveSpawnClip, waveSpawnVolume);
 
         _waves.RemoveAll(w => w == null);
         _waves.Add(wave);
